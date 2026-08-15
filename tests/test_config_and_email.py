@@ -155,7 +155,6 @@ def test_placeholder_addresses_are_refused(address):
     """The original check looked for the substring 'example.com' while the
     template shipped 'you@example.org', so anyone following the README verbatim
     sent SEC a placeholder and got throttled with no warning."""
-    import localconfig
     assert localconfig._is_placeholder(address) is True
 
 
@@ -165,5 +164,4 @@ def test_placeholder_addresses_are_refused(address):
     "a.b+tag@sub.domain.org",
 ])
 def test_real_addresses_are_accepted(address):
-    import localconfig
     assert localconfig._is_placeholder(address) is False
