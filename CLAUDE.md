@@ -3,8 +3,13 @@
 Personal end-of-day research system for a small-cap pharma watchlist. Runs
 unattended on weekdays after the US close and writes a report to `reports/`.
 
-Research support for manual trading in Revolut / Interactive Brokers. Not
-financial advice; every order is placed by the user.
+Research support for the owner's own decisions. Not financial advice; every
+order is placed by hand.
+
+**Read `STRATEGY.local.md` first for anything involving sizing, routing or
+whether to buy.** It is gitignored and holds the personal layer: objective, risk
+posture, what each bucket means, broker preferences, constraints. This file
+holds only the engineering, and is safe to make public.
 
 ## Architecture
 
@@ -229,18 +234,17 @@ setups: a thesis breaking outranks an idea appearing.
 ## Exposure
 
 `signals.json.exposure` sums what every actionable name would request at its
-bucket cap. With a 15% cash reserve the ceiling is 85%; four bucket-A SETUPs at
-28% each would request 112%. Nothing else computes this, and these names trigger
-together in a drawdown.
+bucket cap against the investable ceiling (100% less the configured cash
+reserve). Several full-size names firing at once can exceed it easily, and
+`scale_factor_needed` says by how much. Nothing else computes this, and these
+names trigger together in a drawdown.
 
 ## Heartbeat
 
-`pharma-heartbeat.timer` (Mon-Fri 10:23) runs `scripts/heartbeat.py`, which
-alerts if no report has appeared for two weekdays. It exists because **silence
-is the desk's normal output** — a broken run and a quiet market look identical.
-It runs from its own unit on purpose: if the main run dies before reaching
-notify.py (bad PATH, Python failure), run_daily.sh's own failure handler dies
-with it.
+`pharma-heartbeat.timer` (Mon-Fri) alerts if no report appears for two weekdays.
+**Silence is the desk's normal output**, so a broken run and a quiet market look
+identical. Separate unit on purpose: if the main run dies before reaching
+notify.py, run_daily.sh's own failure handler dies with it.
 
 ## Market regime
 
@@ -278,27 +282,22 @@ actually thins out.
 
 ## Email delivery
 
-`scripts/render_email.py` converts the markdown report to mobile-readable HTML.
-The email is `multipart/mixed` → `multipart/alternative` (text + HTML) plus the
-`.md` as an attachment.
+`render_email.py` → `multipart/mixed` → `multipart/alternative` (text + HTML)
+plus the `.md` attached. Constraints, each learned the hard way:
 
-Constraints that shaped it, all learned the hard way:
-
-- **Styles are inlined on every element.** Gmail and Outlook strip or ignore
-  `<style>` blocks in several contexts.
-- **Tables sit in an `overflow-x` container.** The signal table is far wider
-  than a phone and would otherwise force the whole page to scroll sideways.
-- **Body is capped at 15,000 markdown characters.** Gmail clips past ~102KB and
-  hides the rest behind "View entire message"; inline styles expand markdown
-  roughly 5×. A trimmed report shows a notice pointing at the attachment. A
-  report inside the 250-line budget never trips this.
+- Styles **inlined on every element** — Gmail/Outlook strip `<style>` blocks.
+- Tables in an `overflow-x` container, else the page scrolls sideways on a phone.
+- **Size is measured, not estimated.** Gmail clips past ~102KB; a wide markdown
+  table expands ~11× under inline styles while prose expands ~3×, so budgeting
+  by character count fails. `build_email_html` renders, measures, and re-renders
+  smaller until it fits, falling back to a body-less summary if it cannot.
 - No external CSS, fonts or images — most clients block them.
 
 ## Chart links
 
-`signals.json` carries `links` and a ready-made `links_md` per name
-(TradingView · Finviz · Financials · EDGAR). Ticker cells in the signal table are
-Finviz links. The report puts `links_md` under every name it discusses.
+`signals.json` carries `links` and a ready-made `links_md` per name (Finviz
+6M/3Y/10Y via `p=d|w|m`, TradingView, financials, EDGAR). The report puts
+`links_md` under every name it discusses.
 
 Notifications fire on tier *changes* into SETUP/ACT, not on tier states — an
 oversold name should not buzz the phone every evening for three weeks.
@@ -321,23 +320,20 @@ be recomputed as prices move. Method:
 These are mechanical starting points, not valuations. Override any of them by
 hand in `watchlist.toml`; re-run with `--apply` to refresh the rest.
 
-## Buckets and risk posture
+## Buckets and sizing
 
-The bucket sets the sizing ceiling; it does not affect signal logic.
+`tier` in `watchlist.toml` (`A` / `B` / `lottery` / `legacy`) selects a
+position-size ceiling and nothing else — it does not affect signal logic. Every
+name gets identical veto treatment regardless of bucket.
 
-| Bucket | Per-name cap | Notes |
-|---|---|---|
-| `A` | 28% | higher-conviction speculative, "could 2–5x" |
-| `B` | 28% | larger caps, more de-risked, "could 2x" |
-| `lottery` | **5%** | binary micro-caps, **15% cap across the whole bucket** |
-| `legacy` | 28% | carried from the original watchlist; remove freely |
+The ceilings themselves are configured in `watchlist.toml [settings]`
+(`max_position_pct`, `max_position_pct_lottery`, `max_bucket_pct_lottery`,
+`min_cash_reserve_pct`) and reach the report as `max_position_pct` on each
+signal. **Never restate those numbers in code or documentation** — read them
+from the data, or the two drift apart.
 
-Aggressive posture by explicit choice, min **15%** cash reserve. Report-enforced
-conventions, not broker limits. Never average down into a damaged thesis.
-
-The list skews heavily clinical-stage, so most names share one failure mode and
-fall together in a biotech drawdown. The revenue-generating names (INSM, HRMY,
-LNTH) are deliberate diversification against that correlation.
+What the buckets *mean*, and the reasoning behind the ceilings, is in
+`STRATEGY.local.md`.
 
 ## Conventions
 
@@ -353,12 +349,11 @@ LNTH) are deliberate diversification against that correlation.
 
 ## Schedule
 
-`pharma-desk.timer` fires Mon–Fri 23:18 Europe/Sofia with up to 4 minutes of
-jitter. The US close lands at 22:00–23:00 Sofia time in every DST alignment, so
-the daily bar is always settled. `Persistent=true` catches up a missed run.
+`pharma-desk.timer` Mon–Fri 23:18 local — after the US close in every DST
+alignment, so the daily bar is settled. `Persistent=true` catches up a miss.
 
 ```bash
-systemctl --user list-timers pharma-desk.timer
+systemctl --user list-timers 'pharma-*'
 journalctl --user -u pharma-desk.service -n 50
 ./run_daily.sh --no-llm            # data + signals only, fast and free
 ```

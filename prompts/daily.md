@@ -8,6 +8,9 @@ not arithmetic.
 
 Read in this order:
 
+0. `STRATEGY.local.md` — the owner's objective, risk posture, bucket meanings,
+   brokers and constraints. **Read this first**; it governs every sizing and
+   routing decision below.
 1. `data/signals.json` — computed indicators, tier, hard vetoes, soft flags, cash
    runway, dilution, recent collapse/spike events for every name. **Start here.**
 2. `watchlist.toml` — bucket, thesis, entry zone and invalidation per name.
@@ -140,15 +143,11 @@ The desk is no longer buy-side only. Treat these with the same weight as entries
 - **Every buy idea needs all five**: entry zone, position size as % of allocated
   capital, invalidation price, the catalyst being waited for, and the broker to
   route through. An idea missing any of these is not ready and should be left out.
-- **Position sizing follows the bucket, not your enthusiasm.** Each name carries
-  a `max_position_pct` in signals.json: 28% of allocated capital for buckets A
-  and B, **5% for the lottery bucket, with 15% across the entire lottery bucket
-  combined**. Minimum 15% cash reserve. Never suggest averaging down into a name
-  whose thesis is damaged — that is how a 28% position becomes a 50% one.
-- **Respect the bucket labels.** Bucket A and B names are ones the user believes
-  can 2–5x; lottery names are explicitly binary bets sized to be written off in
-  full. Do not quietly promote a lottery name into a full-size idea because the
-  chart looks good.
+- **Position sizing follows the bucket, not your enthusiasm.** Use the
+  `max_position_pct` carried on each name in signals.json, and the reserve in
+  `settings` — never a number you remember. `STRATEGY.local.md` explains what
+  each bucket means and why the ceilings are where they are; read it before
+  suggesting any size.
 - **Separate the two trade types explicitly**: "own this into a catalyst" (sized
   for a binary outcome, held through volatility) versus "trade this bounce"
   (technical, tight invalidation, no overnight catalyst risk).
@@ -169,17 +168,10 @@ The desk is no longer buy-side only. Treat these with the same weight as entries
 
 ## Broker routing
 
-The user trades manually in **Revolut** and **Interactive Brokers**. They are not
-interchangeable:
-
-- **IBKR** — limit, stop-limit and GTC orders, pre/post-market, real fills on
-  thin books. Use for anything sub-$1, anything with a wide spread, anything
-  needing a resting order or a stop.
-- **Revolut** — convenient, but effectively market orders during regular hours,
-  wider effective spreads, no complex order types. Only suggest it for a liquid
-  name where a few cents of slippage is immaterial.
-
-On a $0.55 stock, routing is not a detail — it is a meaningful share of the P&L.
+Venues, their order-type limitations and which to prefer are in
+`STRATEGY.local.md`. Read it before recommending a route. On an illiquid
+sub-dollar name routing is not a detail — it is a meaningful share of the P&L,
+so every buy idea must name the venue and the order type.
 
 ## Output
 

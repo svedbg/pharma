@@ -77,7 +77,21 @@ invalidation = "what would prove this wrong"
 `watchlist.example.toml` carries three names so the repo runs out of the box.
 Replace them with your own.
 
-### 3. First run
+### 3. Describe your strategy
+
+```bash
+cp STRATEGY.example.md STRATEGY.local.md
+$EDITOR STRATEGY.local.md
+```
+
+Also gitignored. It holds the part that is yours rather than shared code:
+objective, risk posture, what each bucket means, brokers, constraints. The
+analysis pass reads it before making any sizing or routing suggestion.
+
+Numeric ceilings live in `watchlist.toml [settings]`, not here, so code and
+documentation cannot drift apart.
+
+### 4. First run
 
 ```bash
 ./run_daily.sh --no-llm     # data + signals only: fast, free, no LLM calls
@@ -91,7 +105,7 @@ python3 scripts/propose_zones.py            # dry run — review the proposals
 python3 scripts/propose_zones.py --apply    # write them into watchlist.toml
 ```
 
-### 4. The analysis pass (optional)
+### 5. The analysis pass (optional)
 
 The full run adds a reasoning step that researches flagged names, confirms or
 refutes vetoes against the source filings, and writes the report. It shells out
@@ -105,7 +119,7 @@ Without it you still get every signal, veto and alert — just no written
 analysis. Swap the `claude -p` line in `run_daily.sh` for any other CLI that
 accepts a prompt and can write files.
 
-### 5. Schedule it
+### 6. Schedule it
 
 ```bash
 cp systemd/pharma-*.service systemd/pharma-*.timer ~/.config/systemd/user/
@@ -195,7 +209,8 @@ past a 3.11 floor.
 ## Layout
 
 ```
-watchlist.toml     your names, buckets, entry zones, invalidation levels
+watchlist.toml     your names, buckets, entry zones, invalidation levels (gitignored)
+STRATEGY.local.md  your objective, risk posture, brokers (gitignored)
 catalysts.toml     dated binaries (PDUFA, AdCom, readouts) with sources
 scripts/           fetch, signals, helpers, notification, scoring
 prompts/daily.md   the standing instruction for the analysis pass
