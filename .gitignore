@@ -18,8 +18,10 @@ data/screen_candidates.toml
 # Your objective, risk posture and broker preferences -- personal, not code.
 STRATEGY.local.md
 
-# Generated PDF -- rebuild with: make briefing
+# Generated PDFs. The capability brief is committed so it has a stable, linkable
+# URL for sharing; the internal briefing stays generated-only.
 docs/*.pdf
+!docs/the-91-percent-question.pdf
 
 # Dev virtualenv (runtime needs none)
 .venv/
