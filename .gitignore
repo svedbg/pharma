@@ -23,8 +23,10 @@ STRATEGY.local.md
 docs/*.pdf
 !docs/the-91-percent-question.pdf
 
-# Dev virtualenv (runtime needs none)
+# Dev virtualenv (runtime needs none). `make setup` does an editable install,
+# which drops an egg-info tree next to it.
 .venv/
+*.egg-info/
 
 # Reports are personal research notes; drop this line if you want them versioned.
 reports/
