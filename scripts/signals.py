@@ -813,90 +813,14 @@ def next_catalyst(trials: list[dict]):
 # --------------------------------------------------------------------- tiers
 
 
-def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
-            catalysts: dict | None = None, regime: dict | None = None,
-            resolved: dict | None = None, last_alerts: dict | None = None) -> dict:
-    # bars and closes must stay index-aligned: crash_scan maps a closes index
-    # back to bars[i]["date"], so filtering one list and not the other would
-    # pin a collapse to the wrong session.
-    bars = [b for b in (rec.get("bars") or []) if b.get("adjclose") is not None]
-    closes = [b["adjclose"] for b in bars]
-    vols = [b["volume"] for b in bars if b.get("volume") is not None]
-    bucket = rec.get("tier", "") or "A"
-    out: dict = {"symbol": rec["symbol"], "company": rec.get("company", ""),
-                 "bucket": bucket, "thesis": rec.get("thesis", ""),
-                 "invalidation": rec.get("invalidation", ""),
-                 "price_source": rec.get("price_source"),
-                 # Sizing ceiling is set by the watchlist bucket, not by the signal.
-                 "max_position_pct": (
-                     float(settings.get("max_position_pct_lottery", 5))
-                     if bucket == "lottery"
-                     else float(settings.get("max_position_pct", 28))
-                 )}
+def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dict) -> None:
+    """Turn the balance sheet and recent price action into vetoes and flags.
 
-    if len(closes) < 30:
-        out["tier"] = "NO_DATA"
-        out["reasons"] = ["insufficient price history"]
-        return out
-
-    last = closes[-1]
-    year = closes[-252:] if len(closes) >= 252 else closes
-    hi52, lo52 = max(year), min(year)
-    pctb, _bb_up, bb_lo = bollinger_pct_b(closes)
-    a = atr(bars)
-    s20, s50, s200 = sma(closes, 20), sma(closes, 50), sma(closes, 200)
-    hi30 = max(closes[-30:])
-
-    out["price"] = {
-        "close": round(last, 4),
-        "date": bars[-1]["date"],
-        "chg_1d_pct": _r(pct_change(closes, 1)),
-        "chg_5d_pct": _r(pct_change(closes, 5)),
-        "chg_20d_pct": _r(pct_change(closes, 20)),
-        "week52_high": round(hi52, 4),
-        "week52_low": round(lo52, 4),
-        "pct_off_52w_high": _r((last / hi52 - 1.0) * 100.0) if hi52 else None,
-        "pct_above_52w_low": _r((last / lo52 - 1.0) * 100.0) if lo52 else None,
-        "drawdown_from_30d_high_pct": _r((last / hi30 - 1.0) * 100.0) if hi30 else None,
-        "percentile_1y": _r(percentile_rank(year, last)),
-    }
-    out["technicals"] = {
-        "rsi14": _r(rsi(closes)),
-        "bollinger_pct_b": _r(pctb, 3),
-        "bollinger_lower": _r(bb_lo),
-        "sma20": _r(s20), "sma50": _r(s50), "sma200": _r(s200),
-        "pct_vs_sma50": _r((last / s50 - 1.0) * 100.0) if s50 else None,
-        "pct_vs_sma200": _r((last / s200 - 1.0) * 100.0) if s200 else None,
-        "atr14": _r(a),
-        "atr_pct_of_price": _r(a / last * 100.0) if a and last else None,
-        "volume_last": vols[-1] if vols else None,
-        "volume_vs_20d_avg": (
-            _r(vols[-1] / (sum(vols[-20:]) / 20), 2) if len(vols) >= 20 and sum(vols[-20:]) else None
-        ),
-    }
-
-    # A >15% single-day move is an event, not noise. It must be explained by a
-    # filing or news before any tier is acted on.
-    chg1 = out["price"]["chg_1d_pct"]
-    out["event_move"] = bool(chg1 is not None and abs(chg1) >= 15.0)
-    out["recent_events"] = crash_scan(bars, closes, rec.get("filings"))
-    out["relative_strength"] = relative_strength(bars, bench_bars or [])
-    out["insiders"] = insider_signal(rec.get("insiders"), last)
-    out["short"] = short_signal(rec.get("short_interest") or [], rec.get("short_volume") or [])
-    out["move"] = move_profile(bars, bench_bars or [])
-    out["float"] = float_metrics(rec.get("financials") or {}, bars, rec.get("short_interest") or [])
-    out["catalysts"] = (catalysts or {}).get(rec["symbol"], [])[:3]
-    out["tradability"] = tradability(bars, settings)
-    out["links"] = chart_links(rec["symbol"], rec.get("cik"))
-    out["links_md"] = links_markdown(rec["symbol"], out["links"])
-
-    hard, soft = evaluate_filings(rec.get("filings"))
-    out["hard_vetoes"], out["soft_flags"] = hard, soft
-    out["runway"] = runway(rec.get("financials"))
-    out["dilution"] = dilution(rec.get("financials"))
-    out["next_catalyst"] = next_catalyst(rec.get("trials"))
-    out["new_filings_since_last_run"] = rec.get("new_filings_since_last_run") or []
-
+    Mutates `hard` and `soft` in place. Extracted from analyse() because it is
+    the densest cluster of hard-won rules in the codebase -- every branch here
+    corresponds to a case that once produced a wrong answer, and it needs to be
+    readable on its own.
+    """
     # Financing pressure is its own veto: a company inside one quarter of cash
     # will raise, and it will raise at a discount to wherever the price is.
     for ev in out["recent_events"]:
@@ -981,6 +905,107 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
             "reason": f"balance sheet is {rw.get('age_days')} days old -- runway estimate unreliable, verify before sizing",
             "url": None,
         })
+
+
+def price_metrics(bars: list[dict], closes: list[float]) -> dict:
+    """Where the price sits: against its own year, its recent high, and itself."""
+    last = closes[-1]
+    year = closes[-252:] if len(closes) >= 252 else closes
+    hi52, lo52 = max(year), min(year)
+    hi30 = max(closes[-30:])
+    return {
+        "close": round(last, 4),
+        "date": bars[-1]["date"],
+        "chg_1d_pct": _r(pct_change(closes, 1)),
+        "chg_5d_pct": _r(pct_change(closes, 5)),
+        "chg_20d_pct": _r(pct_change(closes, 20)),
+        "week52_high": round(hi52, 4),
+        "week52_low": round(lo52, 4),
+        "pct_off_52w_high": _r((last / hi52 - 1.0) * 100.0) if hi52 else None,
+        "pct_above_52w_low": _r((last / lo52 - 1.0) * 100.0) if lo52 else None,
+        "drawdown_from_30d_high_pct": _r((last / hi30 - 1.0) * 100.0) if hi30 else None,
+        "percentile_1y": _r(percentile_rank(year, last)),
+    }
+
+
+def technical_metrics(bars: list[dict], closes: list[float], vols: list[float]) -> dict:
+    """Indicator readings. RSI and %B are the two the tier rules actually use."""
+    last = closes[-1]
+    pctb, _upper, lower = bollinger_pct_b(closes)
+    a = atr(bars)
+    s20, s50, s200 = sma(closes, 20), sma(closes, 50), sma(closes, 200)
+    return {
+        "rsi14": _r(rsi(closes)),
+        "bollinger_pct_b": _r(pctb, 3),
+        "bollinger_lower": _r(lower),
+        "sma20": _r(s20), "sma50": _r(s50), "sma200": _r(s200),
+        "pct_vs_sma50": _r((last / s50 - 1.0) * 100.0) if s50 else None,
+        "pct_vs_sma200": _r((last / s200 - 1.0) * 100.0) if s200 else None,
+        "atr14": _r(a),
+        "atr_pct_of_price": _r(a / last * 100.0) if a and last else None,
+        "volume_last": vols[-1] if vols else None,
+        "volume_vs_20d_avg": (
+            _r(vols[-1] / (sum(vols[-20:]) / 20), 2)
+            if len(vols) >= 20 and sum(vols[-20:]) else None
+        ),
+    }
+
+
+def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
+            catalysts: dict | None = None, regime: dict | None = None,
+            resolved: dict | None = None, last_alerts: dict | None = None) -> dict:
+    # bars and closes must stay index-aligned: crash_scan maps a closes index
+    # back to bars[i]["date"], so filtering one list and not the other would
+    # pin a collapse to the wrong session.
+    bars = [b for b in (rec.get("bars") or []) if b.get("adjclose") is not None]
+    closes = [b["adjclose"] for b in bars]
+    vols = [b["volume"] for b in bars if b.get("volume") is not None]
+    bucket = rec.get("tier", "") or "A"
+    out: dict = {"symbol": rec["symbol"], "company": rec.get("company", ""),
+                 "bucket": bucket, "thesis": rec.get("thesis", ""),
+                 "invalidation": rec.get("invalidation", ""),
+                 "price_source": rec.get("price_source"),
+                 # Sizing ceiling is set by the watchlist bucket, not by the signal.
+                 "max_position_pct": (
+                     float(settings.get("max_position_pct_lottery", 5))
+                     if bucket == "lottery"
+                     else float(settings.get("max_position_pct", 28))
+                 )}
+
+    if len(closes) < 30:
+        out["tier"] = "NO_DATA"
+        out["reasons"] = ["insufficient price history"]
+        return out
+
+    last = closes[-1]
+    out["price"] = price_metrics(bars, closes)
+    out["technicals"] = technical_metrics(bars, closes, vols)
+
+    # A >15% single-day move is an event, not noise. It must be explained by a
+    # filing or news before any tier is acted on.
+    chg1 = out["price"]["chg_1d_pct"]
+    out["event_move"] = bool(chg1 is not None and abs(chg1) >= 15.0)
+    out["recent_events"] = crash_scan(bars, closes, rec.get("filings"))
+    out["relative_strength"] = relative_strength(bars, bench_bars or [])
+    out["insiders"] = insider_signal(rec.get("insiders"), last)
+    out["short"] = short_signal(rec.get("short_interest") or [], rec.get("short_volume") or [])
+    out["move"] = move_profile(bars, bench_bars or [])
+    out["float"] = float_metrics(rec.get("financials") or {}, bars, rec.get("short_interest") or [])
+    out["catalysts"] = (catalysts or {}).get(rec["symbol"], [])[:3]
+    out["tradability"] = tradability(bars, settings)
+    out["links"] = chart_links(rec["symbol"], rec.get("cik"))
+    out["links_md"] = links_markdown(rec["symbol"], out["links"])
+
+    hard, soft = evaluate_filings(rec.get("filings"))
+    out["hard_vetoes"], out["soft_flags"] = hard, soft
+    out["runway"] = runway(rec.get("financials"))
+    out["dilution"] = dilution(rec.get("financials"))
+    out["next_catalyst"] = next_catalyst(rec.get("trials"))
+    out["new_filings_since_last_run"] = rec.get("new_filings_since_last_run") or []
+
+    financial_vetoes(out, rec, hard, soft, settings)
+    rw = out["runway"]
+    min_rw = float(settings.get("min_runway_quarters_for_act", 3))
 
     reasons, tier = [], "NONE"
     p = out["price"]
