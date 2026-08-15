@@ -240,7 +240,7 @@ STRATEGY.local.md  your objective, risk posture, brokers (gitignored)
 catalysts.toml     dated binaries (PDUFA, AdCom, readouts) with sources
 scripts/           fetch, signals, helpers, notification, scoring
 prompts/daily.md   the standing instruction for the analysis pass
-systemd/           timer units
+systemd/ launchd/  timer units — Linux and macOS
 data/ logs/ reports/ state/    generated and personal — all gitignored
 ```
 
