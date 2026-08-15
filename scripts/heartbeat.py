@@ -72,7 +72,8 @@ def main() -> int:
         stale = weekdays_between(last, today)
         msg = (f"No report since {last} ({stale} weekday(s) ago). "
                f"Expected one every weekday evening -- check "
-               f"'journalctl --user -u pharma-desk.service -n 50'.")
+               f"'journalctl --user -u pharma-desk.service -n 50' (Linux) "
+               f"or ~/Library/Logs/pharma-desk.log (macOS).")
 
     healthy = last is not None and stale <= args.max_stale
     print(f"latest report: {last} ({path.name if path else 'none'})")

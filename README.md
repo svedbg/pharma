@@ -30,7 +30,8 @@ can be argued with. A price the model half-remembers never reaches the report.
 ## Requirements
 
 - Python **3.11+** (stdlib only — no pip install, nothing to rot in a cron job)
-- Linux with systemd user timers, or any scheduler that can run one shell script
+- Linux with systemd user timers, macOS with launchd (units for both are
+  included), or any scheduler that can run one shell script
 - API keys: **none**. Every data source is free and keyless.
 
 ## Setup
@@ -135,6 +136,19 @@ Two timers, both weekday-only:
 - **pharma-heartbeat** at 10:23 — alerts if no report appeared for two weekdays.
   Separate on purpose: **silence is this system's normal output**, so a broken
   run and a quiet market look identical without it.
+
+On **macOS** there is no systemd. `launchd/` holds the equivalents — same two
+jobs, same times:
+
+```bash
+launchd/install-launchd.sh              # idempotent; --uninstall to remove
+```
+
+The installer generates the plists at install time, resolving `claude` and a
+vetted `python3` up front, because launchd starts jobs from a clean
+environment. See `launchd/README.md` — including the one real parity gap: a
+Mac powered off across the trigger time skips that day (launchd catches up
+across sleep, not shutdown).
 
 ## Reading the output
 
