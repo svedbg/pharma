@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
+import re
 import sqlite3
 import sys
 import threading
@@ -26,15 +26,14 @@ import time
 import tomllib
 import urllib.error
 import urllib.parse
-import re
 import urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import localconfig  # noqa: E402
+import localconfig
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -158,7 +157,7 @@ def http_get(url: str, ua: str = BROWSER_UA, tries: int = 3, timeout: int = 30) 
             # 404 means "this company never reported this tag" -- not retryable.
             if e.code in (404, 403):
                 raise FetchError(f"{last} for {url}") from e
-        except Exception as e:  # noqa: BLE001 - network layer, anything can happen
+        except Exception as e:
             last = f"{type(e).__name__}: {e}"
         if attempt < tries - 1:
             time.sleep(1.5 * (attempt + 1))
@@ -334,7 +333,7 @@ def fetch_bars_yahoo(symbol: str, lookback_days: int) -> tuple[list[dict], dict]
                 continue  # halted / no print that day
             bars.append(
                 {
-                    "date": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d"),
+                    "date": datetime.fromtimestamp(ts, tz=UTC).strftime("%Y-%m-%d"),
                     "open": _at(quote.get("open"), i),
                     "high": _at(quote.get("high"), i),
                     "low": _at(quote.get("low"), i),
@@ -359,7 +358,7 @@ def fetch_bars_yahoo(symbol: str, lookback_days: int) -> tuple[list[dict], dict]
             "fifty_two_week_low": meta.get("fiftyTwoWeekLow"),
             "splits": [
                 {
-                    "date": datetime.fromtimestamp(v["date"], tz=timezone.utc).strftime("%Y-%m-%d"),
+                    "date": datetime.fromtimestamp(v["date"], tz=UTC).strftime("%Y-%m-%d"),
                     "ratio": v.get("splitRatio"),
                 }
                 for v in split_events.values()
@@ -940,7 +939,7 @@ def persist(con: sqlite3.Connection, ticker: str, bars, filings, fin) -> list[di
         ],
     )
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     known = {
         r[0] for r in con.execute("SELECT accession FROM filings WHERE ticker=?", (ticker,))
     }
@@ -1027,7 +1026,7 @@ def build_record(entry: dict, cik_map: dict, lookback: int, since: date):
     if cik and filings:
         try:
             rec["insiders"] = fetch_insider_trades(cik, filings)
-        except Exception as e:  # noqa: BLE001 - never let one bad Form 4 kill a name
+        except Exception as e:
             rec["errors"].append(f"insiders: {type(e).__name__}: {e}")
     rec["short_interest"] = fetch_short_interest(sym)
     return rec, bars, filings, fin
@@ -1056,7 +1055,7 @@ def main() -> int:
     since = date.today() - timedelta(days=400)
 
     snapshot: dict = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "local_date": date.today().isoformat(),
         "settings": settings,
         "tickers": {},
@@ -1091,13 +1090,11 @@ def main() -> int:
             pool.submit(build_record, entry, cik_map, lookback, since): entry["symbol"].upper()
             for entry in tickers
         }
-        done = 0
-        for fut in as_completed(futures):
+        for done, fut in enumerate(as_completed(futures), start=1):
             sym = futures[fut]
-            done += 1
             try:
                 results[sym] = fut.result()
-            except Exception as e:  # noqa: BLE001 - one bad ticker must not kill the run
+            except Exception as e:
                 results[sym] = ({"symbol": sym, "errors": [f"unhandled: {type(e).__name__}: {e}"]}, [], [], {})
             print(f"[fetch] {done}/{len(futures)} {sym}", file=sys.stderr)
 
@@ -1106,7 +1103,7 @@ def main() -> int:
         regsho = fetch_regsho({e["symbol"].upper() for e in tickers})
         print(f"[fetch] reg sho: {sum(1 for v in regsho.values() if v)} symbols with short volume",
               file=sys.stderr)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         regsho = {}
         snapshot["errors"].append(f"regsho: {e}")
 
@@ -1129,7 +1126,7 @@ def main() -> int:
     con.execute(
         "INSERT OR REPLACE INTO runs VALUES (?,?,?,?)",
         (
-            datetime.now(timezone.utc).isoformat(),
+            datetime.now(UTC).isoformat(),
             date.today().isoformat(),
             snapshot["status"],
             "; ".join(snapshot["errors"])[:500],

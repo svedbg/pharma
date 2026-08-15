@@ -19,6 +19,7 @@ retrospective and carries all the biases in scripts/backtest.py.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sqlite3
 import statistics
@@ -28,8 +29,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from signals import (  # noqa: E402
-    BENCHMARK, CAPITULATION_VOL, SETUP_PCTB, SETUP_RSI, bollinger_pct_b, rsi,
+from signals import (
+    BENCHMARK,
+    CAPITULATION_VOL,
+    SETUP_PCTB,
+    SETUP_RSI,
+    bollinger_pct_b,
+    rsi,
 )
 
 DB = ROOT / "data" / "history.sqlite"
@@ -166,17 +172,15 @@ def main() -> int:
             if capit:
                 scored[(source, h)]["capit"].append(val)
             if excess is not None and ctx_json:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     factor_rows.append((json.loads(ctx_json), h, excess))
-                except (ValueError, TypeError):
-                    pass
 
     for source in ("live", "backfill"):
         keys = [k for k in scored if k[0] == source]
         if not keys:
             continue
         total = len({a[0] + a[1] for a in alerts if a[5] == source})
-        label = "LIVE ALERTS" if source == "live" else f"BACKFILLED (retrospective, biased -- see docstring)"
+        label = "LIVE ALERTS" if source == "live" else "BACKFILLED (retrospective, biased -- see docstring)"
         print(f"\n{label}   {total} alert(s) recorded")
         for h in HORIZONS:
             s = scored.get((source, h))

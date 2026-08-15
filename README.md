@@ -55,7 +55,12 @@ committed by accident.
 
 ### 2. Build your watchlist
 
-Edit `watchlist.toml`. Only `symbol` is required — the SEC CIK and the
+```bash
+cp watchlist.example.toml watchlist.toml
+```
+
+`watchlist.toml` is gitignored — it is your trading plan, not shared code. Only
+`symbol` is required — the SEC CIK and the
 ClinicalTrials.gov sponsor resolve automatically from the company name.
 
 ```toml
@@ -69,7 +74,8 @@ invalidation_price = 0
 invalidation = "what would prove this wrong"
 ```
 
-The shipped watchlist is an example. Replace it with your own.
+`watchlist.example.toml` carries three names so the repo runs out of the box.
+Replace them with your own.
 
 ### 3. First run
 
@@ -159,6 +165,22 @@ python3 scripts/paper.py report         # did it actually beat the ETF?
 
 `report` says plainly whether the trades beat XBI, and refuses to let you
 over-read a small sample.
+
+## Development
+
+```bash
+make setup     # dev virtualenv: ruff + pytest (the runtime needs neither)
+make check     # lint + tests, exactly what CI runs
+```
+
+The test suite is regression protection, not decoration: every case maps to a
+bug that actually shipped here — an RSI seeded from the wrong end of the series,
+liquidity understated tenfold by a missing XBRL tag, a float ratio of 15,401%,
+an inline `#` comment silently disabling email. `test_runtime_has_no_third_party_imports`
+fails the build if anything under `scripts/` grows a dependency.
+
+CI runs on Python 3.11 and 3.12 — both, because a 3.12-only f-string once slipped
+past a 3.11 floor.
 
 ## Data sources
 

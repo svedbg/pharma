@@ -180,7 +180,7 @@ def main() -> int:
     for z in rows:
         lo = f"{z['entry_low']}" if z["entry_high"] else "-"
         hi = f"{z['entry_high']}" if z["entry_high"] else "-"
-        print(f"{z['symbol']:<8}{str(z['close'] or '-'):>10}{lo:>11}{hi:>12}  {z['status']:<18} {z['note']}")
+        print(f"{z['symbol']:<8}{z['close'] or '-'!s:>10}{lo:>11}{hi:>12}  {z['status']:<18} {z['note']}")
 
     priced = sum(1 for z in zones.values() if z["entry_high"])
     print(f"\n{priced}/{len(zones)} names have a zone; "

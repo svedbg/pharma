@@ -7,6 +7,13 @@ data/
 logs/
 state/
 
+# Your actual watchlist is a trading plan -- names, entry zones, invalidation
+# levels. watchlist.example.toml is committed in its place so the repo runs.
+watchlist.toml
+
+# Dev virtualenv (runtime needs none)
+.venv/
+
 # Reports are personal research notes; drop this line if you want them versioned.
 reports/
 

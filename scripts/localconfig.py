@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-CONFIG_DIR = Path(os.path.expanduser("~/.config/pharma"))
+CONFIG_DIR = Path("~/.config/pharma").expanduser()
 # Older installs used notify.env; both are read so nothing breaks on upgrade.
 CONFIG_FILES = (CONFIG_DIR / "pharma.env", CONFIG_DIR / "notify.env")
 

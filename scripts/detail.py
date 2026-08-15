@@ -66,7 +66,7 @@ def main() -> int:
               f"| vs SMA200 {t.get('pct_vs_sma200')}% | ATR {t.get('atr_pct_of_price')}% of price")
         print(f"vol vs 20d avg: {t.get('volume_vs_20d_avg')}x")
 
-        for label, key in (("REASONS", "reasons"),):
+        for _label, key in (("REASONS", "reasons"),):
             for x in sig.get(key, []):
                 print(f"  - {x}")
         for h in sig.get("hard_vetoes", []):

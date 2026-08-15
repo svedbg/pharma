@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from signals import bollinger_pct_b, percentile_rank, rsi  # noqa: E402
+from signals import bollinger_pct_b, percentile_rank, rsi
 
 DB = ROOT / "data" / "history.sqlite"
 
@@ -116,7 +116,7 @@ def main() -> int:
     bars = load_bars(con)
 
     all_rows = []
-    for tkr, series in bars.items():
+    for _tkr, series in bars.items():
         if len(series) < 60 + max(horizons) + 5:
             continue
         all_rows.extend(evaluate(series, horizons))

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import smtplib
 import ssl
 import sys
@@ -24,11 +23,11 @@ from email.message import EmailMessage
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import localconfig  # noqa: E402
-from render_email import build_email_html  # noqa: E402
+import localconfig
+from render_email import build_email_html
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG = Path(os.path.expanduser("~/.config/pharma/notify.env"))
+CONFIG = Path("~/.config/pharma/notify.env").expanduser()
 
 
 def _clean_value(raw: str) -> str:
@@ -77,7 +76,7 @@ def send_ntfy(cfg: dict, title: str, body: str, priority: str = "default", tags:
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             return 200 <= r.status < 300
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"[notify] ntfy failed: {e}", file=sys.stderr)
         return False
 
@@ -124,7 +123,7 @@ def send_email(cfg: dict, subject: str, body: str, html_body: str | None = None,
                     s.login(user, password)
                 s.send_message(msg)
         return True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"[notify] email failed: {e}", file=sys.stderr)
         return False
 
@@ -188,7 +187,7 @@ def main() -> int:
         html_body = None
         try:
             html_body = build_email_html(report_md, sig)
-        except Exception as e:  # noqa: BLE001 - fall back to text rather than lose the mail
+        except Exception as e:
             print(f"[notify] HTML render failed, sending plain text: {e}", file=sys.stderr)
 
         ok = send_email(

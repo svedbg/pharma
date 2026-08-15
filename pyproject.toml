@@ -1,0 +1,75 @@
+[project]
+name = "pharma-desk"
+version = "1.0.0"
+description = "Unattended daily research desk for small-cap pharma: SEC filings, signals and a veto layer"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+
+# Deliberately empty. The runtime is stdlib-only so an unattended cron job has
+# nothing that can break on an upgrade, and no virtualenv is needed to run it.
+# Verified by tests/test_no_runtime_deps.py -- adding a third-party import to
+# scripts/ will fail the suite.
+dependencies = []
+
+[project.optional-dependencies]
+# Development tooling only; never required to run the desk.
+#   pip:    pip install -e '.[dev]'
+#   poetry: poetry install --extras dev
+dev = [
+    "ruff>=0.6",
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# Plain scripts rather than an installable package; nothing to build.
+py-modules = []
+
+# ----------------------------------------------------------------------- ruff
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["scripts", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # import sorting
+    "B",         # bugbear: real bug patterns
+    "C4",        # comprehension clarity
+    "UP",        # modern syntax for the target version
+    "SIM",       # simplifications
+    "RET",       # return-flow clarity
+    "PTH",       # prefer pathlib
+    "RUF",       # ruff's own checks
+]
+ignore = [
+    "E501",    # long lines: prose in docstrings explains why code exists, which
+               # matters more here than wrapping. Enforced loosely via line-length.
+    "B008",    # function call in default arg: not a pattern used here
+    "SIM108",  # ternaries are not always clearer than if/else in this code
+    "RET504",  # a named result before return often documents intent
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests reach into module internals on purpose.
+"tests/*" = ["E402"]
+# Scripts import sibling modules after a sys.path insert, which must precede them.
+"scripts/*" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["localconfig", "signals", "fetch", "notify", "render_email"]
+
+# --------------------------------------------------------------------- pytest
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["scripts"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error"]

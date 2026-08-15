@@ -93,7 +93,7 @@ def main() -> int:
                             priority="high", tags="warning")
         ok_mail = send_email(cfg, "[biotech desk] no reports - run may be broken", msg)
         print(f"alerted: ntfy={ok_push} email={ok_mail}", file=sys.stderr)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"heartbeat could not notify: {e}", file=sys.stderr)
         return 1
     return 1

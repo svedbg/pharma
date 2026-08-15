@@ -1,0 +1,51 @@
+# Example watchlist. Copy to watchlist.toml and replace with your own names.
+#
+#   symbol   the only required field; CIK and the ClinicalTrials.gov sponsor
+#            resolve automatically from SEC's company list
+#   tier     A | B | lottery -- sets the position-size ceiling, nothing else
+#   thesis   leave blank until researched; the daily run proposes these for you
+#   entry_*  set by `python3 scripts/propose_zones.py --apply`
+#   invalidation_price  a close at or below this raises a high-severity EXIT
+#
+# Zeroed entry zones mean the ACT tier stays disabled for that name until you
+# set them. WATCH and SETUP still fire.
+
+[settings]
+max_position_pct = 28            # tier A/B ceiling, % of allocated capital
+max_position_pct_lottery = 5     # per-name ceiling for the lottery bucket
+max_bucket_pct_lottery = 15      # total exposure across the lottery bucket
+min_cash_reserve_pct = 15
+min_runway_quarters_for_act = 3
+lookback_days = 730
+new_filing_window_days = 5
+
+
+[[ticker]]
+symbol = "OTLK"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 0
+entry_high = 0
+invalidation_price = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "CYTK"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 0
+entry_high = 0
+invalidation_price = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "AARD"
+tier = "lottery"
+sponsor = ""
+thesis = ""
+entry_low = 0
+entry_high = 0
+invalidation_price = 0
+invalidation = ""

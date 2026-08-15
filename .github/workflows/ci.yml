@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the declared floor; 3.12 is what it runs on in practice.
+        # Both are tested because a 3.12-only f-string once slipped through.
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e '.[dev]'
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: pytest
+      - name: Runtime must import on a bare interpreter
+        # No virtualenv exists when the systemd timer fires, so every script has
+        # to import using nothing but the standard library.
+        run: |
+          for f in scripts/*.py; do
+            python -c "import ast,sys; ast.parse(open('$f').read())" || exit 1
+          done

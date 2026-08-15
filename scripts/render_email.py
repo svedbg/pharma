@@ -141,15 +141,17 @@ def md_to_html(md: str) -> str:
                 close_list()
                 out.append('<ul style="margin:8px 0;padding-left:20px">')
                 list_type = "ul"
+            item = _inline(re.sub(r"^[-*]\s+", "", stripped))
             out.append(f'<li style="font-size:14px;line-height:1.5;margin:3px 0;color:{INK}">'
-                       f'{_inline(re.sub(r"^[-*]\s+", "", stripped))}</li>')
+                       f'{item}</li>')
         elif re.match(r"^\d+\.\s+", stripped):
             if list_type != "ol":
                 close_list()
                 out.append('<ol style="margin:8px 0;padding-left:22px">')
                 list_type = "ol"
+            item = _inline(re.sub(r"^\d+\.\s+", "", stripped))
             out.append(f'<li style="font-size:14px;line-height:1.5;margin:3px 0;color:{INK}">'
-                       f'{_inline(re.sub(r"^\d+\.\s+", "", stripped))}</li>')
+                       f'{item}</li>')
         else:
             close_list()
             out.append(f'<p style="font-size:14px;line-height:1.55;margin:8px 0;color:{INK}">'
@@ -206,7 +208,7 @@ def _movers_block(sig: dict, limit: int = 8) -> str:
         m = r["move"]
         up = m["direction"] == "up"
         col = GOOD if up else BAD
-        sigma = f"{abs(m['sigma']):.1f}σ" if m.get("sigma") is not None else ""
+        sigma = f"{abs(m['sigma']):.1f}\u03c3" if m.get("sigma") is not None else ""
         extra = []
         if m.get("excess_1d_pct") is not None:
             extra.append(f"{m['excess_1d_pct']:+.1f}pp vs XBI")
@@ -302,7 +304,17 @@ def build_email_html(report_md: str, sig: dict) -> str:
         html_out = _render(trimmed, sig, truncated=True)
         if len(html_out.encode("utf-8")) <= MAX_HTML_BYTES:
             return html_out
-    return html_out
+    # Shrinking the body failed to get under the limit -- a pathological report,
+    # e.g. one that is almost entirely a very wide table. Returning the oversized
+    # document would be silently clipped by the mail client mid-content, so fall
+    # back to a document with no report body at all. The summary, movers, charts
+    # and the attachment still carry everything that matters.
+    return _render(
+        "The report was too large to inline without being clipped by your mail "
+        "client, so it has been omitted here. **The complete report is attached "
+        "as markdown.**",
+        sig, truncated=True,
+    )
 
 
 def _render(report_md: str, sig: dict, truncated: bool) -> str:

@@ -16,6 +16,7 @@ label it one.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import sqlite3
 import sys
@@ -87,7 +88,7 @@ def rsi(xs: list[float], n: int = 14):
     """Wilder-smoothed RSI."""
     if len(xs) < n + 1:
         return None
-    deltas = [b - a for a, b in zip(xs[:-1], xs[1:])]
+    deltas = [b - a for a, b in itertools.pairwise(xs)]
     seed = deltas[:n]
     ag = sum(d for d in seed if d > 0) / n
     al = sum(-d for d in seed if d < 0) / n
@@ -126,11 +127,11 @@ def atr(bars: list[dict], n: int = 14):
     if len(bars) < n + 1:
         return None
     trs = []
-    for prev, cur in zip(bars[-(n + 1) : -1], bars[-n:]):
-        h, l, pc = cur.get("high"), cur.get("low"), prev.get("close")
-        if None in (h, l, pc):
+    for prev, cur in zip(bars[-(n + 1) : -1], bars[-n:], strict=False):
+        hi, lo, pc = cur.get("high"), cur.get("low"), prev.get("close")
+        if None in (hi, lo, pc):
             continue
-        trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+        trs.append(max(hi - lo, abs(hi - pc), abs(lo - pc)))
     return sum(trs) / len(trs) if trs else None
 
 
@@ -587,8 +588,15 @@ def move_profile(bars: list[dict], bench_bars: list[dict]):
         "benchmark_1d_pct": round(bench_1d, 2) if bench_1d is not None else None,
         "excess_1d_pct": round(today - bench_1d, 2) if bench_1d is not None else None,
     }
-    # Big = unusual for this name, or simply large in absolute terms.
-    out["big_move"] = bool((z is not None and abs(z) >= 2.0) or abs(today) >= 10.0)
+    # Big = unusual for this name, or simply large in absolute terms. The
+    # absolute floor matters: a near-flat series has almost no measured
+    # volatility, so an ordinary 0.1% drift divides out to a huge sigma. A move
+    # that small is never news regardless of how quiet the name normally is.
+    MIN_MEANINGFUL_MOVE_PCT = 3.0
+    out["big_move"] = bool(
+        (z is not None and abs(z) >= 2.0 and abs(today) >= MIN_MEANINGFUL_MOVE_PCT)
+        or abs(today) >= 10.0
+    )
     out["direction"] = "up" if today > 0 else "down"
     return out
 
@@ -832,7 +840,7 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
     last = closes[-1]
     year = closes[-252:] if len(closes) >= 252 else closes
     hi52, lo52 = max(year), min(year)
-    pctb, bb_up, bb_lo = bollinger_pct_b(closes)
+    pctb, _bb_up, bb_lo = bollinger_pct_b(closes)
     a = atr(bars)
     s20, s50, s200 = sma(closes, 20), sma(closes, 50), sma(closes, 200)
     hi30 = max(closes[-30:])
@@ -1359,7 +1367,7 @@ def main() -> int:
             con.commit()
             con.close()
             print(f"[signals] logged {len(changes)} alert(s) for scoring", file=sys.stderr)
-        except Exception as e:  # noqa: BLE001 - logging must never break the run
+        except Exception as e:
             print(f"[signals] WARNING: could not log alerts: {e}", file=sys.stderr)
 
     Path(args.out).write_text(json.dumps(out, indent=2))

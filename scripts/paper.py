@@ -138,7 +138,7 @@ def cmd_status(c, a) -> int:
     print(f"{'Ticker':<7}{'Opened':<12}{'Entry':>9}{'Last':>9}{'Abs':>9}{'vs XBI':>10}"
           f"{'Size':>6}  Stop / horizon")
     print("-" * 84)
-    for t, opened, entry, size, stop, horizon, thesis in rows:
+    for t, opened, entry, size, stop, horizon, _thesis in rows:
         d, px = latest_price(c, t)
         if not px:
             print(f"{t:<7}{opened:<12}{entry:>9}{'no price':>9}")
@@ -164,7 +164,7 @@ def cmd_report(c, a) -> int:
     abs_rets, exc_rets = [], []
     print(f"{'Ticker':<7}{'Opened':<12}{'Closed':<12}{'Abs':>9}{'vs XBI':>10}  Note")
     print("-" * 78)
-    for t, opened, entry, closed, exit_px, horizon, note in rows:
+    for t, opened, entry, closed, exit_px, _horizon, note in rows:
         ret = (exit_px / entry - 1.0) * 100.0
         bench = bench_return(c, opened, closed)
         abs_rets.append(ret)
@@ -191,7 +191,7 @@ def cmd_report(c, a) -> int:
             print(f"  Beating {BENCHMARK} by {med:+.1f}pp median. That is the case for sizing up.")
         else:
             print(f"  NOT beating {BENCHMARK} ({med:+.1f}pp median). On this evidence, buying the")
-            print(f"  ETF would have been better than taking these trades.")
+            print("  ETF would have been better than taking these trades.")
     if len(abs_rets) < 20:
         print(f"\n  {len(abs_rets)} trades is too few to conclude anything. Treat as provisional.")
     return 0
