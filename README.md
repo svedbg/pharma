@@ -33,7 +33,8 @@ can be argued with. A price the model half-remembers never reaches the report.
   `run_daily.sh` probes `python3`, then `~/.local/bin/python3`, for `tomllib` +
   `pyexpat` and refuses interpreters that fail; set `PHARMA_PYTHON=/path/to/python3`
   to point it somewhere else.
-- Linux with systemd user timers, or any scheduler that can run one shell script
+- Linux with systemd user timers, macOS with launchd (units for both are
+  included), or any scheduler that can run one shell script
 - API keys: **none**. Every data source is free and keyless.
 
 ## Setup
@@ -139,6 +140,19 @@ Two timers, both weekday-only:
   Separate on purpose: **silence is this system's normal output**, so a broken
   run and a quiet market look identical without it.
 
+On **macOS** there is no systemd. `launchd/` holds the equivalents — same two
+jobs, same times:
+
+```bash
+launchd/install-launchd.sh              # idempotent; --uninstall to remove
+```
+
+The installer generates the plists at install time, resolving `claude` and a
+vetted `python3` up front, because launchd starts jobs from a clean
+environment. See `launchd/README.md` — including the one real parity gap: a
+Mac powered off across the trigger time skips that day (launchd catches up
+across sleep, not shutdown).
+
 ## Reading the output
 
 | Tier | Meaning |
@@ -229,7 +243,7 @@ STRATEGY.local.md  your objective, risk posture, brokers (gitignored)
 catalysts.toml     dated binaries (PDUFA, AdCom, readouts) with sources
 scripts/           fetch, signals, helpers, notification, scoring
 prompts/daily.md   the standing instruction for the analysis pass
-systemd/           timer units
+systemd/ launchd/  timer units — Linux and macOS
 data/ logs/ reports/ state/    generated and personal — all gitignored
 ```
 

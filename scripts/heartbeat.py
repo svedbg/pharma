@@ -5,10 +5,10 @@ This exists because silence is the desk's *normal* output. A week with nothing
 to buy and a week where the timer never fired look identical from the outside,
 so a broken run can go unnoticed indefinitely.
 
-It deliberately runs from its own systemd timer and shares no code path with
-run_daily.sh beyond notify.py. If the main run dies early -- a bad PATH, a
-Python failure before notify.py is reachable -- run_daily.sh's own failure
-handler dies with it. This does not.
+It deliberately runs from its own timer -- systemd on Linux, launchd on macOS --
+and shares no code path with run_daily.sh beyond notify.py. If the main run
+dies early -- a bad PATH, a Python failure before notify.py is reachable --
+run_daily.sh's own failure handler dies with it. This does not.
 
     python3 scripts/heartbeat.py            # check, alert if stale
     python3 scripts/heartbeat.py --status   # print state, never notify
@@ -70,9 +70,12 @@ def main() -> int:
         stale = 99
     else:
         stale = weekdays_between(last, today)
+        # Name the log this machine actually has. Listing both taught the
+        # reader to skip the line to find their half of it.
+        where = ("~/Library/Logs/pharma-desk.log" if sys.platform == "darwin"
+                 else "'journalctl --user -u pharma-desk.service -n 50'")
         msg = (f"No report since {last} ({stale} weekday(s) ago). "
-               f"Expected one every weekday evening -- check "
-               f"'journalctl --user -u pharma-desk.service -n 50'.")
+               f"Expected one every weekday evening -- check {where}.")
 
     healthy = last is not None and stale <= args.max_stale
     print(f"latest report: {last} ({path.name if path else 'none'})")
