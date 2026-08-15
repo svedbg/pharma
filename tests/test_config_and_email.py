@@ -114,3 +114,34 @@ def test_runtime_has_no_third_party_imports():
     third_party = sorted(m for m in external
                          if m not in sys.stdlib_module_names and m not in local)
     assert not third_party, f"runtime must stay stdlib-only, found: {third_party}"
+
+
+def test_modules_import_without_any_configuration(monkeypatch, tmp_path):
+    """Importing a module must never require configuration.
+
+    fetch.py used to resolve the SEC contact address at module level, so
+    `import fetch` raised SystemExit whenever the setting was absent. That broke
+    CI, broke a fresh clone's first test run, and would break any tool that
+    merely imports the module. Configuration is needed to make a request, not to
+    define a function.
+    """
+    import importlib
+
+    import localconfig
+    # No environment variable and no config file anywhere.
+    monkeypatch.delenv("SEC_CONTACT_EMAIL", raising=False)
+    monkeypatch.setattr(localconfig, "CONFIG_FILES", (tmp_path / "absent.env",))
+
+    for name in ("fetch", "signals", "notify", "paper", "screen", "propose_zones"):
+        importlib.reload(importlib.import_module(name))
+
+
+def test_sec_contact_is_still_demanded_before_a_request(monkeypatch, tmp_path):
+    """Lazy must not mean optional -- the failure moves, it does not disappear."""
+    import fetch
+    import localconfig
+    monkeypatch.delenv("SEC_CONTACT_EMAIL", raising=False)
+    monkeypatch.setattr(localconfig, "CONFIG_FILES", (tmp_path / "absent.env",))
+    monkeypatch.setattr(fetch, "_SEC_UA", None)
+    with pytest.raises(SystemExit, match="SEC_CONTACT_EMAIL"):
+        fetch.sec_ua()

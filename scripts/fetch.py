@@ -41,9 +41,22 @@ DB = DATA / "history.sqlite"
 
 # SEC requires a declarative User-Agent with contact info and asks for <10 req/s.
 # SEC mandates a real contact address in the User-Agent and throttles generic
-# agents. It is read from local settings, never hardcoded, so the repository
-# carries no personal address.
-SEC_UA = f"pharma-desk/1.0 (personal research; {localconfig.sec_contact()})"
+# agents. Read from local settings, never hardcoded, so the repository carries
+# no personal address.
+#
+# Resolved lazily on first use rather than at import. Doing it at module level
+# meant `import fetch` itself raised SystemExit when the setting was absent --
+# which broke CI, broke a fresh clone's test run, and would break any tool that
+# merely imports this module. Configuration is needed to make a request, not to
+# define a function.
+_SEC_UA: str | None = None
+
+
+def sec_ua() -> str:
+    global _SEC_UA
+    if _SEC_UA is None:
+        _SEC_UA = f"pharma-desk/1.0 (personal research; {localconfig.sec_contact()})"
+    return _SEC_UA
 WORKERS = 6
 
 
@@ -166,7 +179,7 @@ def http_get(url: str, ua: str = BROWSER_UA, tries: int = 3, timeout: int = 30) 
 
 def sec_get(url: str) -> dict:
     SEC_LIMITER.wait()
-    return json.loads(http_get(url, ua=SEC_UA))
+    return json.loads(http_get(url, ua=sec_ua()))
 
 
 # --------------------------------------------------------------------------- db
@@ -392,7 +405,7 @@ def load_cik_map(force: bool = False) -> dict[str, dict]:
             if cached and isinstance(next(iter(cached.values())), dict):
                 return cached  # ignore the older ticker->str format
 
-    raw = json.loads(http_get("https://www.sec.gov/files/company_tickers.json", ua=SEC_UA))
+    raw = json.loads(http_get("https://www.sec.gov/files/company_tickers.json", ua=sec_ua()))
     mapping = {
         row["ticker"].upper(): {"cik": str(row["cik_str"]).zfill(10), "title": row["title"]}
         for row in raw.values()
@@ -717,7 +730,7 @@ def classify_offerings(filings: list[dict], lookback_days: int = 12) -> int:
             continue
         try:
             SEC_LIMITER.wait()
-            body = http_get(f["url"], ua=SEC_UA, tries=2, timeout=40)[:400_000]
+            body = http_get(f["url"], ua=sec_ua(), tries=2, timeout=40)[:400_000]
             text = re.sub(r"<[^>]+>", " ", body.decode("utf-8", "replace")).lower()
             text = re.sub(r"\s+", " ", text)
         except FetchError:
@@ -767,7 +780,7 @@ def fetch_insider_trades(cik: str, filings: list[dict], lookback_days: int = 120
         raw = f"{parts[0]}/{parts[2]}" if len(parts) == 3 and parts[1].startswith("xsl") else url
         try:
             SEC_LIMITER.wait()
-            xml = http_get(raw, ua=SEC_UA, tries=2)
+            xml = http_get(raw, ua=sec_ua(), tries=2)
             doc = ET.fromstring(xml)
         except (FetchError, ET.ParseError):
             errors += 1
