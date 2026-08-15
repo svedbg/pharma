@@ -11,6 +11,9 @@ state/
 # levels. watchlist.example.toml is committed in its place so the repo runs.
 watchlist.toml
 
+# Generated PDF -- rebuild with: make briefing
+docs/*.pdf
+
 # Dev virtualenv (runtime needs none)
 .venv/
 

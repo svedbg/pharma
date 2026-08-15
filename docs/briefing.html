@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Biotech Desk — Project Briefing</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 16mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: "Charter", "Georgia", "Times New Roman", serif;
+    font-size: 10.2pt; line-height: 1.5; color: #14171a; margin: 0;
+  }
+  h1, h2, h3, .label, table, .box-title {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  h1 { font-size: 24pt; line-height: 1.15; margin: 0 0 4pt; letter-spacing: -0.5pt; }
+  h2 {
+    font-size: 13pt; margin: 20pt 0 7pt; padding-bottom: 3pt;
+    border-bottom: 1.5pt solid #14171a; letter-spacing: -0.2pt;
+  }
+  h3 { font-size: 10.8pt; margin: 13pt 0 4pt; }
+  p { margin: 0 0 7pt; }
+  ul, ol { margin: 0 0 8pt; padding-left: 15pt; }
+  li { margin-bottom: 3.5pt; }
+  strong { font-weight: 700; }
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.6pt;
+    background: #f1f3f5; padding: 0.5pt 3pt; border-radius: 2pt;
+  }
+  .label {
+    font-size: 7.8pt; text-transform: uppercase; letter-spacing: 1.1pt;
+    color: #6b7280; font-weight: 700;
+  }
+  .subtitle { font-size: 11.5pt; color: #4b5563; margin: 0 0 3pt; }
+  .meta { font-size: 8.4pt; color: #6b7280; margin-top: 6pt; }
+  header { border-bottom: 2.5pt solid #14171a; padding-bottom: 10pt; margin-bottom: 6pt; }
+
+  table { width: 100%; border-collapse: collapse; margin: 8pt 0 10pt; font-size: 8.8pt; }
+  th {
+    text-align: left; padding: 4.5pt 6pt; border-bottom: 1pt solid #14171a;
+    font-size: 7.8pt; text-transform: uppercase; letter-spacing: 0.5pt; color: #4b5563;
+  }
+  td { padding: 4.5pt 6pt; border-bottom: 0.5pt solid #e5e7eb; vertical-align: top; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .good { color: #047857; font-weight: 700; }
+  .bad { color: #b91c1c; font-weight: 700; }
+
+  .box {
+    border: 0.8pt solid #d1d5db; border-left: 3pt solid #14171a;
+    padding: 8pt 11pt; margin: 10pt 0; background: #fafafa;
+  }
+  .box.warn { border-left-color: #b45309; background: #fffbeb; }
+  .box.alert { border-left-color: #b91c1c; background: #fef2f2; }
+  .box-title {
+    font-size: 8pt; text-transform: uppercase; letter-spacing: 0.9pt;
+    font-weight: 700; margin-bottom: 3pt; color: #374151;
+  }
+  .box.warn .box-title { color: #b45309; }
+  .box.alert .box-title { color: #b91c1c; }
+  .box p:last-child { margin-bottom: 0; }
+
+  .pipeline { display: flex; gap: 5pt; margin: 10pt 0; align-items: stretch; }
+  .stage {
+    flex: 1; border: 0.8pt solid #d1d5db; padding: 6pt 7pt; background: #fff;
+  }
+  .stage .n {
+    font-size: 7pt; letter-spacing: 0.8pt; color: #6b7280; font-weight: 700;
+    font-family: Helvetica, Arial, sans-serif;
+  }
+  .stage .t { font-weight: 700; font-size: 9.2pt; margin: 1pt 0 2pt; }
+  .stage .d { font-size: 8pt; color: #4b5563; line-height: 1.35; }
+
+  .cols { display: flex; gap: 14pt; }
+  .cols > div { flex: 1; }
+  .avoid-break { break-inside: avoid; }
+  table { break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
+  .page-break { break-before: page; }
+  footer {
+    margin-top: 16pt; padding-top: 7pt; border-top: 0.5pt solid #d1d5db;
+    font-size: 8pt; color: #6b7280;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="label">Project Briefing</div>
+  <h1>Biotech Desk</h1>
+  <p class="subtitle">An automated research analyst for small-cap pharma —
+    and an honest account of what it can and cannot yet prove.</p>
+  <div class="meta">Status: operational since 14 August 2026 · 59 names ·
+    Private repository · Author: svedbg</div>
+</header>
+
+<h2>1. What it does</h2>
+
+<p>Every weekday evening, without supervision, the system reads the primary record
+for a watchlist of small-cap pharmaceutical companies — SEC filings, prices,
+insider transactions, short interest, clinical trial registries — decides whether
+anything has genuinely changed, writes a research report, and sends a phone
+notification <strong>only when something is worth acting on</strong>. Most evenings
+it sends nothing, which is the intended behaviour.</p>
+
+<div class="pipeline">
+  <div class="stage"><div class="n">STAGE 1</div><div class="t">Facts</div>
+    <div class="d">Deterministic collection from primary sources. No estimation, no inference. Fails loudly rather than guessing.</div></div>
+  <div class="stage"><div class="n">STAGE 2</div><div class="t">Arithmetic</div>
+    <div class="d">Fixed rules produce indicators, tiers and vetoes. Same input always yields the same output.</div></div>
+  <div class="stage"><div class="n">STAGE 3</div><div class="t">Judgement</div>
+    <div class="d">A language model reasons over stage 2, researches the news, and writes the report. It can be argued with.</div></div>
+  <div class="stage"><div class="n">STAGE 4</div><div class="t">Delivery</div>
+    <div class="d">HTML email with the report attached; phone push only on a genuine state change.</div></div>
+</div>
+
+<p>The separation between stages 1–2 and stage 3 is the central design decision.
+A language model is excellent at reading a prospectus and deciding whether an
+offering was priced at a discount. It is unreliable at remembering a share count.
+So it is never permitted to be the source of a number: every figure in the report
+traces to a file fetched from a primary source, or it is reported as unknown.</p>
+
+<h2>2. The problem it solves</h2>
+
+<p>A conventional stock screener applied to this sector produces a list of names
+that have fallen a long way. That list is close to worthless, because
+<strong>in small-cap biotech most large drawdowns are correctly pricing a broken
+thesis</strong>. The stock is cheap because the trial failed, the FDA said no, or
+the company is about to issue shares at a discount to survive.</p>
+
+<p>The system's core mechanism is therefore not a signal but a <em>refusal</em>.
+A veto layer blocks any buy indication sitting on top of:</p>
+
+<table>
+  <tr><th style="width:38%">Condition</th><th>Why it invalidates a low price</th></tr>
+  <tr><td>Priced offering (<code>424B</code>)</td><td>New shares are being sold at a discount right now; the price is falling for a mechanical reason</td></tr>
+  <tr><td>Listing deficiency (8-K item 3.01)</td><td>The exchange has started a delisting clock</td></tr>
+  <tr><td>Auditor change / non-reliance</td><td>The financial statements themselves are in question</td></tr>
+  <tr><td>Any −25% session in 10 days</td><td>Something happened. Oversold indicators are at their most seductive exactly when they are most wrong</td></tr>
+  <tr><td>Under 1.5 quarters of cash</td><td>A dilutive raise is near-certain, and it will be priced below the market</td></tr>
+</table>
+
+<p>A veto can only be overturned in the report by citing specific evidence. This
+has already worked in practice in both directions: an offering flagged at Cogent
+was correctly identified as an at-the-market programme rather than a discounted
+takedown and cleared, while two Outlook Therapeutics filings were confirmed as
+genuine priced dilution and upheld.</p>
+
+<h2>3. What it caught in its first week</h2>
+
+<table>
+  <tr><th style="width:16%">Name</th><th>Event</th><th style="width:34%">System response</th></tr>
+  <tr><td><strong>SION</strong></td><td>Fell <span class="bad">−91% in one session</span> on a trial outcome. RSI 21.8 and %B 0.03 — textbook "oversold"</td><td>Blocked. The collapse veto identified the causal 8-K and refused the setup</td></tr>
+  <tr><td><strong>OTLK</strong></td><td>Down 19% on the day; two priced offerings inside 48 hours; 0.6 quarters of cash</td><td>Three hard vetoes. Conviction score −7, labelled <em>avoid</em></td></tr>
+  <tr><td><strong>CAPR</strong></td><td>Executives sold $3.1M at $30.38 in late June</td><td>Flagged; the stock was $4.21 six weeks later</td></tr>
+  <tr><td><strong>SMMT</strong></td><td>Both co-CEOs bought <span class="good">$103.6M</span> of stock on the open market</td><td>Surfaced as the strongest available evidence for overturning a veto</td></tr>
+  <tr><td><strong>TERN, NUVL</strong></td><td>Acquired by Merck and GSK — ceased to exist as tickers</td><td>Detected as unresolvable symbols rather than silent data failures</td></tr>
+</table>
+
+<h2>4. Why it is credible: the thresholds are measured</h2>
+
+<p>Most systems of this kind are built on numbers chosen because they are
+conventional — RSI below 30, price in the bottom quartile. Here every threshold
+was tested against the project's own stored history (29,077 ticker-days, no
+lookahead) before being adopted. Three conventional choices proved wrong:</p>
+
+<table>
+  <tr><th>Rule</th><th class="num">Fires</th><th class="num">Edge @20d</th><th class="num">@60d</th><th>Verdict</th></tr>
+  <tr><td>Bottom decile of 1-year range</td><td class="num">19.3%</td><td class="num">+0.49pp</td><td class="num bad">−2.68pp</td><td>Noise. Was the WATCH rule; removed</td></tr>
+  <tr><td>RSI &lt; 25</td><td class="num">1.5%</td><td class="num">+2.38pp</td><td class="num bad">−9.59pp</td><td>More oversold is <em>worse</em>. Now a distress warning</td></tr>
+  <tr><td>RSI&lt;35, %B&lt;0.15</td><td class="num">6.6%</td><td class="num">+2.90pp</td><td class="num">−0.49pp</td><td>Adopted as SETUP</td></tr>
+  <tr><td>…plus volume &gt; 1.5× average</td><td class="num">1.9%</td><td class="num">+2.63pp</td><td class="num good">+1.72pp</td><td>The only variant durable past 20 sessions</td></tr>
+</table>
+
+<div class="box alert avoid-break">
+  <div class="box-title">The finding that governs the whole system</div>
+  <p>When alerts are scored against <strong>XBI</strong> — the biotech ETF anyone
+  can buy — rather than against an average of all days in the universe, the
+  apparent edge disappears. Oversold alerts returned <strong>−2.28% median
+  excess at 60 sessions</strong>. Only those confirmed by capitulation volume
+  stayed positive (+0.25% median, +7.08% mean).</p>
+  <p>The earlier "edge" was measured against a baseline nobody can purchase.
+  Against the investable alternative it is not there. The system now encodes
+  this: the actionable tier <em>requires</em> volume confirmation, and the
+  reports state plainly that the technical trigger is timing for names already
+  wanted on fundamentals — never a reason to buy on its own.</p>
+</div>
+
+<h2>5. Gotchas and honest limitations</h2>
+
+<h3>Nothing is validated forward yet</h3>
+<p>Every performance number above is retrospective. It carries survivorship bias
+— acquired and delisted names are absent from the history — was measured during a
+period when the sector rose 24%, and models no transaction costs, which are
+material on micro-caps with wide spreads. <strong>Treat it as a smoke test of the
+thresholds, not evidence of profitability.</strong></p>
+
+<h3>The data is full of traps, and each one produced a wrong answer first</h3>
+<table>
+  <tr><th style="width:34%">Trap</th><th>What it did before being fixed</th></tr>
+  <tr><td>Cash ≠ liquidity</td><td>Counting only cash understated one company's runway <strong>six-fold</strong> and nearly triggered a false financing veto on a company with 13 quarters of money</td></tr>
+  <tr><td>Companies abandon XBRL tags</td><td>Returned a six-year-old $24.9M cash figure for a company holding $816M</td></tr>
+  <tr><td>Filer data can be nonsense</td><td>One company's own reported float implied <strong>15,401% of float short</strong></td></tr>
+  <tr><td>Cash-flow figures are cumulative</td><td>A one-off licensing payment read as a burn rate, implying a funding crisis at a cash-generative company</td></tr>
+  <tr><td>XBRL lags the filing</td><td>Fresh quarterly numbers exist in an earnings release weeks before they are machine-readable</td></tr>
+</table>
+<p>All are now guarded, and the guards are covered by tests. The lesson generalises:
+<strong>implausible financial data is far more often a broken tag than a broken
+company</strong>, and the system now proves the difference before acting on it.</p>
+
+<h3>Silence is indistinguishable from failure</h3>
+<p>The system's normal output is "nothing to do". A week of silence because the
+market was quiet and a week of silence because the scheduler broke look identical.
+A separate heartbeat process therefore raises an alarm if no report appears for
+two weekdays.</p>
+
+<h3>It cannot handicap a binary</h3>
+<p>Faced with a company seven days from an FDA decision after a negative advisory
+vote, the system says so prominently and then declines to advise. It can establish
+what happened, what is at stake and what the balance sheet supports. It cannot
+tell you what a regulator will decide, and it does not pretend to.</p>
+
+<div class="box warn avoid-break">
+  <div class="box-title">The principal risk is behavioural, not technical</div>
+  <p>The position-size ceiling is 28% of allocated capital per name. Applied to
+  signals that have not been validated forward, that is an aggressive bet on
+  reasoning rather than evidence. The paper-trading log exists precisely so the
+  question can be settled at the cost of patience instead of capital.</p>
+</div>
+
+<h2 class="page-break">6. Plan</h2>
+
+<table>
+  <tr><th style="width:15%">Phase</th><th style="width:20%">When</th><th>Objective</th></tr>
+  <tr>
+    <td><strong>Now</strong></td><td>This week</td>
+    <td>Verify alert delivery end-to-end. Populate researched theses for the 49 names still blank — the daily run proposes five per session. Log intended trades on paper rather than executing.</td>
+  </tr>
+  <tr>
+    <td><strong>Accumulate</strong></td><td>Sept–Oct 2026</td>
+    <td>Change nothing. Let live alerts age past the 5, 20 and 60-session horizons so they can be scored. Resist adding factors — the constraint is no longer information.</td>
+  </tr>
+  <tr>
+    <td><strong>Verdict</strong></td><td>Nov 2026</td>
+    <td>Run the scorer. Answer the only question that matters: <em>do these alerts beat simply owning XBI?</em> Split by insider activity, market regime and conviction to learn which factors carry the result.</td>
+  </tr>
+  <tr>
+    <td><strong>Act</strong></td><td>Late 2026</td>
+    <td>If it beats the benchmark, size up with evidence. If it does not, either narrow the strategy to the factors that worked, or accept the finding and buy the ETF. Both outcomes are worth the wait.</td>
+  </tr>
+</table>
+
+<h2>7. What is missing</h2>
+
+<h3>Deliberately absent</h3>
+<ul>
+  <li><strong>Order execution.</strong> Every trade is placed by hand. The system advises; it never transacts.</li>
+  <li><strong>Position and portfolio data.</strong> It does not know what is owned, so it cannot leak it.</li>
+  <li><strong>More signals.</strong> Nine factor families are already in use and none is validated. Adding a tenth would build further on unmeasured ground.</li>
+</ul>
+
+<h3>Genuine gaps</h3>
+<ul>
+  <li><strong>Forward validation</strong> — the single binding constraint. Everything else is secondary until the scorecard has data.</li>
+  <li><strong>Options and implied volatility.</strong> For binary events the options market prices the expected move directly. No free source is currently wired in.</li>
+  <li><strong>Intraday and pre-market coverage.</strong> Biotech news breaks before the open; the evening run sees only settled closes.</li>
+  <li><strong>Foreign filers.</strong> Australian, Swiss and French issuers file no US-GAAP XBRL, so runway and float are simply unknown for them — correctly reported as unknown, but a real blind spot.</li>
+  <li><strong>Commercial modelling.</strong> For approved drugs, reimbursement, payer coverage and launch trajectory drive returns. None is modelled.</li>
+  <li><strong>Correlation-aware sizing.</strong> Aggregate exposure is summed and capped, but the names are highly correlated and a simple sum understates true concentration.</li>
+</ul>
+
+<h2>8. Operating profile</h2>
+
+<div class="cols">
+  <div>
+    <table>
+      <tr><th>Item</th><th>Value</th></tr>
+      <tr><td>Data cost</td><td class="num">$0 — all sources free and keyless</td></tr>
+      <tr><td>Runtime dependencies</td><td class="num">None (standard library only)</td></tr>
+      <tr><td>Daily data collection</td><td class="num">~4 minutes</td></tr>
+      <tr><td>Attention required</td><td class="num">Minutes per day</td></tr>
+    </table>
+  </div>
+  <div>
+    <table>
+      <tr><th>Item</th><th>Value</th></tr>
+      <tr><td>Watchlist</td><td class="num">59 names, 4 risk buckets</td></tr>
+      <tr><td>Automated tests</td><td class="num">49, plus lint on two Python versions</td></tr>
+      <tr><td>Failure detection</td><td class="num">Independent heartbeat</td></tr>
+      <tr><td>Recurring cost</td><td class="num">Language model usage only</td></tr>
+    </table>
+  </div>
+</div>
+
+<p>The zero-dependency constraint is a deliberate operational choice. An
+unattended job that runs for months should not be able to break because an
+unrelated package was upgraded elsewhere on the machine. A test enforces it:
+introducing a third-party import fails the build.</p>
+
+<div class="box avoid-break">
+  <div class="box-title">In one sentence</div>
+  <p>A disciplined, zero-cost research analyst that reads the primary record every
+  evening, refuses to mistake a falling knife for a bargain, and — unusually — is
+  built to tell its owner if it turns out not to work.</p>
+</div>
+
+<footer>
+  Research support for the owner's own decisions. Not financial advice; no orders
+  are placed. Small-cap biotechnology carries near-binary outcomes and total loss
+  of capital is a realistic outcome for any individual position.
+</footer>
+
+</body>
+</html>
