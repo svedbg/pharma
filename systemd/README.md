@@ -19,3 +19,14 @@ the project lives at `~/projects/pharma`.
 
 `Persistent=true` on both catches up a run missed while the machine was off.
 Requires `loginctl enable-linger $USER` so user timers fire without a login session.
+
+## After pulling
+
+The units are *copied*, so an edit here does nothing until it is copied again
+and `daemon-reload` has run — quietly, with the old unit still working one
+release behind.
+
+```bash
+./systemd/check-units.sh   # do the installed units still match this checkout?
+make check-units           # the same question for both schedulers
+```

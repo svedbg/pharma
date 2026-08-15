@@ -97,5 +97,25 @@ script — launchd, a systemd timer, a cron line, you at a terminal — so the w
 belongs there rather than duplicated per scheduler. The heartbeat job keeps its
 own, since `scripts/heartbeat.py` never goes through `run_daily.sh`.
 
+## Re-run the installer after pulling
+
+The job command is written into the plist at install time, so an edit to it here
+does nothing until `install-launchd.sh` runs again — and the failure is quiet:
+the job keeps working, one release behind, which reads as a code problem rather
+than an install problem. A machine that installed before the network wait moved
+into `run_daily.sh`, for instance, waits in both places and takes twice as long
+to start on a cold wake.
+
+```bash
+launchd/install-launchd.sh --check   # is the installed job still current?
+make check-units                     # the same question for both schedulers
+```
+
+`--check` regenerates the plists into a temp directory and diffs them against
+`~/Library/LaunchAgents`, touching nothing. It compares against what *this*
+checkout would write with the binaries resolved now, so it also catches an
+interpreter that has moved out from under the absolute path baked into the
+plist. Non-zero exit means re-run the installer.
+
 There is no launchd equivalent of `loginctl enable-linger`: user agents run
 whenever the user is logged in.
