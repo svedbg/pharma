@@ -391,6 +391,15 @@ that a cron or a hand run gets it too; the launchd desk job therefore does not
 wait separately, though the heartbeat — which never comes through this script —
 still does.
 
+### Installed units drift from the repo, silently
+
+Both schedulers copy: systemd units into `~/.config/systemd/user/`, and launchd
+bakes the whole job command into the plist at install time. Editing either one
+here changes nothing until it is installed again, and the old one keeps working
+a release behind — which presents as a bug in the code rather than in the
+install. `make check-units` diffs what is installed against what this checkout
+would write, for whichever scheduler is present, and exits non-zero on drift.
+
 ## Tickers change underneath you
 
 Companies get acquired and renamed. When a symbol stops resolving, `fetch.py`

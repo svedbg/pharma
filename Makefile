@@ -1,4 +1,4 @@
-.PHONY: help setup lint fmt test check run run-fast briefing brief screen site
+.PHONY: help setup lint fmt test check check-units run run-fast briefing brief screen site
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -16,6 +16,11 @@ test:   ## pytest
 	.venv/bin/pytest
 
 check: lint test  ## everything CI runs
+
+check-units:  ## are the installed timers/jobs still what this checkout says?
+	@./systemd/check-units.sh; s=$$?; \
+	./launchd/install-launchd.sh --check; l=$$?; \
+	exit $$((s | l))
 
 run-fast:  ## fetch + signals only, no LLM, no notifications
 	./run_daily.sh --no-llm

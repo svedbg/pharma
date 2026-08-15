@@ -2,7 +2,13 @@
 # Install (or uninstall) the macOS launchd jobs. Idempotent.
 #
 #   launchd/install-launchd.sh              install / reinstall
+#   launchd/install-launchd.sh --check      is what is installed still current?
 #   launchd/install-launchd.sh --uninstall  remove both jobs
+#
+# The job command is baked into the plist at install time, so editing it here
+# changes nothing until this script runs again -- and a job that is a release
+# behind fails in ways that look like the code, not the install. --check is the
+# cheap way to tell the two apart, and to notice before the difference matters.
 #
 # The launchd equivalent of systemd/. Same two jobs, same schedule:
 #   com.pharma.desk       Mon-Fri 23:18  the daily run
@@ -25,9 +31,12 @@ DOMAIN="gui/$(id -u)"
 usage() {
     cat <<'EOF'
 launchd/install-launchd.sh              install or reinstall both jobs
+launchd/install-launchd.sh --check      report whether the installed jobs match
+                                        what this script would write now
 launchd/install-launchd.sh --uninstall  remove both jobs
 
-macOS only. On Linux the equivalent units live in systemd/.
+Installing is macOS only. On Linux the equivalent units live in systemd/;
+--check still runs there and reports both jobs as not installed.
 EOF
 }
 
@@ -42,14 +51,18 @@ uninstall() {
 # Anything unrecognised used to fall through and install, so a typo'd
 # `--uninstal` did the exact opposite of what was asked.
 case "${1:-}" in
-    -h|--help)      usage; exit 0 ;;
-    ""|--uninstall) ;;
-    *)              echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    -h|--help)              usage; exit 0 ;;
+    ""|--check|--uninstall) ;;
+    *)                      echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
 esac
 
+MODE="${1:-install}"
+[[ "$MODE" == "--check" ]] && MODE=check
+
 # launchctl exists nowhere else; on Linux this otherwise created a stray
-# ~/Library/LaunchAgents and only then failed.
-if [[ "$(uname -s)" != "Darwin" ]]; then
+# ~/Library/LaunchAgents and only then failed. --check touches no launchctl and
+# writes only to a temp directory, so it stays useful on either platform.
+if [[ "$MODE" != "check" && "$(uname -s)" != "Darwin" ]]; then
     echo "this installer is macOS-only -- on Linux use systemd/ (see systemd/README.md)" >&2
     exit 1
 fi
@@ -59,7 +72,15 @@ if [[ "${1:-}" == "--uninstall" ]]; then
     exit 0
 fi
 
-mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+if [[ "$MODE" == "check" ]]; then
+    # Generate somewhere disposable. Nothing under ~/Library is created or
+    # touched, which is what keeps --check safe to run on Linux.
+    OUT_DIR="$(mktemp -d)"
+    trap 'rm -rf "$OUT_DIR"' EXIT
+else
+    OUT_DIR=""
+    mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+fi
 
 # launchd starts jobs from a clean environment and `zsh -lc` does not source
 # .zshrc, so anything a version manager puts on PATH interactively is invisible
@@ -122,7 +143,7 @@ fi
 
 # Generate both plists. Values reach python through the environment, never by
 # interpolating into code.
-PHARMA_ROOT="$ROOT" CLAUDE_DIR="$CLAUDE_DIR" PYTHON_BIN="$PYTHON_BIN" \
+PHARMA_ROOT="$ROOT" CLAUDE_DIR="$CLAUDE_DIR" PYTHON_BIN="$PYTHON_BIN" OUT_DIR="$OUT_DIR" \
 "$PYTHON_BIN" - <<'PYEOF' || exit 1
 import os
 import plistlib
@@ -133,7 +154,10 @@ root = os.environ["PHARMA_ROOT"]
 claude_dir = os.environ["CLAUDE_DIR"]
 python_bin = os.environ["PYTHON_BIN"]
 home = str(Path.home())
-agents = Path(home) / "Library" / "LaunchAgents"
+# --check generates into a temp directory to diff against what is installed;
+# everything the job command depends on is derived from the environment above,
+# so the two runs are comparable byte for byte.
+agents = Path(os.environ.get("OUT_DIR") or Path(home) / "Library" / "LaunchAgents")
 
 q = shlex.quote
 
@@ -256,8 +280,39 @@ for label, data in jobs.items():
     target = agents / f"{label}.plist"
     with open(target, "wb") as f:
         plistlib.dump(data, f)
-    print(f"wrote {target}")
+    if not os.environ.get("OUT_DIR"):
+        print(f"wrote {target}")
 PYEOF
+
+# --check stops here: compare, report, and touch nothing. The comparison is
+# against what THIS checkout would write with the binaries resolved above, so it
+# catches both a job command edited since the install and an interpreter that
+# has moved out from under the absolute path baked into the plist.
+if [[ "$MODE" == "check" ]]; then
+    # On Linux there are no launchd jobs to be stale, so "not installed" is the
+    # correct state rather than a finding: the run still proves the generator
+    # works, and exits 0.
+    [[ "$(uname -s)" == "Darwin" ]] && MISSING_IS_DRIFT=1 || MISSING_IS_DRIFT=0
+    DRIFT=0
+    for label in "${LABELS[@]}"; do
+        installed="$HOME/Library/LaunchAgents/$label.plist"
+        if [[ ! -f "$installed" ]]; then
+            echo "not installed: $label"
+            DRIFT=$(( DRIFT | MISSING_IS_DRIFT ))
+        elif diff -q "$installed" "$OUT_DIR/$label.plist" >/dev/null 2>&1; then
+            echo "current:       $label"
+        else
+            echo "STALE:         $label -- installed job differs from this checkout"
+            diff -u "$installed" "$OUT_DIR/$label.plist" | sed -n '3,40p'
+            DRIFT=1
+        fi
+    done
+    if [[ $DRIFT -ne 0 ]]; then
+        echo
+        echo "run launchd/install-launchd.sh to bring the jobs up to date" >&2
+    fi
+    exit $DRIFT
+fi
 
 # bootout is not fully synchronous: a bootstrap issued while the old instance is
 # still tearing down fails transiently ("Bootstrap failed: 5: Input/output
