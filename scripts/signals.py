@@ -879,7 +879,6 @@ def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dic
                 "url": n.get("url"),
             })
 
-    min_rw = float(settings.get("min_runway_quarters_for_act", 3))
     if rw and not rw["investments_usd"] and not rw["cash_only_verified"]:
         soft.append({
             "form": "liquidity unverified", "filed": rw["cash_as_of"], "days_ago": rw.get("age_days"),

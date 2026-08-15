@@ -165,6 +165,18 @@ python3 scripts/heartbeat.py --status        # is the desk still running?
 python3 scripts/notify.py --failure "test"   # test the alert channels
 ```
 
+### Monthly screen
+
+The daily run only ever looks at names already on the watchlist, so the best
+opportunity in the sector can pass by unseen. Once a month, widen the aperture:
+
+```bash
+make screen        # ~500 biotech registrants outside your list, prices only
+```
+
+It ranks by the same thresholds the desk uses and writes a TOML candidate file.
+A shortlist to research, not a buy list.
+
 ### Paper trading
 
 Nothing here is validated forward. Record intended trades and grade them against

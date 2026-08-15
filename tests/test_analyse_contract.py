@@ -8,7 +8,6 @@ the internals.
 
 from __future__ import annotations
 
-import pytest
 from signals import analyse
 
 SETTINGS = {"max_position_pct": 28, "max_position_pct_lottery": 5,

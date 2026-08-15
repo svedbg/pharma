@@ -341,6 +341,14 @@ from the data, or the two drift apart.
 What the buckets *mean*, and the reasoning behind the ceilings, is in
 `STRATEGY.local.md`.
 
+## Monthly screen
+
+`scripts/screen.py` widens the aperture beyond the watchlist. Two stages because
+the universe is too large to fetch fully: a cheap prices-only pass over every
+biotech-shaped SEC registrant (~550, matched by company-name fragments since the
+company list carries no sector field), then the normal pipeline on the shortlist
+only. Skips anything under $0.50 or below $500k median daily dollar volume.
+
 ## Conventions
 
 - Stdlib only in `scripts/` — no pip dependencies to rot in a cron job.
