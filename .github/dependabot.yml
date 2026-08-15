@@ -5,14 +5,14 @@ updates:
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: monthly
+      interval: daily
     commit-message:
       prefix: "ci"
 
   - package-ecosystem: pip
     directory: "/"
     schedule:
-      interval: monthly
+      interval: daily
     commit-message:
       prefix: "chore"
     # Dev tooling only (ruff, pytest); a major bump should be a deliberate choice.
