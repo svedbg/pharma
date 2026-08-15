@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 #
-# Daily biotech desk run. Invoked by the systemd timer on weekdays after the
-# US close. Safe to run by hand at any time.
+# Daily biotech desk run. Invoked by the weekday scheduler (a systemd timer on
+# Linux, a launchd job on macOS) after the US close. Safe to run by hand at any
+# time.
 #
 #   ./run_daily.sh            full run
 #   ./run_daily.sh --no-llm   fetch + signals only (fast, free, no API usage)
+#
+#   PHARMA_PYTHON=/path/to/python3   try this interpreter first; it is probed
+#                                    for tomllib + pyexpat like the rest, and a
+#                                    failure warns and falls back to python3,
+#                                    then ~/.local/bin/python3
 #
 set -uo pipefail
 
@@ -88,13 +94,52 @@ if command -v flock >/dev/null 2>&1; then
            exit 1 ;;
     esac
 else
-    if ! ln -s "$$" "$LOCKLINK" 2>/dev/null; then
-        owner="$(readlink "$LOCKLINK" 2>/dev/null || true)"
-        if [[ -z "$owner" ]]; then
+    # The lock's identity is pid PLUS process start time, not pid alone.
+    # `kill -0` fails both ways as an ownership probe: a recycled pid from a
+    # SIGKILLed run makes it succeed forever (busy every night, silently), and
+    # EPERM on another user's pid makes a live lock look stale. Start time
+    # survives neither failure -- a recycled pid has a new one, and ps reads
+    # other users' processes where kill cannot signal them.
+    lock_id() {
+        local started
+        started="$(ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//')"
+        [[ -n "$started" ]] && echo "$1|$started"
+    }
+    # Is the process recorded in the lock still the one that took it?
+    lock_held() {
+        local target="$1" owner="${1%%|*}"
+        [[ -n "$owner" ]] || return 1
+        if [[ "$target" != *"|"* ]]; then
+            # A bare-pid lock written by the previous format. There is no start
+            # time to compare, so fall back to the old liveness probe: reaping
+            # it on format alone would steal the lock from a run that is still
+            # going, which is the one thing this block exists to prevent. Only
+            # reachable in the single upgrade window where a pre-existing run
+            # is still holding the old-format link.
+            kill -0 "$owner" 2>/dev/null
+            return
+        fi
+        # Same pid AND same start time: the recorded owner is genuinely running.
+        # RHS quoted -- unquoted it is a glob pattern, not a literal.
+        [[ "$(lock_id "$owner")" == "$target" ]]
+    }
+    SELF_ID="$(lock_id $$)"
+    if [[ -z "$SELF_ID" ]]; then
+        # No usable `ps -o lstart` (busybox, a stripped container). Record the
+        # bare pid and let lock_held fall back with it: the recycled-pid hole
+        # reopens, but refusing to start would trade a rare wrong answer for a
+        # certain silent nightly no-op, which is the worse of the two.
+        echo "WARNING: ps -o lstart unavailable; lock falls back to pid only" >&2
+        SELF_ID="$$"
+    fi
+    if ! ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null; then
+        target="$(readlink "$LOCKLINK" 2>/dev/null || true)"
+        owner="${target%%|*}"
+        if [[ -z "$target" ]]; then
             # The link vanished between our attempt and the read: its owner
             # just exited. One retry; failing again is genuine contention.
-            ln -s "$$" "$LOCKLINK" 2>/dev/null || busy
-        elif kill -0 "$owner" 2>/dev/null; then
+            ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null || busy
+        elif lock_held "$target"; then
             busy
         else
             # Stale lock from a killed run. Reap it by atomic rename, so
@@ -103,8 +148,8 @@ else
             # wins instead: our own claim then fails and we yield to it.
             mv "$LOCKLINK" "$LOCKLINK.reap.$$" 2>/dev/null || busy
             rm -f "$LOCKLINK.reap.$$"
-            echo "removed stale lock left by pid $owner" >&2
-            ln -s "$$" "$LOCKLINK" 2>/dev/null || busy
+            echo "removed stale lock left by pid ${owner:-unknown}" >&2
+            ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null || busy
         fi
     fi
     trap 'rm -f "$LOCKLINK"' EXIT
@@ -179,6 +224,39 @@ run_with_timeout() {
     wait "$watchdog" 2>/dev/null
     return $rc
 }
+
+# --- 0. network -----------------------------------------------------------
+# systemd declares After=network-online.target; launchd has no equivalent for a
+# calendar job, and a Mac waking at 09:00 runs the missed 23:18 job before Wi-Fi
+# has associated. Living here rather than in the launchd job means one wait that
+# every scheduler gets -- a hand-rolled cron and a manual run included -- so the
+# desk job no longer waits separately. (The heartbeat still does: it never comes
+# through this script.)
+#
+# http://captive.apple.com, not a bare TCP connect: a captive portal completes
+# the handshake for anything and would read as "network up" while every fetch
+# came back as the portal's login page. It is also the endpoint macOS itself
+# probes, so it exercises DNS, TCP and HTTP.
+#
+# run_with_timeout bounds each attempt because the socket timeout does not: it
+# covers connect(), not getaddrinfo(), so a stalled resolver has no ceiling of
+# its own -- and this loop runs holding the lock. Worst case is 12 probes capped
+# at 6s and 11 pauses of 5s, so a little over two minutes, then it proceeds
+# regardless: a genuinely offline machine should fail loudly through fetch.py
+# rather than stall here. The happy path costs one probe, ~0.3s.
+NET_ATTEMPTS=12
+net_ok=0
+for attempt in $(seq 1 "$NET_ATTEMPTS"); do
+    if run_with_timeout 6 "$PY" -c \
+        'import urllib.request; urllib.request.urlopen("http://captive.apple.com", timeout=5).read(64)' \
+        >/dev/null 2>&1; then
+        net_ok=1
+        break
+    fi
+    [[ "$attempt" -eq 1 ]] && echo "--- waiting for network"
+    [[ "$attempt" -eq "$NET_ATTEMPTS" ]] || sleep 5
+done
+[[ "$net_ok" -eq 1 ]] || echo "WARNING: no network after ~2min -- running anyway" >&2
 
 # --- 1. facts -------------------------------------------------------------
 echo "--- fetch"

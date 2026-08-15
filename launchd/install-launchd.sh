@@ -157,16 +157,20 @@ claude_path = f'export PATH={q(claude_dir)}:"$PATH"'
 
 # systemd's After=network-online.target has no launchd equivalent for a calendar
 # job, and launchd coalesces events missed during sleep -- so a run can start the
-# instant the lid opens, before Wi-Fi has associated. Every data source is a
-# network call and so is notify_failure(), so without this the lost day is
-# silent until the heartbeat notices it two mornings later. Bounded, and it
-# proceeds regardless: a genuinely offline machine should still fail loudly
-# rather than hang here. captive.apple.com is the endpoint macOS itself probes,
-# and it exercises DNS, TCP and HTTP rather than merely asserting a default route.
+# instant the lid opens, before Wi-Fi has associated. The alarm itself is ntfy
+# and SMTP, so off the network this job reports "could not notify" and the
+# silence it exists to break goes unbroken. Bounded, and it proceeds regardless:
+# a genuinely offline machine should still fail loudly rather than hang here.
+# captive.apple.com is the endpoint macOS itself probes, and it exercises DNS,
+# TCP and HTTP rather than merely asserting a default route.
+#
+# Heartbeat only. The desk job waits inside run_daily.sh instead, so that every
+# scheduler gets the wait and neither path waits twice; the counts and the
+# endpoint are kept in step with it deliberately.
 await_network = (
     'n=0; until curl -sf --max-time 5 -o /dev/null http://captive.apple.com; do '
     'n=$((n + 1)); '
-    'if [ $n -ge 24 ]; then echo "WARNING: no network after 120s -- running anyway"; break; fi; '
+    'if [ $n -ge 12 ]; then echo "WARNING: no network after ~2min -- running anyway"; break; fi; '
     'sleep 5; done'
 )
 
@@ -202,9 +206,9 @@ desk_cmd = "; ".join([
     'command -v claude >/dev/null || { echo "FATAL: claude not on PATH (re-run launchd/install-launchd.sh)"; exit 127; }',
     '"$PHARMA_PYTHON" -c "import tomllib, pyexpat" || { echo "FATAL: $PHARMA_PYTHON lacks tomllib or pyexpat; re-run launchd/install-launchd.sh"; exit 78; }',
     # Jitter stands in for systemd's RandomizedDelaySec, which launchd lacks.
-    # Ahead of the network wait, so the wait is the last thing before the run.
     "sleep $((RANDOM % 240))",
-    await_network,
+    # No await_network here: run_daily.sh does its own, so that a cron or a
+    # hand run gets it too. Waiting in both places would only double the delay.
     "./run_daily.sh",
     finish(desk_log),
 ])
