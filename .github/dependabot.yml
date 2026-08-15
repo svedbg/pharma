@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # The runtime has no dependencies by design, so there is nothing to update
+  # there. These two ecosystems are the only surface that exists.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore"
+    # Dev tooling only (ruff, pytest); a major bump should be a deliberate choice.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

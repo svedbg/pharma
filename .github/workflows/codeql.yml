@@ -1,0 +1,28 @@
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so a newly-published rule finds existing code rather than waiting
+    # for the next commit. Off-the-hour to avoid the top-of-hour stampede.
+    - cron: "37 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          # security-and-quality is noisier; this codebase is small enough that
+          # the extra findings are readable rather than overwhelming.
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@v3
