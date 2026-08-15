@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily check that the biotech desk is still running
+
+[Timer]
+# Late morning, well after the overnight run should have finished, and at a time
+# the machine is likely awake. Independent of pharma-desk.timer on purpose: if
+# that unit is broken or disabled, this one still fires.
+OnCalendar=Mon-Fri 10:23
+RandomizedDelaySec=600
+Persistent=true
+Unit=pharma-heartbeat.service
+
+[Install]
+WantedBy=timers.target

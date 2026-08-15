@@ -1,0 +1,15 @@
+[Unit]
+Description=Daily biotech desk analysis
+Documentation=file:%h/projects/pharma/CLAUDE.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/pharma
+# systemd user services start from a minimal PATH; claude and pyenv both need
+# to be reachable or the run dies before it fetches anything.
+Environment=PATH=%h/.local/bin:%h/.pyenv/shims:%h/.pyenv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/projects/pharma/run_daily.sh
+# Fetch + signals is minutes; the analysis pass over ~50 names can be much longer.
+TimeoutStartSec=3600

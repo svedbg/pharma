@@ -1,0 +1,612 @@
+# Watchlist for the daily biotech desk.
+#
+# Tiers drive position sizing, not signal logic -- every name gets the same
+# veto treatment:
+#   A        higher-conviction speculative; full size allowed
+#   B        larger caps, more de-risked; full size allowed
+#   lottery  binary micro-caps; hard 5% cap each, 15% for the whole bucket
+#   legacy   carried over from the original watchlist; remove freely
+#
+# `thesis` is intentionally blank for names not yet researched -- the daily run
+# fills these in from real sources rather than inventing them. Set entry_low and
+# entry_high once you have a view; ACT-tier alerts stay disabled until you do.
+
+[settings]
+max_position_pct = 28            # tier A/B ceiling, % of allocated capital
+max_position_pct_lottery = 5     # per-name ceiling for lottery tier
+max_bucket_pct_lottery = 15      # total exposure across the whole lottery bucket
+min_cash_reserve_pct = 15
+min_runway_quarters_for_act = 3
+lookback_days = 730
+new_filing_window_days = 5
+
+
+[[ticker]]
+symbol = "OTLK"
+tier = "A"
+sponsor = "Outlook Therapeutics"
+thesis = "ONS-5010/LYTENAVA ophthalmic bevacizumab, EU/UK launch plus US path. Chronically cash-hungry; dilution and Nasdaq compliance dominate."
+entry_low = 0.5605
+entry_high = 0.7186
+invalidation_price = 0.1882
+invalidation = "Failed US resubmission, or another discounted raise resetting the share count."
+
+[[ticker]]
+symbol = "CAPR"
+tier = "A"
+sponsor = "Capricor Therapeutics"
+thesis = "Deramiocel (CAP-1002) for Duchenne cardiomyopathy. Binary regulatory outcome; HOPE-3 and the FDA path dominate."
+entry_low = 0
+entry_high = 0
+invalidation_price = 0
+invalidation = "Definitive FDA rejection with no resubmission path, or HOPE-3 missing primary endpoint."
+
+[[ticker]]
+symbol = "XFOR"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 3.13
+entry_high = 4.01
+invalidation_price = 2.37
+invalidation = ""
+
+[[ticker]]
+symbol = "ARDX"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 4.29
+entry_high = 5.5
+invalidation_price = 3.71
+invalidation = ""
+
+[[ticker]]
+symbol = "ANTX"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 3.88
+entry_high = 4.97
+invalidation_price = 0.9785
+invalidation = ""
+
+[[ticker]]
+symbol = "SLS"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 8.68
+entry_high = 11.12
+invalidation_price = 1.32
+invalidation = ""
+
+[[ticker]]
+symbol = "ZVRA"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 8.39
+entry_high = 10.75
+invalidation_price = 6.87
+invalidation = ""
+
+[[ticker]]
+symbol = "SPRY"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 6.38
+entry_high = 8.18
+invalidation_price = 4.87
+invalidation = ""
+
+[[ticker]]
+symbol = "VRDN"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 14.77
+entry_high = 18.94
+invalidation_price = 12.63
+invalidation = ""
+
+[[ticker]]
+symbol = "IMNM"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 17.25
+entry_high = 22.12
+invalidation_price = 8.54
+invalidation = ""
+
+[[ticker]]
+symbol = "NUVB"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 4.58
+entry_high = 5.88
+invalidation_price = 3.85
+invalidation = ""
+
+[[ticker]]
+symbol = "ACHV"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 4.76
+entry_high = 6.1
+invalidation_price = 2.52
+invalidation = ""
+
+[[ticker]]
+symbol = "NVCT"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 14.72
+entry_high = 18.88
+invalidation_price = 17.13
+invalidation = ""
+
+[[ticker]]
+symbol = "TECX"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 24.64
+entry_high = 31.59
+invalidation_price = 13.97
+invalidation = ""
+
+[[ticker]]
+symbol = "ORIC"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 8.29
+entry_high = 10.63
+invalidation_price = 7.1
+invalidation = ""
+
+[[ticker]]
+symbol = "SVRA"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 3.99
+entry_high = 5.11
+invalidation_price = 2.86
+invalidation = ""
+
+[[ticker]]
+symbol = "DYN"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 17.69
+entry_high = 22.68
+invalidation_price = 11.37
+invalidation = ""
+
+[[ticker]]
+symbol = "EWTX"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 31.23
+entry_high = 40.04
+invalidation_price = 13.01
+invalidation = ""
+
+[[ticker]]
+symbol = "KOD"
+tier = "A"
+sponsor = ""
+thesis = ""
+entry_low = 30.35
+entry_high = 38.91
+invalidation_price = 8.12
+invalidation = ""
+
+[[ticker]]
+symbol = "CYTK"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 54.93
+entry_high = 70.42
+invalidation_price = 33.56
+invalidation = ""
+
+[[ticker]]
+symbol = "VKTX"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 24.59
+entry_high = 31.53
+invalidation_price = 21.94
+invalidation = ""
+
+[[ticker]]
+symbol = "NAMS"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 23.28
+entry_high = 29.84
+invalidation_price = 22.75
+invalidation = ""
+
+[[ticker]]
+symbol = "MDGL"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 376.1
+entry_high = 482.2
+invalidation_price = 351.3
+invalidation = ""
+
+[[ticker]]
+symbol = "AXSM"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 158.3
+entry_high = 203.0
+invalidation_price = 103.3
+invalidation = ""
+
+[[ticker]]
+symbol = "KRYS"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 246.2
+entry_high = 315.7
+invalidation_price = 130.6
+invalidation = ""
+
+[[ticker]]
+symbol = "APGE"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 96.34
+entry_high = 123.5
+invalidation_price = 34.22
+invalidation = ""
+
+[[ticker]]
+symbol = "CRNX"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 49.75
+entry_high = 63.78
+invalidation_price = 27.64
+invalidation = ""
+
+[[ticker]]
+symbol = "PRAX"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 243.1
+entry_high = 311.7
+invalidation_price = 35.82
+invalidation = ""
+
+[[ticker]]
+symbol = "SYRE"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 73.13
+entry_high = 93.76
+invalidation_price = 14.08
+invalidation = ""
+
+[[ticker]]
+symbol = "PTGX"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 100.5
+entry_high = 128.9
+invalidation_price = 52.24
+invalidation = ""
+
+[[ticker]]
+symbol = "IMVT"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 29.63
+entry_high = 37.98
+invalidation_price = 13.96
+invalidation = ""
+
+[[ticker]]
+symbol = "PCVX"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 42.65
+entry_high = 54.67
+invalidation_price = 28.74
+invalidation = ""
+
+[[ticker]]
+symbol = "TGTX"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 36.12
+entry_high = 46.3
+invalidation_price = 25.59
+invalidation = ""
+
+[[ticker]]
+symbol = "RYTM"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 81.66
+entry_high = 104.7
+invalidation_price = 72.03
+invalidation = ""
+
+[[ticker]]
+symbol = "MIRM"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 74.57
+entry_high = 95.61
+invalidation_price = 60.89
+invalidation = ""
+
+[[ticker]]
+symbol = "COGT"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 28.11
+entry_high = 36.03
+invalidation_price = 11.12
+invalidation = ""
+
+[[ticker]]
+symbol = "XENE"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 46.2
+entry_high = 59.23
+invalidation_price = 33.88
+invalidation = ""
+
+[[ticker]]
+symbol = "PTCT"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 53.13
+entry_high = 68.11
+invalidation_price = 46.27
+invalidation = ""
+
+[[ticker]]
+symbol = "ARQT"
+tier = "B"
+sponsor = ""
+thesis = ""
+entry_low = 19.41
+entry_high = 24.88
+invalidation_price = 14.55
+invalidation = ""
+
+[[ticker]]
+symbol = "AARD"
+tier = "lottery"
+sponsor = ""
+thesis = ""
+entry_low = 4.37
+entry_high = 5.61
+invalidation_price = 3.31
+invalidation = ""
+
+[[ticker]]
+symbol = "BIVI"
+tier = "lottery"
+sponsor = ""
+thesis = ""
+entry_low = 0
+entry_high = 0
+invalidation_price = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "IMMX"
+tier = "lottery"
+sponsor = ""
+thesis = ""
+entry_low = 7.47
+entry_high = 9.58
+invalidation_price = 1.86
+invalidation = ""
+
+[[ticker]]
+symbol = "PGEN"
+tier = "lottery"
+sponsor = ""
+thesis = ""
+entry_low = 4.25
+entry_high = 5.45
+invalidation_price = 1.76
+invalidation = ""
+
+[[ticker]]
+symbol = "AGMB"
+tier = "lottery"
+sponsor = ""
+thesis = ""
+entry_low = 9.74
+entry_high = 12.49
+invalidation_price = 11.02
+invalidation = ""
+
+[[ticker]]
+symbol = "RGNX"
+tier = "lottery"
+sponsor = ""
+thesis = ""
+entry_low = 7.98
+entry_high = 10.23
+invalidation_price = 5.37
+invalidation = ""
+
+[[ticker]]
+symbol = "ALLO"
+tier = "lottery"
+sponsor = ""
+thesis = ""
+entry_low = 1.52
+entry_high = 1.95
+invalidation_price = 1.58
+invalidation = ""
+
+[[ticker]]
+symbol = "ALT"
+tier = "lottery"
+sponsor = ""
+thesis = ""
+entry_low = 2.37
+entry_high = 3.04
+invalidation_price = 2.46
+invalidation = ""
+
+[[ticker]]
+symbol = "HUMA"
+tier = "legacy"
+sponsor = "Humacyte"
+thesis = "SYMVESS acellular tissue engineered vessel; approved product so the question is commercial ramp, not binary trial risk."
+entry_low = 0.6414
+entry_high = 0.8222
+invalidation_price = 0.5225
+invalidation = "Ramp stalls two consecutive quarters, or a real-world safety signal."
+
+[[ticker]]
+symbol = "SION"
+tier = "legacy"
+sponsor = "Sionna Therapeutics"
+thesis = "CF NBD1 stabiliser differentiated from the Vertex franchise."
+entry_low = 0
+entry_high = 0
+invalidation_price = 0
+invalidation = "NBD1 fails to add clinical benefit on top of standard of care."
+
+[[ticker]]
+symbol = "SMMT"
+tier = "A"
+sponsor = ""
+thesis = "Ivonescimab (PD-1/VEGF bispecific) HARMONI-3 NSCLC readout expected H2 2026 - one of the largest binary events in oncology."
+entry_low = 12.05
+entry_high = 15.45
+invalidation_price = 11.92
+invalidation = "HARMONI-3 misses OS, or the Akeso-partnered data fails to replicate in a Western population."
+
+[[ticker]]
+symbol = "KROS"
+tier = "A"
+sponsor = ""
+thesis = "Post-setback repricing with an unusually strong balance sheet - roughly 21 quarters of liquidity and a share count that has shrunk, not grown."
+entry_low = 8.67
+entry_high = 11.11
+invalidation_price = 9.41
+invalidation = "Management restarts heavy dilution, or the remaining pipeline fails to produce a lead programme."
+
+[[ticker]]
+symbol = "IONS"
+tier = "B"
+sponsor = ""
+thesis = "Eplontersen CARDIO-TTRansform readout in TTR cardiomyopathy H2 2026; broad antisense platform with partner economics."
+entry_low = 53.82
+entry_high = 69.0
+invalidation_price = 39.73
+invalidation = "CARDIO-TTRansform misses, or Alnylam/Pfizer competition compresses the TTR opportunity."
+
+[[ticker]]
+symbol = "ADCT"
+tier = "lottery"
+sponsor = ""
+thesis = "One of the few remaining pure-play commercial ADC names after Seagen and ImmunoGen were acquired; deeply discounted."
+entry_low = 0.8287
+entry_high = 1.06
+invalidation_price = 0.9288
+invalidation = "ZYNLONTA commercial decline continues, or financing terms turn punitive."
+
+[[ticker]]
+symbol = "CLDX"
+tier = "A"
+sponsor = ""
+thesis = "Barzolvolimab Phase 3 EMBARQ readouts in chronic spontaneous urticaria expected Q4 2026; strong prior Phase 2 data."
+entry_low = 28.34
+entry_high = 36.33
+invalidation_price = 19.85
+invalidation = "EMBARQ misses, or the safety profile limits use versus omalizumab."
+
+[[ticker]]
+symbol = "GPCR"
+tier = "A"
+sponsor = ""
+thesis = "Oral small-molecule GLP-1 (aleniglipron) - obesity exposure the rest of the watchlist lacks; very well capitalised."
+entry_low = 38.06
+entry_high = 48.79
+invalidation_price = 17.6
+invalidation = "Oral GLP-1 efficacy or tolerability fails to compete with injectables and orforglipron."
+
+[[ticker]]
+symbol = "NTLA"
+tier = "A"
+sponsor = ""
+thesis = "In vivo CRISPR with Phase 3 programmes in hereditary angioedema and ATTR amyloidosis approaching readouts."
+entry_low = 8.83
+entry_high = 11.31
+invalidation_price = 7.64
+invalidation = "A gene-editing safety signal, or Phase 3 efficacy failing to beat existing chronic therapies."
+
+[[ticker]]
+symbol = "LNTH"
+tier = "B"
+sponsor = ""
+thesis = "Commercial radiopharmaceutical leader (PYLARIFY, DEFINITY) - fills a category with zero coverage elsewhere in this list."
+entry_low = 74.8
+entry_high = 95.9
+invalidation_price = 47.6
+invalidation = "PYLARIFY reimbursement pressure or loss of diagnostic share to competing PSMA agents."
+
+[[ticker]]
+symbol = "INSM"
+tier = "B"
+sponsor = ""
+thesis = "Commercial revenue (ARIKAYCE) plus brensocatib expansion - revenue-generating, so it does not fail in lockstep with the clinical-stage names."
+entry_low = 98.03
+entry_high = 125.7
+invalidation_price = 87.29
+invalidation = "Brensocatib launch disappoints or ARIKAYCE growth stalls."
+
+[[ticker]]
+symbol = "HRMY"
+tier = "B"
+sponsor = ""
+thesis = "Profitable commercial narcolepsy franchise (WAKIX) with real earnings - a deliberate counterweight to binary clinical risk."
+entry_low = 27.91
+entry_high = 35.78
+invalidation_price = 24.6
+invalidation = "WAKIX loses exclusivity or pitolisant faces generic entry sooner than expected."

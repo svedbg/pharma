@@ -1,0 +1,285 @@
+# Candidate screen -- NOT the live watchlist.
+# Generated to evaluate additions. Screen with:
+#   python3 scripts/fetch.py   --watchlist candidates.toml --out data/candidates.json
+#   python3 scripts/signals.py --watchlist candidates.toml --snapshot data/candidates.json \
+#                              --out data/candidates_signals.json --state state/candidates_alerts.json
+
+[settings]
+max_position_pct = 28
+max_position_pct_lottery = 5
+max_bucket_pct_lottery = 15
+min_cash_reserve_pct = 15
+min_runway_quarters_for_act = 3
+lookback_days = 730
+new_filing_window_days = 5
+
+
+[[ticker]]
+symbol = "SMMT"
+tier = "A"
+sponsor = ""
+thesis = "Ivonescimab HARMONI-3 NSCLC readout H2 2026 - one of the largest binary events in oncology"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "CLDX"
+tier = "A"
+sponsor = ""
+thesis = "Barzolvolimab chronic spontaneous urticaria Ph3 EMBARQ readouts Q4 2026"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "AMLX"
+tier = "A"
+sponsor = ""
+thesis = "Avexitide LUCIDITY Ph3 post-bariatric hypoglycaemia topline Q3 2026"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "ACRV"
+tier = "A"
+sponsor = ""
+thesis = "ACR-368 Ph2b interim in endometrial cancer H2 2026; small and binary"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "ABVX"
+tier = "A"
+sponsor = ""
+thesis = "Named most-likely M&A target in biotech in a 2026 Truist survey; obefazimod UC"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "RARE"
+tier = "B"
+sponsor = ""
+thesis = "Two PDUFA dates plus GTX-102 Angelman Ph3 in H2 2026"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "BBIO"
+tier = "B"
+sponsor = ""
+thesis = "Commercial ramp plus multiple genetic-disease programmes"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "IONS"
+tier = "B"
+sponsor = ""
+thesis = "Eplontersen CARDIO-TTRansform readout H2 2026; large TTR market"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "NUVL"
+tier = "B"
+sponsor = ""
+thesis = "Nuvalent - clean oncology story, repeated best-in-class ROS1/ALK data"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "INSM"
+tier = "B"
+sponsor = ""
+thesis = "Commercial revenue plus brensocatib expansion - de-risked relative to clinical names"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "LEGN"
+tier = "B"
+sponsor = ""
+thesis = "CARVYKTI CAR-T commercial ramp; perennial M&A speculation"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "KROS"
+tier = "A"
+sponsor = ""
+thesis = "Keros - post-setback repricing, cash-rich balance sheet"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "GPCR"
+tier = "A"
+sponsor = ""
+thesis = "Structure Therapeutics - oral GLP-1; obesity exposure your list is thin on"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "TERN"
+tier = "A"
+sponsor = ""
+thesis = "Terns - oral GLP-1 and CML programmes, small cap"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "ANNX"
+tier = "A"
+sponsor = ""
+thesis = "Annexon - complement/neuro, binary Ph3"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "SAGE"
+tier = "A"
+sponsor = ""
+thesis = "Sage - heavily de-rated CNS name, potential M&A"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "NRIX"
+tier = "A"
+sponsor = ""
+thesis = "Nurix - targeted protein degradation platform with pharma partnerships"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "CGON"
+tier = "A"
+sponsor = ""
+thesis = "CG Oncology - bladder cancer cretostimogene, strong data history"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "ADCT"
+tier = "lottery"
+sponsor = ""
+thesis = "ADC Therapeutics - one of few remaining pure-play commercial ADC names"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "RADX"
+tier = "lottery"
+sponsor = ""
+thesis = "Radiopharm Theranostics - radiopharma, a category with zero coverage in your list"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "PSTV"
+tier = "lottery"
+sponsor = ""
+thesis = "Plus Therapeutics - radiopharma micro-cap, leptomeningeal disease"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "CRDF"
+tier = "lottery"
+sponsor = ""
+thesis = "Cardiff Oncology - onvansertib CRC, named small-cap M&A candidate"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "MAIA"
+tier = "lottery"
+sponsor = ""
+thesis = "MAIA Biotechnology - telomere-targeting oncology micro-cap"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "LNTH"
+tier = "B"
+sponsor = ""
+thesis = "Lantheus - commercial radiopharma leader; category gap"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "BEAM"
+tier = "A"
+sponsor = ""
+thesis = "Base editing platform; ESCAPE/BEACON programmes"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "NTLA"
+tier = "A"
+sponsor = ""
+thesis = "Intellia - in vivo CRISPR, Ph3 HAE and ATTR readouts approaching"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "HRMY"
+tier = "B"
+sponsor = ""
+thesis = "Harmony Biosciences - profitable commercial narcolepsy franchise"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "CPRX"
+tier = "B"
+sponsor = ""
+thesis = "Catalyst Pharmaceuticals - profitable rare-disease commercial"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "SUPN"
+tier = "B"
+sponsor = ""
+thesis = "Supernus - commercial CNS, cash generative"
+entry_low = 0
+entry_high = 0
+invalidation = ""
+
+[[ticker]]
+symbol = "VNDA"
+tier = "B"
+sponsor = ""
+thesis = "Vanda - commercial, litigious, deep-value profile"
+entry_low = 0
+entry_high = 0
+invalidation = ""

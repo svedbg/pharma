@@ -1,0 +1,11 @@
+[Unit]
+Description=Alert if the biotech desk has stopped producing reports
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/pharma
+Environment=PATH=%h/.local/bin:%h/.pyenv/shims:%h/.pyenv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.pyenv/shims/python3 %h/projects/pharma/scripts/heartbeat.py
+TimeoutStartSec=300

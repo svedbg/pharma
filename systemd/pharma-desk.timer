@@ -1,0 +1,15 @@
+[Unit]
+Description=Weekday evening run of the biotech desk
+
+[Timer]
+# 23:18 Europe/Sofia. The US close (16:00 ET) lands at 22:00-23:00 Sofia time in
+# every DST alignment, so this is always after the closing print with room to
+# spare. Off-the-hour on purpose, plus jitter, to avoid the :00/:30 stampede.
+OnCalendar=Mon-Fri 23:18
+RandomizedDelaySec=240
+# Catch up if the laptop was asleep or powered off at the scheduled time.
+Persistent=true
+Unit=pharma-desk.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,142 @@
+# Known binary catalysts. These drive the "days until" warning in every report.
+#
+# The daily run appends to this file whenever it establishes a dated catalyst
+# from a filing or a company announcement. You can edit or delete freely.
+#
+#   date        ISO date. Use the first of the month for quarter-level guidance
+#               (e.g. "H2 2026" -> 2026-07-01) and set confidence accordingly.
+#   kind        PDUFA | AdCom | readout | conference | other
+#   confidence  confirmed  -- a specific date the company or FDA has stated
+#               expected   -- company guidance to a quarter or half
+#               rumored    -- inferred; treat with suspicion
+#
+# ONLY add dates you can source. An invented catalyst date is worse than none,
+# because it will silently gate position sizing in every future report.
+
+[[catalyst]]
+symbol = "CAPR"
+date = "2026-08-22"
+kind = "PDUFA"
+confidence = "confirmed"
+description = "Deramiocel BLA action date. THREE-WAY, not binary: FDA agreed on 2026-08-14 to assess 24-month HOPE-3 extension data, so the date may be extended rather than acted on. Outcomes: approval / extension / CRL. Precedent on this watchlist: PRAX and SVRA were both extended 3 months on a major amendment."
+source = "https://www.sec.gov/Archives/edgar/data/0001133869/000110465926095908/capr-20260813xex99d1.htm"
+
+[[catalyst]]
+symbol = "COGT"
+date = "2026-11-30"
+kind = "PDUFA"
+confidence = "confirmed"
+description = "Bezuclastinib PDUFA for GIST"
+source = "company Q2 2026 disclosure"
+
+[[catalyst]]
+symbol = "COGT"
+date = "2026-12-30"
+kind = "PDUFA"
+confidence = "confirmed"
+description = "Bezuclastinib PDUFA for non-advanced systemic mastocytosis"
+source = "company Q2 2026 disclosure"
+
+[[catalyst]]
+symbol = "PRAX"
+date = "2026-12-27"
+kind = "PDUFA"
+confidence = "confirmed"
+description = "Relutrigine for SCN2A/SCN8A DEE; extended three months from 2026-09-27"
+source = "https://www.sec.gov/Archives/edgar/data/0001689548/000168954826000082/praxisq22026pr.htm"
+
+[[catalyst]]
+symbol = "PRAX"
+date = "2027-01-29"
+kind = "PDUFA"
+confidence = "confirmed"
+description = "Ulixacaltamide for essential tremor; Breakthrough Therapy designation"
+source = "company Q2 2026 disclosure"
+
+[[catalyst]]
+symbol = "SMMT"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "Ivonescimab HARMONI-3 in NSCLC, guided to H2 2026"
+source = "BioPharma Dive, trials to watch H2 2026"
+
+[[catalyst]]
+symbol = "CLDX"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "Barzolvolimab Phase 3 EMBARQ-CSU1/CSU2 in chronic spontaneous urticaria, guided to Q4 2026"
+source = "BioPharma Dive, trials to watch H2 2026"
+
+[[catalyst]]
+symbol = "PCVX"
+date = "2026-07-01"
+kind = "readout"
+confidence = "expected"
+description = "VAX-31 Opus-1 pivotal readout, guided to H2 2026"
+source = "BioPharma Dive, trials to watch H2 2026"
+
+[[catalyst]]
+symbol = "IONS"
+date = "2026-07-01"
+kind = "readout"
+confidence = "expected"
+description = "Eplontersen CARDIO-TTRansform in TTR cardiomyopathy, guided to H2 2026"
+source = "BioPharma Dive, trials to watch H2 2026"
+
+[[catalyst]]
+symbol = "MIRM"
+date = "2026-09-26"
+kind = "PDUFA"
+confidence = "confirmed"
+description = "Zilurgisertib (ALK2 inhibitor, partnered with Incyte) for fibrodysplasia ossificans progressiva; Priority Review"
+source = "Mirum/Incyte PROGRESS pivotal Phase 2 announcement; Q2 2026 call confirmed late-cycle meeting held"
+
+[[catalyst]]
+symbol = "SVRA"
+date = "2026-11-22"
+kind = "PDUFA"
+confidence = "confirmed"
+description = "MOLBREEVI (molgramostim inhalation) BLA for autoimmune pulmonary alveolar proteinosis; extended 3 months from Aug 2026 as a major amendment, no safety/efficacy/CMC concerns cited"
+source = "https://investors.savarapharma.com/news/news-details/2026/Savara-Announces-the-U-S--Food--Drug-Administration-FDA-Has-Extended-the-Review-Period-for-the-Molgramostim-Inhalation-Solution-Molgramostim-Biologics-License-Application-BLA-in-Autoimmune-Pulmonary-Alveolar-Proteinosis-Autoimmune-PAP/default.aspx"
+
+[[catalyst]]
+symbol = "KOD"
+date = "2026-09-01"
+kind = "readout"
+confidence = "expected"
+description = "DAYBREAK Phase 3 one-year topline, Zenkuda and KSI-501 in treatment-naive wet AMD; company guided to September 2026"
+source = "https://www.sec.gov/Archives/edgar/data/0001468748/000119312526349107/kod-ex99_1.htm"
+
+[[catalyst]]
+symbol = "KOD"
+date = "2026-12-01"
+kind = "readout"
+confidence = "expected"
+description = "PEAK Phase 3 Pivotal Analysis 1 topline, KSI-101 in macular edema secondary to inflammation"
+source = "https://www.sec.gov/Archives/edgar/data/0001468748/000119312526349107/kod-ex99_1.htm"
+
+[[catalyst]]
+symbol = "ACHV"
+date = "2026-10-01"
+kind = "other"
+confidence = "expected"
+description = "Cytisinicline NDA resubmission guided to Q4 2026 after the 20 Jun 2026 CRL (cGMP + labelling only, no clinical deficiency); approval targeted 1H27"
+source = "Achieve Q2 2026 business update, 2026-08-11"
+
+[[catalyst]]
+symbol = "NAMS"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "PREVAIL cardiovascular outcomes interim analysis in Q4 2026, full results guided to Q1 2027"
+source = "NewAmsterdam Q2 2026 corporate update, 2026-08-05"
+
+[[catalyst]]
+symbol = "CYTK"
+date = "2026-10-01"
+kind = "other"
+confidence = "expected"
+description = "Aficamten sNDA submission in non-obstructive HCM, guided to Q4 2026 following positive ACACIA-HCM"
+source = "Cytokinetics Q2 2026 business update, 2026-08-06"
