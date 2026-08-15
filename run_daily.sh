@@ -174,7 +174,7 @@ echo "--- report: $REPORT ($(wc -l < "$REPORT") lines)"
 # --- 3b. local archive ----------------------------------------------------
 # Non-fatal: a broken site build must not cost you the report or the email.
 echo "--- archive"
-python3 "$ROOT/scripts/publish.py" || echo "WARNING: publish.py failed"
+"$PY" "$ROOT/scripts/publish.py" || echo "WARNING: publish.py failed"
 
 # --- 4. delivery ----------------------------------------------------------
 echo "--- notify"
