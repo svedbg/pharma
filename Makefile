@@ -1,4 +1,4 @@
-.PHONY: help setup lint fmt test check run run-fast briefing screen
+.PHONY: help setup lint fmt test check run run-fast briefing brief screen
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -22,6 +22,13 @@ run-fast:  ## fetch + signals only, no LLM, no notifications
 
 run:    ## the full daily run
 	./run_daily.sh
+
+brief:  ## rebuild the marketing/capability PDF from its HTML source
+	@command -v google-chrome >/dev/null || { echo "needs google-chrome"; exit 1; }
+	google-chrome --headless --disable-gpu --no-sandbox --no-pdf-header-footer \
+		--print-to-pdf="$(PWD)/docs/the-91-percent-question.pdf" \
+		"file://$(PWD)/docs/capability-brief.html"
+	@echo "wrote docs/the-91-percent-question.pdf"
 
 briefing:  ## rebuild docs/biotech-desk-briefing.pdf from the HTML source
 	@command -v google-chrome >/dev/null || { echo "needs google-chrome for headless PDF"; exit 1; }

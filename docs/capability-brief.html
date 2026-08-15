@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The 91% Question — Building a research system that knows when to say no</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  :root {
+    --ink: #111418;
+    --body: #23282e;
+    --muted: #6b7280;
+    --line: #e3e6ea;
+    --accent: #0f4c81;
+    --accent-soft: #eef4fa;
+    --good: #0b6b43;
+    --bad: #a41f1f;
+    --warm: #b45309;
+  }
+  body {
+    font-family: "Charter", Georgia, "Times New Roman", serif;
+    font-size: 10.4pt; line-height: 1.55; color: var(--body); margin: 0;
+  }
+  h1, h2, h3, .kicker, .stats, table, .cta, .pull, .lesson-n, .box-title {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  /* ---------- cover ---------- */
+  .cover { padding-top: 6mm; }
+  .kicker {
+    font-size: 8pt; letter-spacing: 2pt; text-transform: uppercase;
+    color: var(--accent); font-weight: 700;
+  }
+  h1 {
+    font-size: 40pt; line-height: 1.02; letter-spacing: -1.4pt;
+    margin: 6pt 0 10pt; color: var(--ink); font-weight: 800;
+  }
+  .deck {
+    font-size: 13pt; line-height: 1.45; color: var(--muted);
+    max-width: 135mm; margin-bottom: 14pt;
+  }
+  .byline {
+    font-size: 9pt; color: var(--muted); border-top: 1.5pt solid var(--ink);
+    padding-top: 6pt; margin-top: 4pt;
+  }
+  .byline strong { color: var(--ink); }
+
+  h2 {
+    font-size: 16pt; line-height: 1.2; letter-spacing: -0.4pt; color: var(--ink);
+    margin: 22pt 0 8pt; font-weight: 800;
+  }
+  h3 { font-size: 11pt; margin: 14pt 0 4pt; color: var(--ink); }
+  p { margin: 0 0 8pt; }
+  .lede::first-letter {
+    float: left; font-size: 34pt; line-height: 0.82; padding: 2pt 5pt 0 0;
+    font-weight: 700; color: var(--accent);
+  }
+
+  .pull {
+    font-size: 14pt; line-height: 1.32; color: var(--accent); font-weight: 700;
+    border-left: 3pt solid var(--accent); padding: 2pt 0 2pt 12pt;
+    margin: 14pt 0; letter-spacing: -0.3pt;
+  }
+
+  .stats { width: 100%; table-layout: fixed; border-collapse: separate;
+           border-spacing: 6pt 0; margin: 12pt 0; }
+  .stats td {
+    border: 0.8pt solid var(--line); border-top: 2.5pt solid var(--accent);
+    padding: 8pt; background: #fff; vertical-align: top;
+  }
+  .stats .n { font-size: 19pt; font-weight: 800; color: var(--ink); line-height: 1; }
+  .stats .l {
+    font-size: 7.6pt; text-transform: uppercase; letter-spacing: 0.7pt;
+    color: var(--muted); margin-top: 3pt; line-height: 1.3;
+  }
+
+  .box {
+    border: 0.8pt solid var(--line); background: var(--accent-soft);
+    padding: 10pt 12pt; margin: 12pt 0;
+  }
+  .box.plain { background: #fafbfc; }
+  .box-title {
+    font-size: 8pt; text-transform: uppercase; letter-spacing: 1pt;
+    font-weight: 700; color: var(--accent); margin-bottom: 4pt;
+  }
+  .box p:last-child { margin-bottom: 0; }
+
+  .lesson { display: flex; gap: 11pt; margin: 12pt 0; break-inside: avoid; }
+  .lesson-n {
+    flex: 0 0 26pt; height: 26pt; border-radius: 50%; background: var(--accent);
+    color: #fff; font-weight: 800; font-size: 13pt; text-align: center;
+    line-height: 26pt;
+  }
+  .lesson h3 { margin: 1pt 0 3pt; }
+  .lesson p { margin-bottom: 4pt; }
+
+  table { width: 100%; border-collapse: collapse; margin: 10pt 0; font-size: 8.8pt; }
+  th {
+    text-align: left; padding: 5pt 6pt; border-bottom: 1.2pt solid var(--ink);
+    font-size: 7.6pt; text-transform: uppercase; letter-spacing: 0.6pt; color: var(--muted);
+  }
+  td { padding: 5pt 6pt; border-bottom: 0.5pt solid var(--line); vertical-align: top; }
+  .good { color: var(--good); font-weight: 700; }
+  .bad { color: var(--bad); font-weight: 700; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .pipeline { width: 100%; table-layout: fixed; border-collapse: separate;
+              border-spacing: 4pt 0; margin: 10pt 0; }
+  .pipeline td { border: 0.8pt solid var(--line); padding: 7pt; background: #fff;
+                 vertical-align: top; }
+  .pipeline .t { font-weight: 700; font-size: 9.4pt; color: var(--ink); margin-bottom: 2pt;
+                 font-family: Helvetica, Arial, sans-serif; }
+  .pipeline .d { font-size: 8pt; color: var(--muted); line-height: 1.35; }
+
+  .cta {
+    border: 1.5pt solid var(--ink); padding: 14pt 16pt; margin: 16pt 0 10pt;
+    background: #fff;
+  }
+  .cta .t { font-size: 15pt; font-weight: 800; color: var(--ink); margin-bottom: 4pt; }
+  .cta .u { font-size: 12pt; font-weight: 700; color: var(--accent); }
+  .cta p { font-size: 9.6pt; }
+
+  .page-break { break-before: page; }
+  .avoid { break-inside: avoid; }
+  footer {
+    margin-top: 14pt; padding-top: 7pt; border-top: 0.5pt solid var(--line);
+    font-size: 7.6pt; color: var(--muted); line-height: 1.45;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================ PAGE 1 ============================ -->
+<div class="cover">
+  <div class="kicker">Case Study · Automated Research Systems</div>
+  <h1>The 91%<br>Question</h1>
+  <p class="deck">A stock just fell 91% in a single day. Every textbook indicator
+  says it is now "oversold" — the classic signal to buy. Should you?</p>
+  <p class="deck" style="font-size:11pt;color:var(--body);max-width:130mm">
+  Getting that answer right, automatically, every night, turned out to be a
+  problem about <em>refusing</em> rather than predicting. This is what I built,
+  what the data actually said, and what I would not let it claim.</p>
+  <div class="byline">
+    <strong>Svetoslav</strong> · sved.net · Engineering & automated systems
+  </div>
+</div>
+
+<h2>The trap that catches almost everyone</h2>
+
+<p class="lede">The honest answer to the 91% question is <strong>almost always
+no</strong> — and the reason is the single most useful thing I learned building
+this. In small-company biotech, a stock that has collapsed is usually not a
+bargain. It is a company whose drug just failed, or whose regulator just said no,
+or that is about to issue a flood of new shares at a discount simply to survive.
+The price fell because the news was bad. The market was right.</p>
+
+<p>Yet the standard tools of technical analysis — the indicators built into every
+brokerage app — will light up green on exactly that stock. They measure only how
+far and how fast a price has moved. They have no idea <em>why</em>.</p>
+
+<div class="pull">A screener tells you what is cheap. It cannot tell you what is
+cheap for a reason. That gap is where beginners lose money.</div>
+
+<p>So the system I built is organised around a mechanism most trading tools do
+not have: a <strong>veto layer</strong>. Before anything can be called an
+opportunity, the software goes and reads the company's regulatory filings and
+asks whether there is a known reason the price is low. If there is, no signal is
+produced — regardless of how attractive the chart looks.</p>
+
+<table class="stats"><tr>
+  <td><div class="n">59</div><div class="l">Companies monitored nightly</div></td>
+  <td><div class="n">$0</div><div class="l">Data cost — every source is free</div></td>
+  <td><div class="n">~4 min</div><div class="l">To read the whole list overnight</div></td>
+  <td><div class="n">87</div><div class="l">Automated tests protecting it</div></td>
+</tr></table>
+
+<!-- ============================ PAGE 2 ============================ -->
+<h2 class="page-break">Three things it caught in its first week</h2>
+
+<p>None of these required prediction. Each one required reading a document that
+was publicly available and that nobody reads.</p>
+
+<h3>1. The falling knife</h3>
+<p>A company called Sionna fell <span class="bad">91% in one session</span>. Its
+indicators were textbook oversold. The system found the regulatory filing
+published that same day, tied it to the collapse, and blocked the signal. A
+naïve tool would have called it a buying opportunity.</p>
+
+<h3>2. The silent dilution</h3>
+<p>Outlook Therapeutics looked cheap — down 19% on the day and 70% from its high.
+The filings showed two share sales in 48 hours and enough cash to last roughly
+<strong>seven weeks</strong>. When a company is that short of money it must issue
+new shares, and it must do so at a discount. That is not a dip. The system scored
+it <em>avoid</em>.</p>
+
+<h3>3. The insiders who left first</h3>
+<p>At Capricor, executives sold $3.1 million of stock at $30.38 in late June.
+Six weeks later the shares traded at $4.21. Meanwhile at Summit Therapeutics,
+both chief executives bought <span class="good">$103.6 million</span> of their own
+company's stock on the open market. Both facts sat in public filings the whole
+time.</p>
+
+<div class="box avoid">
+  <div class="box-title">The detail that makes insider data usable</div>
+  <p>Most people who track "insider buying" get it wrong, because a filing shows
+  several kinds of transaction and only one of them means anything. An executive
+  receiving shares as a bonus, or exercising options, both appear as "acquired".
+  Only an open-market <em>purchase</em> — spending their own money — carries a
+  signal.</p>
+  <p>One real filing showed an executive exercising options at $0.99 and selling
+  at $5.06 minutes later. Counted carelessly, that reads as insider buying. It is
+  precisely the opposite.</p>
+</div>
+
+<h2>What it actually does, every night</h2>
+
+<table class="pipeline"><tr>
+  <td><div class="t">Reads</div><div class="d">Pulls prices, regulatory filings, insider trades and trial records from official sources.</div></td>
+  <td><div class="t">Checks</div><div class="d">Applies fixed arithmetic — no guesswork — to find anything unusual, and runs the veto layer.</div></td>
+  <td><div class="t">Investigates</div><div class="d">An AI model researches what was flagged, reads the source documents, writes the analysis.</div></td>
+  <td><div class="t">Reports</div><div class="d">Emails a readable briefing and sends a phone alert — but only when something changed.</div></td>
+</tr></table>
+
+<p>The important design decision is the split between steps two and three. An AI
+model is excellent at reading a legal document and judging what it means. It is
+unreliable at remembering a number. So it is never allowed to be the source of
+one: every figure traces back to an official filing, or the report says the
+figure is unknown.</p>
+
+<div class="pull">Most nights it sends nothing at all. That is the feature, not
+a fault.</div>
+
+<!-- ============================ PAGE 3 ============================ -->
+<h2 class="page-break">Three lessons you can use without any software</h2>
+
+<div class="lesson avoid">
+  <div class="lesson-n">1</div>
+  <div>
+    <h3>Ask why it is cheap before you ask how cheap</h3>
+    <p>Before looking at a single chart, check whether the company recently sold
+    new shares, received bad news from a regulator, changed its accountants, or
+    is running out of cash. All of this is public. If any of it is true, the low
+    price is an explanation, not an opportunity.</p>
+  </div>
+</div>
+
+<div class="lesson avoid">
+  <div class="lesson-n">2</div>
+  <div>
+    <h3>Insider buying is informative. Insider selling mostly is not</h3>
+    <p>People sell shares for a dozen innocent reasons — tax, a house, a
+    pre-scheduled plan. They buy for one. Weight the two very differently. When I
+    measured this, selling was so common it flagged more than half the companies
+    being followed, which makes it useless as a signal.</p>
+  </div>
+</div>
+
+<div class="lesson avoid">
+  <div class="lesson-n">3</div>
+  <div>
+    <h3>Compare against the alternative you actually have</h3>
+    <p>A 9% gain sounds good. If the whole sector rose 12% over the same weeks,
+    you lost — you would have done better buying a fund that tracks the sector and
+    doing nothing. Measuring against zero flatters every strategy ever devised.
+    This one lesson changed my conclusions more than anything else.</p>
+  </div>
+</div>
+
+<h2>The finding I did not want</h2>
+
+<p>Having built it, I tested whether the signals were worth anything — scoring
+every alert against the sector fund anyone can buy instead. Three widely used
+rules turned out to be worthless or harmful:</p>
+
+<table>
+  <tr><th>Common rule</th><th class="num">After 3 months</th><th>What it really means</th></tr>
+  <tr><td>"Buy stocks near their yearly low"</td><td class="num bad">−2.68%</td><td>Worse than doing nothing. Cheapness alone is noise</td></tr>
+  <tr><td>"The more oversold, the better"</td><td class="num bad">−9.59%</td><td>The most beaten-down names are beaten down for a reason</td></tr>
+  <tr><td>Oversold, <em>with</em> heavy selling volume</td><td class="num good">+1.72%</td><td>The only version that survived scrutiny</td></tr>
+</table>
+
+<div class="box avoid" style="background:#fdf3f3;border-color:#f0d5d5">
+  <div class="box-title" style="color:var(--bad)">The headline result, stated plainly</div>
+  <p>Measured against simply owning a biotech index fund, <strong>the core signal
+  did not beat it</strong> — unless confirmed by unusually heavy trading volume.
+  So the system now demands that confirmation before calling anything actionable,
+  and the reports say openly that the technical trigger is a timing tool, never a
+  reason to buy on its own.</p>
+  <p>I could have left this out. It is the most valuable thing the project
+  produced.</p>
+</div>
+
+<!-- ============================ PAGE 4 ============================ -->
+<h2 class="page-break">How it is built — and why that matters</h2>
+
+<p>A system that runs unattended every night, that nobody watches, has to be
+built differently from a script you run by hand. Four decisions shaped it:</p>
+
+<h3>It has no dependencies</h3>
+<p>The entire thing uses only what ships with Python. Nothing to install, nothing
+that can break because an unrelated package was upgraded six months from now. An
+automated test fails the build if anyone adds a dependency.</p>
+
+<h3>Silence had to be distinguishable from failure</h3>
+<p>Since the normal output is "nothing to report", a broken system and a quiet
+market look identical. A second, independent process therefore watches the first
+and raises an alarm if no report appears for two working days.</p>
+
+<h3>The financial data is full of traps, and each one gave a wrong answer first</h3>
+<table>
+  <tr><th style="width:36%">What went wrong</th><th>The consequence before it was caught</th></tr>
+  <tr><td>Only counting cash, not investments</td><td>Understated one company's finances <strong>six-fold</strong>, nearly rejecting a company with three years of funding</td></tr>
+  <tr><td>A company quietly stopped using a data field</td><td>Returned a six-year-old figure of $24.9M for a firm holding $816M</td></tr>
+  <tr><td>A company's own filed figure was wrong</td><td>Produced a nonsensical result of "15,401%"</td></tr>
+  <tr><td>A one-off payment read as ongoing spending</td><td>Implied a funding crisis at a profitable company</td></tr>
+</table>
+<p>All are now guarded, and each guard has a test. The general lesson applies far
+beyond finance: <strong>implausible data is far more often a broken feed than a
+broken reality</strong> — and a system worth trusting proves which before acting.</p>
+
+<h3>Changes are verified, not hoped for</h3>
+<p>Restructuring the most complex part meant capturing the exact output for all
+59 companies beforehand, making the change, and confirming the new output was
+byte-for-byte identical. Not "it looks fine". Identical.</p>
+
+<div class="box plain avoid">
+  <div class="box-title">What this is not</div>
+  <p>It is not financial advice, it places no orders, and it is not a product.
+  It is a research tool built for one person, published openly so the reasoning
+  can be examined. Small-company biotechnology has near-binary outcomes and any
+  individual position can go to zero.</p>
+</div>
+
+<h2 class="page-break">What I do</h2>
+
+<p>This project is a fair sample of how I work: find the question that actually
+matters, build something that answers it honestly, measure whether it worked, and
+report the result even when the result is inconvenient.</p>
+
+<p>The domain here happens to be financial data. The same approach applies to any
+problem where information arrives constantly, most of it is noise, and the
+expensive mistake is acting confidently on something nobody checked — monitoring
+and alerting, data pipelines, automated research and reporting, or replacing a
+manual review process that has quietly become too big to do by hand.</p>
+
+<div class="cta avoid">
+  <div class="t">Have a problem shaped like this?</div>
+  <p style="margin-top:5pt">If you have a process that runs on someone reading
+  the same sources every day, or a system whose output nobody quite trusts, that
+  is the kind of thing I build.</p>
+  <div class="u">sved.net</div>
+  <p style="margin-top:4pt;color:var(--muted);font-size:9pt">
+  The complete source, including the unflattering results:<br>
+  github.com/svedbg/pharma — MIT licensed</p>
+</div>
+
+<footer>
+  Written by Svetoslav · sved.net · The system described here is a personal
+  research tool. Nothing in this document is financial advice or a recommendation
+  to buy or sell any security. Figures are drawn from the project's own measured
+  results and are historical; they carry known biases, including a rising market
+  during the measurement period, and do not indicate future performance. Trading
+  small-company biotechnology stocks carries a genuine risk of total loss.
+</footer>
+
+</body>
+</html>
