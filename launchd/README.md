@@ -22,8 +22,8 @@ tail -f ~/Library/Logs/pharma-desk.log
 
 Note that a kickstarted job still waits out its startup jitter (the equivalent
 of the systemd units' `RandomizedDelaySec`) — up to 4 minutes for the desk, 10
-for the heartbeat — and then a network reachability check, before it does
-anything.
+for the heartbeat — and then a network reachability check (in `run_daily.sh`
+for the desk, in the job itself for the heartbeat), before it does anything.
 
 ## Why the plists are generated, not shipped
 
@@ -72,7 +72,7 @@ binary moves.
 | `TimeoutStartSec=3600` | no equivalent key — every stage is bounded inside `run_daily.sh` (`run_with_timeout`) |
 | `Persistent=true` | **partial**: see below |
 | `Environment=PATH=…` | `EnvironmentVariables` dict, baked at install time — but the login shell reorders it, so `claude` is re-prepended in the job command (above) |
-| `After=network-online.target` | no equivalent for a calendar job — the job waits for reachability itself, up to 120s, then runs anyway |
+| `After=network-online.target` | no equivalent for a calendar job — reachability is waited on instead, up to ~2min, then the run proceeds anyway: inside `run_daily.sh` for the desk, inside the job for the heartbeat |
 | `journalctl --user -u …` | `~/Library/Logs/pharma-*.log` (stdout and stderr share one file, as journald interleaved them); rolled to `.1` past 5MB, since nothing on macOS rotates `~/Library/Logs` |
 
 **The `Persistent=true` parity is only partial.** launchd coalesces calendar
@@ -86,11 +86,16 @@ stale alert.
 starts the instant the lid opens, which can be before Wi-Fi has associated.
 Every data source is a network call, and so is the failure notification — so a
 run that starts too early loses the day *and* cannot say so, and the gap only
-surfaces via the heartbeat two mornings later. Each job polls
+surfaces via the heartbeat two mornings later. Both paths poll
 `captive.apple.com` (the endpoint macOS itself probes, so it exercises DNS, TCP
 and HTTP rather than merely asserting a default route) for up to two minutes,
-then proceeds regardless: a genuinely offline machine should fail loudly rather
+then proceed regardless: a genuinely offline machine should fail loudly rather
 than hang here.
+
+**The desk waits in `run_daily.sh`, not in the job.** Every scheduler runs that
+script — launchd, a systemd timer, a cron line, you at a terminal — so the wait
+belongs there rather than duplicated per scheduler. The heartbeat job keeps its
+own, since `scripts/heartbeat.py` never goes through `run_daily.sh`.
 
 There is no launchd equivalent of `loginctl enable-linger`: user agents run
 whenever the user is logged in.

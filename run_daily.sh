@@ -7,9 +7,10 @@
 #   ./run_daily.sh            full run
 #   ./run_daily.sh --no-llm   fetch + signals only (fast, free, no API usage)
 #
-#   PHARMA_PYTHON=/path/to/python3   force the interpreter; otherwise python3
-#                                    and ~/.local/bin/python3 are probed for
-#                                    tomllib + pyexpat, in that order
+#   PHARMA_PYTHON=/path/to/python3   try this interpreter first; it is probed
+#                                    for tomllib + pyexpat like the rest, and a
+#                                    failure warns and falls back to python3,
+#                                    then ~/.local/bin/python3
 #
 set -uo pipefail
 
@@ -104,10 +105,32 @@ else
         started="$(ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//')"
         [[ -n "$started" ]] && echo "$1|$started"
     }
+    # Is the process recorded in the lock still the one that took it?
+    lock_held() {
+        local target="$1" owner="${1%%|*}"
+        [[ -n "$owner" ]] || return 1
+        if [[ "$target" != *"|"* ]]; then
+            # A bare-pid lock written by the previous format. There is no start
+            # time to compare, so fall back to the old liveness probe: reaping
+            # it on format alone would steal the lock from a run that is still
+            # going, which is the one thing this block exists to prevent. Only
+            # reachable in the single upgrade window where a pre-existing run
+            # is still holding the old-format link.
+            kill -0 "$owner" 2>/dev/null
+            return
+        fi
+        # Same pid AND same start time: the recorded owner is genuinely running.
+        # RHS quoted -- unquoted it is a glob pattern, not a literal.
+        [[ "$(lock_id "$owner")" == "$target" ]]
+    }
     SELF_ID="$(lock_id $$)"
     if [[ -z "$SELF_ID" ]]; then
-        echo "FATAL: cannot read own process start time (ps -o lstart)" >&2
-        exit 1
+        # No usable `ps -o lstart` (busybox, a stripped container). Record the
+        # bare pid and let lock_held fall back with it: the recycled-pid hole
+        # reopens, but refusing to start would trade a rare wrong answer for a
+        # certain silent nightly no-op, which is the worse of the two.
+        echo "WARNING: ps -o lstart unavailable; lock falls back to pid only" >&2
+        SELF_ID="$$"
     fi
     if ! ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null; then
         target="$(readlink "$LOCKLINK" 2>/dev/null || true)"
@@ -116,10 +139,7 @@ else
             # The link vanished between our attempt and the read: its owner
             # just exited. One retry; failing again is genuine contention.
             ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null || busy
-        elif [[ -n "$owner" && "$(lock_id "$owner")" == "$target" ]]; then
-            # Same pid AND same start time: the recorded owner is genuinely
-            # still running. (A bare-pid lock from an older version never
-            # matches and is treated as stale below.)
+        elif lock_held "$target"; then
             busy
         else
             # Stale lock from a killed run. Reap it by atomic rename, so
@@ -206,16 +226,37 @@ run_with_timeout() {
 }
 
 # --- 0. network -----------------------------------------------------------
-# systemd declares After=network-online.target; launchd has no equivalent, and
-# a Mac waking at 09:00 runs the missed 23:18 job before Wi-Fi has associated.
-# Wait briefly for SEC to be reachable, then proceed regardless -- if the
-# network truly is not coming back, fetch.py's own failure path is the loud
-# one, and stalling here forever would hold the lock.
-for attempt in $(seq 1 12); do
-    "$PY" -c 'import socket; socket.create_connection(("www.sec.gov", 443), timeout=3).close()' 2>/dev/null && break
+# systemd declares After=network-online.target; launchd has no equivalent for a
+# calendar job, and a Mac waking at 09:00 runs the missed 23:18 job before Wi-Fi
+# has associated. Living here rather than in the launchd job means one wait that
+# every scheduler gets -- a hand-rolled cron and a manual run included -- so the
+# desk job no longer waits separately. (The heartbeat still does: it never comes
+# through this script.)
+#
+# http://captive.apple.com, not a bare TCP connect: a captive portal completes
+# the handshake for anything and would read as "network up" while every fetch
+# came back as the portal's login page. It is also the endpoint macOS itself
+# probes, so it exercises DNS, TCP and HTTP.
+#
+# run_with_timeout bounds each attempt because the socket timeout does not: it
+# covers connect(), not getaddrinfo(), so a stalled resolver has no ceiling of
+# its own -- and this loop runs holding the lock. Worst case is 12 probes capped
+# at 6s and 11 pauses of 5s, so a little over two minutes, then it proceeds
+# regardless: a genuinely offline machine should fail loudly through fetch.py
+# rather than stall here. The happy path costs one probe, ~0.3s.
+NET_ATTEMPTS=12
+net_ok=0
+for attempt in $(seq 1 "$NET_ATTEMPTS"); do
+    if run_with_timeout 6 "$PY" -c \
+        'import urllib.request; urllib.request.urlopen("http://captive.apple.com", timeout=5).read(64)' \
+        >/dev/null 2>&1; then
+        net_ok=1
+        break
+    fi
     [[ "$attempt" -eq 1 ]] && echo "--- waiting for network"
-    sleep 5
+    [[ "$attempt" -eq "$NET_ATTEMPTS" ]] || sleep 5
 done
+[[ "$net_ok" -eq 1 ]] || echo "WARNING: no network after ~2min -- running anyway" >&2
 
 # --- 1. facts -------------------------------------------------------------
 echo "--- fetch"

@@ -380,8 +380,16 @@ tail -50 ~/Library/Logs/pharma-desk.log
 ./run_daily.sh --no-llm            # data + signals only, fast and free
 ```
 
-`PHARMA_PYTHON=/path/to/python3` forces the interpreter; otherwise `python3`
-and `~/.local/bin/python3` are probed for `tomllib` + `pyexpat`, in that order.
+`PHARMA_PYTHON=/path/to/python3` is tried first, then `python3`, then
+`~/.local/bin/python3`. It is a preference, not an override: every candidate
+must pass the same `tomllib` + `pyexpat` probe, and one that fails warns and
+falls through rather than being used.
+
+Before the fetch the run waits for `captive.apple.com` to answer, up to ~2
+minutes, then proceeds anyway. It lives here rather than in the scheduler so
+that a cron or a hand run gets it too; the launchd desk job therefore does not
+wait separately, though the heartbeat — which never comes through this script —
+still does.
 
 ## Tickers change underneath you
 

@@ -260,9 +260,12 @@ def main() -> int:
     if rc == 0 and args.open:
         # Not subprocess+xdg-open: check=False suppresses nonzero exits but not
         # a missing executable, so it raised FileNotFoundError on any non-Linux
-        # box. webbrowser dispatches per platform and swallows the absence.
+        # box. webbrowser dispatches per platform and swallows the absence --
+        # which on a headless machine means a silent no-op, so say so instead.
         import webbrowser
-        webbrowser.open((SITE / "index.html").as_uri())
+        index = SITE / "index.html"
+        if not webbrowser.open(index.as_uri()):
+            print(f"no browser to open; the archive is at {index}")
     return rc
 
 
