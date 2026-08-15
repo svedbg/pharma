@@ -22,7 +22,7 @@ scripts/propose_zones.py -> watchlist.toml        entry zones from each name's o
 scripts/detail.py                                 per-ticker drill-down for the analysis pass
 prompts/daily.md         -> reports/YYYY-MM-DD.md the analysis (judgement lives here)
 scripts/notify.py                                 ntfy push + email
-run_daily.sh                                      orchestration, invoked by a systemd timer
+run_daily.sh                                      orchestration, invoked by the scheduler (systemd timer / launchd job)
 ```
 
 An LLM must never be the source of a price, a share count or a cash balance.
@@ -241,7 +241,8 @@ names trigger together in a drawdown.
 
 ## Heartbeat
 
-`pharma-heartbeat.timer` (Mon-Fri) alerts if no report appears for two weekdays.
+`pharma-heartbeat.timer` / `com.pharma.heartbeat` (Mon-Fri) alerts if no report
+appears for two weekdays.
 **Silence is the desk's normal output**, so a broken run and a quiet market look
 identical. Separate unit on purpose: if the main run dies before reaching
 notify.py, run_daily.sh's own failure handler dies with it.
@@ -363,14 +364,24 @@ only. Skips anything under $0.50 or below $500k median daily dollar volume.
 
 ## Schedule
 
-`pharma-desk.timer` Mon–Fri 23:18 local — after the US close in every DST
-alignment, so the daily bar is settled. `Persistent=true` catches up a miss.
+`pharma-desk.timer` (Linux) / `com.pharma.desk` (macOS) Mon–Fri 23:18 local —
+after the US close in every DST alignment, so the daily bar is settled. On
+Linux `Persistent=true` catches up a miss; launchd only coalesces across
+sleep, not shutdown — the heartbeat covers the gap.
 
 ```bash
+# Linux
 systemctl --user list-timers 'pharma-*'
 journalctl --user -u pharma-desk.service -n 50
+# macOS
+launchctl print gui/$(id -u)/com.pharma.desk | head -20
+tail -50 ~/Library/Logs/pharma-desk.log
+# both
 ./run_daily.sh --no-llm            # data + signals only, fast and free
 ```
+
+`PHARMA_PYTHON=/path/to/python3` forces the interpreter; otherwise `python3`
+and `~/.local/bin/python3` are probed for `tomllib` + `pyexpat`, in that order.
 
 ## Tickers change underneath you
 

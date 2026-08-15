@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 #
-# Daily biotech desk run. Invoked by the systemd timer on weekdays after the
-# US close. Safe to run by hand at any time.
+# Daily biotech desk run. Invoked by the weekday scheduler (a systemd timer on
+# Linux, a launchd job on macOS) after the US close. Safe to run by hand at any
+# time.
 #
 #   ./run_daily.sh            full run
 #   ./run_daily.sh --no-llm   fetch + signals only (fast, free, no API usage)
+#
+#   PHARMA_PYTHON=/path/to/python3   force the interpreter; otherwise python3
+#                                    and ~/.local/bin/python3 are probed for
+#                                    tomllib + pyexpat, in that order
 #
 set -uo pipefail
 
@@ -88,13 +93,33 @@ if command -v flock >/dev/null 2>&1; then
            exit 1 ;;
     esac
 else
-    if ! ln -s "$$" "$LOCKLINK" 2>/dev/null; then
-        owner="$(readlink "$LOCKLINK" 2>/dev/null || true)"
-        if [[ -z "$owner" ]]; then
+    # The lock's identity is pid PLUS process start time, not pid alone.
+    # `kill -0` fails both ways as an ownership probe: a recycled pid from a
+    # SIGKILLed run makes it succeed forever (busy every night, silently), and
+    # EPERM on another user's pid makes a live lock look stale. Start time
+    # survives neither failure -- a recycled pid has a new one, and ps reads
+    # other users' processes where kill cannot signal them.
+    lock_id() {
+        local started
+        started="$(ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//')"
+        [[ -n "$started" ]] && echo "$1|$started"
+    }
+    SELF_ID="$(lock_id $$)"
+    if [[ -z "$SELF_ID" ]]; then
+        echo "FATAL: cannot read own process start time (ps -o lstart)" >&2
+        exit 1
+    fi
+    if ! ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null; then
+        target="$(readlink "$LOCKLINK" 2>/dev/null || true)"
+        owner="${target%%|*}"
+        if [[ -z "$target" ]]; then
             # The link vanished between our attempt and the read: its owner
             # just exited. One retry; failing again is genuine contention.
-            ln -s "$$" "$LOCKLINK" 2>/dev/null || busy
-        elif kill -0 "$owner" 2>/dev/null; then
+            ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null || busy
+        elif [[ -n "$owner" && "$(lock_id "$owner")" == "$target" ]]; then
+            # Same pid AND same start time: the recorded owner is genuinely
+            # still running. (A bare-pid lock from an older version never
+            # matches and is treated as stale below.)
             busy
         else
             # Stale lock from a killed run. Reap it by atomic rename, so
@@ -103,8 +128,8 @@ else
             # wins instead: our own claim then fails and we yield to it.
             mv "$LOCKLINK" "$LOCKLINK.reap.$$" 2>/dev/null || busy
             rm -f "$LOCKLINK.reap.$$"
-            echo "removed stale lock left by pid $owner" >&2
-            ln -s "$$" "$LOCKLINK" 2>/dev/null || busy
+            echo "removed stale lock left by pid ${owner:-unknown}" >&2
+            ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null || busy
         fi
     fi
     trap 'rm -f "$LOCKLINK"' EXIT
@@ -179,6 +204,18 @@ run_with_timeout() {
     wait "$watchdog" 2>/dev/null
     return $rc
 }
+
+# --- 0. network -----------------------------------------------------------
+# systemd declares After=network-online.target; launchd has no equivalent, and
+# a Mac waking at 09:00 runs the missed 23:18 job before Wi-Fi has associated.
+# Wait briefly for SEC to be reachable, then proceed regardless -- if the
+# network truly is not coming back, fetch.py's own failure path is the loud
+# one, and stalling here forever would hold the lock.
+for attempt in $(seq 1 12); do
+    "$PY" -c 'import socket; socket.create_connection(("www.sec.gov", 443), timeout=3).close()' 2>/dev/null && break
+    [[ "$attempt" -eq 1 ]] && echo "--- waiting for network"
+    sleep 5
+done
 
 # --- 1. facts -------------------------------------------------------------
 echo "--- fetch"

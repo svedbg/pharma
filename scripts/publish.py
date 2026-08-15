@@ -258,8 +258,11 @@ def main() -> int:
     args = ap.parse_args()
     rc = build()
     if rc == 0 and args.open:
-        import subprocess
-        subprocess.run(["xdg-open", str(SITE / "index.html")], check=False)
+        # Not subprocess+xdg-open: check=False suppresses nonzero exits but not
+        # a missing executable, so it raised FileNotFoundError on any non-Linux
+        # box. webbrowser dispatches per platform and swallows the absence.
+        import webbrowser
+        webbrowser.open((SITE / "index.html").as_uri())
     return rc
 
 

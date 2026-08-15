@@ -29,7 +29,10 @@ can be argued with. A price the model half-remembers never reaches the report.
 
 ## Requirements
 
-- Python **3.11+** (stdlib only — no pip install, nothing to rot in a cron job)
+- Python **3.11+** (stdlib only — no pip install, nothing to rot in a cron job).
+  `run_daily.sh` probes `python3`, then `~/.local/bin/python3`, for `tomllib` +
+  `pyexpat` and refuses interpreters that fail; set `PHARMA_PYTHON=/path/to/python3`
+  to point it somewhere else.
 - Linux with systemd user timers, or any scheduler that can run one shell script
 - API keys: **none**. Every data source is free and keyless.
 
