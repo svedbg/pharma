@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS equivalent of systemd/pharma-heartbeat.{service,timer}. Placeholders are
+  substituted by launchd/install-launchd.sh into ~/Library/LaunchAgents/.
+
+  A separate job from com.pharma.desk on purpose: if the desk run dies before it
+  reaches notify.py, its own failure handler dies with it. Silence is this
+  system's normal output, so a broken run and a quiet market look identical
+  without an independent check.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.pharma.heartbeat</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>export PATH="__PATH_EXTRA__:$PATH"; cd '__PHARMA_DIR__' &amp;&amp; echo "=== $(date '+%Y-%m-%d %H:%M:%S') pharma-heartbeat start ===" &amp;&amp; sleep $((RANDOM % 600)) &amp;&amp; python3 scripts/heartbeat.py; echo "=== exit $? ==="</string>
+  </array>
+
+  <!--
+    Late morning, well after the overnight run should have finished and at a time
+    the machine is likely awake.
+  -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>23</integer></dict>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/pharma-heartbeat.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/pharma-heartbeat.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
