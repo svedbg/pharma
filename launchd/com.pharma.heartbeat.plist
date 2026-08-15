@@ -18,7 +18,7 @@
   <array>
     <string>/bin/zsh</string>
     <string>-lc</string>
-    <string>export PATH="__PATH_EXTRA__:$PATH"; cd '__PHARMA_DIR__' &amp;&amp; echo "=== $(date '+%Y-%m-%d %H:%M:%S') pharma-heartbeat start ===" &amp;&amp; sleep $((RANDOM % 600)) &amp;&amp; python3 scripts/heartbeat.py; echo "=== exit $? ==="</string>
+    <string>export PATH="__PATH_EXTRA__:$PATH"; cd '__PHARMA_DIR__' &amp;&amp; echo "=== $(date '+%Y-%m-%d %H:%M:%S') pharma-heartbeat start ===" &amp;&amp; { sleep $((RANDOM % 600)); python3 scripts/heartbeat.py; rc=$?; echo "=== exit $rc ==="; exit $rc; }</string>
   </array>
 
   <!--

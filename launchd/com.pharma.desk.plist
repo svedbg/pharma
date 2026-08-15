@@ -29,7 +29,7 @@
   <array>
     <string>/bin/zsh</string>
     <string>-lc</string>
-    <string>export PATH="__PATH_EXTRA__:$PATH"; cd '__PHARMA_DIR__' &amp;&amp; echo "=== $(date '+%Y-%m-%d %H:%M:%S') pharma-desk start ===" &amp;&amp; { command -v claude &gt;/dev/null || { echo "FATAL: claude not on PATH (re-run launchd/install-launchd.sh)"; exit 127; }; } &amp;&amp; { python3 -c 'import tomllib, pyexpat' || { echo "FATAL: python3 lacks tomllib or pyexpat (need 3.11+ with a working expat); re-run launchd/install-launchd.sh"; exit 78; }; } &amp;&amp; sleep $((RANDOM % 240)) &amp;&amp; ./run_daily.sh; echo "=== exit $? ==="</string>
+    <string>export PATH="__PATH_EXTRA__:$PATH"; cd '__PHARMA_DIR__' &amp;&amp; echo "=== $(date '+%Y-%m-%d %H:%M:%S') pharma-desk start ===" &amp;&amp; { command -v claude &gt;/dev/null || { echo "FATAL: claude not on PATH (re-run launchd/install-launchd.sh)"; exit 127; }; } &amp;&amp; { python3 -c 'import tomllib, pyexpat' || { echo "FATAL: python3 lacks tomllib or pyexpat (need 3.11+ with a working expat); re-run launchd/install-launchd.sh"; exit 78; }; } &amp;&amp; { sleep $((RANDOM % 240)); ./run_daily.sh; rc=$?; echo "=== exit $rc ==="; exit $rc; }</string>
   </array>
 
   <!--

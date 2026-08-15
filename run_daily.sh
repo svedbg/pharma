@@ -31,10 +31,24 @@ busy() {
 }
 
 if command -v flock >/dev/null 2>&1; then
-    exec 9>"$LOCK"
+    # Without `set -e` a failed `exec` redirection does NOT stop the script: it
+    # returns 1 and carries on, after which flock fails on a bad descriptor and
+    # the run would exit 0 as a benign overlap. An unwritable lock file is not
+    # an overlap, and reporting it as one is the very bug this replaced.
+    exec 9>"$LOCK" || {
+        echo "FATAL: cannot open lock file $LOCK" >&2
+        exit 1
+    }
     flock --nonblock 9 || busy
 else
     if ! mkdir "$LOCKDIR" 2>/dev/null; then
+        # mkdir fails both when another run holds the lock and when the path is
+        # unwritable; only the first is benign. Contention always leaves the
+        # directory there, so its absence means a real error.
+        if [[ ! -d "$LOCKDIR" ]]; then
+            echo "FATAL: cannot create lock directory $LOCKDIR" >&2
+            exit 1
+        fi
         # A directory left behind by a killed run would block every later run
         # forever, so take the lock over once its owner is gone.
         owner="$(cat "$LOCKDIR/pid" 2>/dev/null || true)"
@@ -43,6 +57,8 @@ else
         fi
         echo "removing stale lock from pid ${owner:-unknown}" >&2
         rm -rf "$LOCKDIR"
+        # Losing this one is genuine contention: the directory was writable a
+        # moment ago, so another run took it in between.
         mkdir "$LOCKDIR" 2>/dev/null || busy
     fi
     echo $$ > "$LOCKDIR/pid"
