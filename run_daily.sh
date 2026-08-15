@@ -155,6 +155,11 @@ if [[ ! -f "$REPORT" ]]; then
 fi
 echo "--- report: $REPORT ($(wc -l < "$REPORT") lines)"
 
+# --- 3b. local archive ----------------------------------------------------
+# Non-fatal: a broken site build must not cost you the report or the email.
+echo "--- archive"
+python3 "$ROOT/scripts/publish.py" || echo "WARNING: publish.py failed"
+
 # --- 4. delivery ----------------------------------------------------------
 echo "--- notify"
 "$PY" "$ROOT/scripts/notify.py" --report "$REPORT" || echo "WARNING: notify failed"

@@ -1,4 +1,4 @@
-.PHONY: help setup lint fmt test check run run-fast briefing brief screen
+.PHONY: help setup lint fmt test check run run-fast briefing brief screen site
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -39,3 +39,6 @@ briefing:  ## rebuild docs/biotech-desk-briefing.pdf from the HTML source
 
 screen:  ## monthly: look for candidates OUTSIDE the watchlist (slow, ~500 requests)
 	python3 scripts/screen.py --out data/screen_candidates.toml
+
+site:   ## build the local report archive and open it
+	python3 scripts/publish.py --open

@@ -28,6 +28,10 @@ docs/*.pdf
 .venv/
 *.egg-info/
 
+# Local browsable archive built from reports/ -- same personal content,
+# same reason to keep it out of git.
+site/
+
 # Reports are personal research notes; drop this line if you want them versioned.
 reports/
 

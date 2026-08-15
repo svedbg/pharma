@@ -1419,6 +1419,29 @@ def main() -> int:
             print(f"[signals] WARNING: could not log alerts: {e}", file=sys.stderr)
 
     Path(args.out).write_text(json.dumps(out, indent=2))
+
+    # A small per-day record so the local site can build an accurate index
+    # without re-deriving anything from the prose. signals.json is overwritten
+    # each run; these accumulate.
+    if out["session_date"]:
+        summaries = DATA / "summaries"
+        summaries.mkdir(parents=True, exist_ok=True)
+        nxt = sorted(
+            (c["days_until"], r["symbol"], c)
+            for r in rows for c in (r.get("catalysts") or [])
+        )
+        (summaries / f"{out['session_date']}.json").write_text(json.dumps({
+            "session_date": out["session_date"],
+            "regime": (regime or {}).get("label"),
+            "tiers": {t: sum(1 for r in rows if r["tier"] == t)
+                      for t in ("ACT", "SETUP", "WATCH", "NONE", "NO_DATA")},
+            "alerts": [n["symbol"] for n in out["notify"]],
+            "exits": [n["symbol"] for n in out["notify_exits"]],
+            "vetoed": sorted({r["symbol"] for r in rows if r.get("hard_vetoes")}),
+            "next_catalyst": ({"symbol": nxt[0][1], "date": nxt[0][2]["date"],
+                               "days_until": nxt[0][0], "kind": nxt[0][2].get("kind")}
+                              if nxt else None),
+        }, indent=2))
     state_path.write_text(json.dumps(
         {r["symbol"]: {"tier": r["tier"], "date": out["session_date"],
                        "exit_key": r.get("_exit_key", "")}
