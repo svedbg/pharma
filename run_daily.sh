@@ -49,6 +49,29 @@ else
     trap 'rm -rf "$LOCKDIR"' EXIT
 fi
 
+# Everything under scripts/ is stdlib-only, but two stdlib pieces are not
+# guaranteed to be present: tomllib (3.11+) and pyexpat, which parses the Form 4
+# ownership XML. An interpreter missing pyexpat runs the entire desk and merely
+# records status=degraded -- the insider layer, which CLAUDE.md calls the
+# strongest available evidence for refuting a veto, just quietly disappears from
+# every report. Refuse to start instead of producing a plausible-looking one.
+PY=""
+for candidate in "${PHARMA_PYTHON:-}" python3 "$HOME/.local/bin/python3"; do
+    [[ -n "$candidate" ]] || continue
+    if "$candidate" -c 'import tomllib, pyexpat' 2>/dev/null; then
+        PY="$candidate"
+        break
+    fi
+done
+if [[ -z "$PY" ]]; then
+    echo "FATAL: no python3 with both tomllib (3.11+) and pyexpat (XML) found." >&2
+    echo "Install one, e.g.  uv python install 3.12 --default" >&2
+    echo "or point PHARMA_PYTHON at an existing interpreter." >&2
+    exit 1
+fi
+# Say which one, so a fallback is never mistaken for the interpreter on PATH.
+[[ "$PY" == "python3" ]] || echo "[run] python: $PY"
+
 DATE="$(date +%F)"
 LOG="$ROOT/logs/$DATE.log"
 REPORT="$ROOT/reports/$DATE.md"
@@ -63,7 +86,7 @@ NO_LLM=0
 
 fail() {
     echo "FAILED: $1"
-    python3 "$ROOT/scripts/notify.py" --failure "Biotech desk run failed on $DATE: $1" || true
+    "$PY" "$ROOT/scripts/notify.py" --failure "Biotech desk run failed on $DATE: $1" || true
     exit 1
 }
 
@@ -91,22 +114,22 @@ run_with_timeout() {
 
 # --- 1. facts -------------------------------------------------------------
 echo "--- fetch"
-python3 "$ROOT/scripts/fetch.py" || fail "fetch.py returned $? (all price sources down?)"
+"$PY" "$ROOT/scripts/fetch.py" || fail "fetch.py returned $? (all price sources down?)"
 
 # --- 2. arithmetic --------------------------------------------------------
 echo "--- signals"
-python3 "$ROOT/scripts/signals.py" || fail "signals.py returned $?"
+"$PY" "$ROOT/scripts/signals.py" || fail "signals.py returned $?"
 
 # --- 2b. grade past alerts ------------------------------------------------
 # Non-fatal: a scoring failure must not cost you the day's report.
 echo "--- scorecard"
-python3 "$ROOT/scripts/score_alerts.py" > "$ROOT/data/scorecard.txt" 2>&1 \
+"$PY" "$ROOT/scripts/score_alerts.py" > "$ROOT/data/scorecard.txt" 2>&1 \
     || echo "WARNING: score_alerts.py failed"
 tail -20 "$ROOT/data/scorecard.txt" || true
 
 # --- 2c. open paper positions ---------------------------------------------
 echo "--- paper positions"
-python3 "$ROOT/scripts/paper.py" status > "$ROOT/data/paper_status.txt" 2>&1 || true
+"$PY" "$ROOT/scripts/paper.py" status > "$ROOT/data/paper_status.txt" 2>&1 || true
 cat "$ROOT/data/paper_status.txt" || true
 
 if [[ $NO_LLM -eq 1 ]]; then
@@ -134,6 +157,6 @@ echo "--- report: $REPORT ($(wc -l < "$REPORT") lines)"
 
 # --- 4. delivery ----------------------------------------------------------
 echo "--- notify"
-python3 "$ROOT/scripts/notify.py" --report "$REPORT" || echo "WARNING: notify failed"
+"$PY" "$ROOT/scripts/notify.py" --report "$REPORT" || echo "WARNING: notify failed"
 
 echo "=== done $(date +%Y-%m-%dT%H:%M:%S%z) ==="
