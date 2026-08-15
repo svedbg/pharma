@@ -35,9 +35,12 @@ veto, and an acceptable financing or catalyst backdrop.
 from __future__ import annotations
 
 import argparse
-import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import localconfig
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -170,7 +173,7 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="write into watchlist.toml")
     args = ap.parse_args()
 
-    snap = json.loads(Path(args.snapshot).read_text())
+    snap = localconfig.require_data(Path(args.snapshot))
     zones = {sym: propose(rec) for sym, rec in snap["tickers"].items()}
 
     order = {"IN ZONE": 0, "below zone": 1}

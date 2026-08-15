@@ -24,6 +24,9 @@ import tomllib
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import localconfig
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 STATE = ROOT / "state"
@@ -1270,7 +1273,7 @@ def main() -> int:
     ap.add_argument("--state", default=str(STATE / "alerts.json"))
     args = ap.parse_args()
 
-    snap = json.loads(Path(args.snapshot).read_text())
+    snap = localconfig.require_data(Path(args.snapshot))
     cfg = tomllib.loads(Path(args.watchlist).read_text())
     settings = cfg.get("settings", {})
 

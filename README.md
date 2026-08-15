@@ -250,6 +250,23 @@ spreads are wide. Treat them as a smoke test of the thresholds, not proof of
 edge. The honest answer to "does this work" arrives only once live alerts have
 aged, which is what `score_alerts.py` exists to measure.
 
+## Data source terms
+
+Worth knowing before you rely on this:
+
+- **SEC EDGAR and FINRA** publish this data openly and expect a descriptive
+  User-Agent with contact details, which is why `SEC_CONTACT_EMAIL` is required.
+  Stay under 10 requests/second; the code rate-limits itself.
+- **Nasdaq and Yahoo endpoints are undocumented.** They are not published APIs,
+  carry no stability guarantee, and may change or block without notice — Yahoo
+  already rate-limits by IP aggressively enough that Nasdaq is the primary
+  source here. Treat both as best-effort, and check their terms if you intend
+  anything beyond personal research.
+
+The design assumes sources will break: prices try two providers, every fetch
+failure is recorded rather than silently defaulted, and a run that loses all
+price data aborts instead of reporting on nothing.
+
 ## Licence
 
 MIT. No warranty; you are responsible for your own trades.

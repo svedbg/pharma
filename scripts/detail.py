@@ -17,6 +17,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import localconfig
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 
@@ -30,7 +33,7 @@ def main() -> int:
     args = ap.parse_args()
 
     sym = args.symbol.upper()
-    snap = json.loads((DATA / "latest.json").read_text())
+    snap = localconfig.require_data(DATA / "latest.json")
     rec = snap["tickers"].get(sym)
     if not rec:
         print(f"{sym} not in snapshot. Available: {', '.join(sorted(snap['tickers']))}", file=sys.stderr)

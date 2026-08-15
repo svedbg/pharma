@@ -11,6 +11,10 @@ state/
 # levels. watchlist.example.toml is committed in its place so the repo runs.
 watchlist.toml
 
+# Screen output -- regenerate with `make screen`
+candidates.toml
+data/screen_candidates.toml
+
 # Your objective, risk posture and broker preferences -- personal, not code.
 STRATEGY.local.md
 

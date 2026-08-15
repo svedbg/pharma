@@ -12,6 +12,7 @@ one-off overrides and CI), then the config file. Nothing is hardcoded.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -74,3 +75,24 @@ def sec_contact() -> str:
             "or export SEC_CONTACT_EMAIL for a one-off run."
         )
     return value
+
+
+def require_data(path: Path) -> dict:
+    """Load a generated data file, or explain how to create it.
+
+    On a fresh clone data/ is empty, and a raw FileNotFoundError traceback is a
+    poor first thing for a new user to meet. Three scripts used to do exactly
+    that while three others failed politely; this makes them consistent.
+    """
+    if not path.exists():
+        raise SystemExit(
+            f"{path.name} not found at {path}.\n\n"
+            "Collect the data first:\n"
+            "    ./run_daily.sh --no-llm\n\n"
+            "That fetches prices, filings and financials for every name in "
+            "watchlist.toml and writes data/."
+        )
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"{path} is not valid JSON ({e}). Re-run ./run_daily.sh --no-llm") from e
