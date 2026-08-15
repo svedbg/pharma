@@ -140,3 +140,44 @@ kind = "other"
 confidence = "expected"
 description = "Aficamten sNDA submission in non-obstructive HCM, guided to Q4 2026 following positive ACACIA-HCM"
 source = "Cytokinetics Q2 2026 business update, 2026-08-06"
+
+[[catalyst]]
+symbol = "DYN"
+date = "2027-01-21"
+kind = "PDUFA"
+confidence = "confirmed"
+description = "DYNE-251 BLA target action date in Duchenne muscular dystrophy (exon 51 skipping)"
+source = "Dyne Q2 2026 results; FDA set a 21 Jan BLA target date"
+
+[[catalyst]]
+symbol = "EWTX"
+date = "2026-10-01"
+kind = "other"
+confidence = "expected"
+description = "EDG-7500 Phase 3 initiation in obstructive and non-obstructive HCM, guided to Q4 2026"
+source = "Edgewise 2026 pipeline guidance"
+
+[[catalyst]]
+symbol = "SPRY"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "Phase 2b interim data, intranasal epinephrine for acute chronic spontaneous urticaria flares; guided to fiscal Q4 2026 (note: fiscal, may not equal calendar)"
+source = "ARS Pharmaceuticals Q2 2026 business update"
+
+[[catalyst]]
+symbol = "VRDN"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "VRDN-008 healthy volunteer data (bispecific half-life extended FcRn inhibitor), guided to H2 2026"
+source = "Viridian 2026 corporate outlook"
+
+[[catalyst]]
+symbol = "NUVB"
+date = "2026-10-01"
+kind = "conference"
+confidence = "expected"
+description = "Long-term TRUST-I and TRUST-II data for IBTROZI presented at WCLC and ESMO"
+source = "Nuvation Bio 2026 investor update"
+

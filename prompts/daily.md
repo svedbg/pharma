@@ -210,6 +210,14 @@ Write the report to `reports/YYYY-MM-DD.md` (today's date), in this order:
    are flagged today. Over a couple of weeks this fills the whole watchlist in
    with researched theses instead of guesses. Never invent one — if you cannot
    establish what a company actually does from sources, say so and skip it.
+11. **Catalyst bootstrap** — most names have no dated catalyst, which means the
+   desk is blind to their binaries. Pick up to **3 per run** from bucket A that
+   have none, find a dated PDUFA, AdCom, readout or conference from a filing or
+   company statement, and output them as `[[catalyst]]` blocks ready to paste
+   into `catalysts.toml`, each with a `source`. Mark quarter-level guidance as
+   `confidence = "expected"` and use the first of the month. **Never invent a
+   date** — an unsourced catalyst silently gates sizing in every later run. If
+   you cannot source one, say so and move on.
 
 Close with one line stating this is research for the user's own decision-making,
 not financial advice.
