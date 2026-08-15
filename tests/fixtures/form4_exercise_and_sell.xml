@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<!-- Minimal but structurally faithful Form 4: an officer exercises options at
+     $0.99 (code M) and sells at $5.062 (code S) the same day. Both legs carry
+     an acquired/disposed flag, and counting the M leg as a purchase inverts the
+     signal. This mirrors a real ARDX filing observed during development. -->
+<ownershipDocument>
+  <periodOfReport>2026-07-15</periodOfReport>
+  <issuer>
+    <issuerCik>0001437402</issuerCik>
+    <issuerTradingSymbol>ARDX</issuerTradingSymbol>
+  </issuer>
+  <reportingOwner>
+    <reportingOwnerId><rptOwnerName>DOE JANE</rptOwnerName></reportingOwnerId>
+    <reportingOwnerRelationship>
+      <isDirector>1</isDirector>
+      <isOfficer>1</isOfficer>
+      <officerTitle>President &amp; CEO</officerTitle>
+    </reportingOwnerRelationship>
+  </reportingOwner>
+  <nonDerivativeTable>
+    <nonDerivativeTransaction>
+      <securityTitle><value>Common Stock</value></securityTitle>
+      <transactionDate><value>2026-07-15</value></transactionDate>
+      <transactionCoding><transactionCode>M</transactionCode></transactionCoding>
+      <transactionAmounts>
+        <transactionShares><value>20834</value></transactionShares>
+        <transactionPricePerShare><value>0.99</value></transactionPricePerShare>
+        <transactionAcquiredDisposedCode><value>A</value></transactionAcquiredDisposedCode>
+      </transactionAmounts>
+    </nonDerivativeTransaction>
+    <nonDerivativeTransaction>
+      <securityTitle><value>Common Stock</value></securityTitle>
+      <transactionDate><value>2026-07-15</value></transactionDate>
+      <transactionCoding><transactionCode>S</transactionCode></transactionCoding>
+      <transactionAmounts>
+        <transactionShares><value>41668</value></transactionShares>
+        <transactionPricePerShare><value>5.062</value></transactionPricePerShare>
+        <transactionAcquiredDisposedCode><value>D</value></transactionAcquiredDisposedCode>
+      </transactionAmounts>
+    </nonDerivativeTransaction>
+  </nonDerivativeTable>
+</ownershipDocument>

@@ -320,6 +320,12 @@ be recomputed as prices move. Method:
 These are mechanical starting points, not valuations. Override any of them by
 hand in `watchlist.toml`; re-run with `--apply` to refresh the rest.
 
+**Zones go stale, and stale zones fail closed.** A zone describes the regime it
+was built from; once price is `ZONE_STALE_DRIFT_PCT` (25%) away, `zone_stale` is
+set and a soft flag raised. This matters because the failure is otherwise
+invisible: ACT simply never fires, which looks identical to "no opportunity".
+Refresh with `propose_zones.py --apply`.
+
 ## Buckets and sizing
 
 `tier` in `watchlist.toml` (`A` / `B` / `lottery` / `legacy`) selects a

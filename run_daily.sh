@@ -11,6 +11,18 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT" || exit 1
 
+# Only one run at a time. A manual run colliding with the scheduled one shares
+# the log file, races on state/alerts.json and interleaves sqlite writes -- all
+# of which happened during development. Re-exec under an exclusive lock.
+LOCK="$ROOT/data/.run.lock"
+mkdir -p "$ROOT/data"
+exec 9>"$LOCK"
+if ! flock --nonblock 9; then
+    # Benign: exit 0 so systemd does not record a skipped overlap as a failure.
+    echo "another run is already in progress; exiting" >&2
+    exit 0
+fi
+
 DATE="$(date +%F)"
 LOG="$ROOT/logs/$DATE.log"
 REPORT="$ROOT/reports/$DATE.md"

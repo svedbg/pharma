@@ -112,6 +112,13 @@ with a broken thesis matters more than another candidate. Flag any showing
 point of the log is to find out whether these decisions beat owning the ETF, so
 say plainly when they are not.
 
+## Stale entry zones
+
+`zone_stale` means price has drifted 25%+ from the zone that gates ACT for that
+name. A stale zone fails closed — ACT never fires — which is indistinguishable
+from "nothing to do". Call it out and suggest re-running `propose_zones.py`,
+rather than reporting the silence as an absence of opportunity.
+
 ## Exits and exposure
 
 The desk is no longer buy-side only. Treat these with the same weight as entries.

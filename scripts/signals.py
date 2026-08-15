@@ -75,6 +75,8 @@ RSI_TRAP = 22.0
 SIGNAL_HORIZON_SESSIONS = 20
 # Equal-weighted small/mid-cap biotech -- the honest comparison for this list.
 BENCHMARK = "XBI"
+# Price this far from its entry zone means the zone predates the current regime.
+ZONE_STALE_DRIFT_PCT = 25.0
 
 
 # ------------------------------------------------------------------ indicators
@@ -1066,6 +1068,25 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
 
     if hard:
         reasons.append(f"HARD VETO x{len(hard)}: " + "; ".join(h["reason"] for h in hard[:3]))
+
+    # A zone describes the price regime it was built from. Once price has moved
+    # far beyond that regime the zone is describing a company that no longer
+    # trades there -- and because a stale zone fails CLOSED (no signal), the
+    # failure is silent. Surface it rather than let ACT quietly never fire.
+    zone_hi = rec.get("entry_high", 0) or 0
+    if zone_hi:
+        drift = (last / zone_hi - 1.0) * 100.0
+        out["zone_drift_pct"] = round(drift, 1)
+        out["zone_stale"] = bool(abs(drift) >= ZONE_STALE_DRIFT_PCT)
+        if out["zone_stale"]:
+            soft.append({
+                "form": "stale entry zone", "filed": "", "days_ago": None,
+                "reason": (f"price is {drift:+.0f}% from its entry zone "
+                           f"(high ${zone_hi}); the zone predates this regime. "
+                           f"Re-run propose_zones.py or set it by hand -- until then "
+                           f"ACT cannot fire for this name"),
+                "url": None,
+            })
 
     # At or below entry_high is the gate. A price *below* entry_low is cheaper,
     # not disqualifying -- gating on a floor would reject a name making new lows
