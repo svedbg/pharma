@@ -56,6 +56,31 @@ def load() -> dict:
     return cfg
 
 
+# RFC 2606 / RFC 6761 reserve these precisely so nobody can own them. An address
+# in one of them cannot receive mail, which is the whole point of the header.
+_RESERVED_DOMAINS = frozenset({
+    "example.com", "example.org", "example.net", "example.edu",
+    "test", "invalid", "localhost", "local",
+})
+
+
+def _is_placeholder(address: str) -> bool:
+    """True if the address is obviously a template value rather than a real one.
+
+    Matched on the parsed domain, not by substring: a substring test both misses
+    the placeholder actually shipped in pharma.env.example (you@example.org,
+    while the old check looked for "example.com") and would wrongly reject a
+    legitimate address at a domain that merely contains the word.
+    """
+    _, _, domain = address.rpartition("@")
+    if not domain or "." not in domain:
+        return True                      # not a usable address at all
+    domain = domain.lower().strip(".")
+    if domain in _RESERVED_DOMAINS:
+        return True
+    return domain.rsplit(".", 1)[-1] in _RESERVED_DOMAINS
+
+
 def sec_contact() -> str:
     """Contact address for the SEC User-Agent header.
 
@@ -64,7 +89,7 @@ def sec_contact() -> str:
     loudly with instructions beats being silently rate-limited at 3am.
     """
     value = load().get("SEC_CONTACT_EMAIL", "").strip()
-    if not value or "example.com" in value:
+    if not value or _is_placeholder(value):
         raise SystemExit(
             "SEC_CONTACT_EMAIL is not set.\n\n"
             "SEC requires a real contact address in the User-Agent header and\n"

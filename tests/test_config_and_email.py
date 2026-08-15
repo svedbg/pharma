@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from localconfig import _clean_value
+import localconfig
 from render_email import MAX_HTML_BYTES, build_email_html, md_to_html
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -27,23 +27,22 @@ ROOT = Path(__file__).resolve().parent.parent
 def test_inline_comments_are_stripped(raw, expected):
     """`EMAIL_ALWAYS=1  # explanation` previously parsed as the whole string, so
     the `== "1"` check failed and email was silently disabled."""
-    assert _clean_value(raw) == expected
+    assert localconfig._clean_value(raw) == expected
 
 
 @pytest.mark.parametrize("raw", ["p@ss#word1", "abc#def"])
 def test_hash_without_leading_space_is_part_of_the_value(raw):
     # Otherwise a password containing '#' would be truncated into a wrong secret.
-    assert _clean_value(raw) == raw
+    assert localconfig._clean_value(raw) == raw
 
 
 def test_quoted_values_are_taken_verbatim():
-    assert _clean_value('"p@ss w#rd"') == "p@ss w#rd"
+    assert localconfig._clean_value('"p@ss w#rd"') == "p@ss w#rd"
 
 
 def test_sec_contact_refuses_a_placeholder(monkeypatch):
     """SEC throttles generic user agents, so a silent default would cause
     mysterious rate limiting rather than an obvious failure."""
-    import localconfig
     monkeypatch.setattr(localconfig, "load", lambda: {"SEC_CONTACT_EMAIL": "you@example.com"})
     with pytest.raises(SystemExit) as e:
         localconfig.sec_contact()
@@ -51,7 +50,6 @@ def test_sec_contact_refuses_a_placeholder(monkeypatch):
 
 
 def test_sec_contact_accepts_a_real_address(monkeypatch):
-    import localconfig
     monkeypatch.setattr(localconfig, "load", lambda: {"SEC_CONTACT_EMAIL": "a@b.org"})
     assert localconfig.sec_contact() == "a@b.org"
 
@@ -126,8 +124,6 @@ def test_modules_import_without_any_configuration(monkeypatch, tmp_path):
     define a function.
     """
     import importlib
-
-    import localconfig
     # No environment variable and no config file anywhere.
     monkeypatch.delenv("SEC_CONTACT_EMAIL", raising=False)
     monkeypatch.setattr(localconfig, "CONFIG_FILES", (tmp_path / "absent.env",))
@@ -139,9 +135,35 @@ def test_modules_import_without_any_configuration(monkeypatch, tmp_path):
 def test_sec_contact_is_still_demanded_before_a_request(monkeypatch, tmp_path):
     """Lazy must not mean optional -- the failure moves, it does not disappear."""
     import fetch
-    import localconfig
     monkeypatch.delenv("SEC_CONTACT_EMAIL", raising=False)
     monkeypatch.setattr(localconfig, "CONFIG_FILES", (tmp_path / "absent.env",))
     monkeypatch.setattr(fetch, "_SEC_UA", None)
     with pytest.raises(SystemExit, match="SEC_CONTACT_EMAIL"):
         fetch.sec_ua()
+
+
+@pytest.mark.parametrize("address", [
+    "you@example.org",      # the value actually shipped in pharma.env.example
+    "you@example.com",
+    "someone@example.net",
+    "dev@myhost.test",
+    "me@localhost",
+    "nodomain",
+    "",
+])
+def test_placeholder_addresses_are_refused(address):
+    """The original check looked for the substring 'example.com' while the
+    template shipped 'you@example.org', so anyone following the README verbatim
+    sent SEC a placeholder and got throttled with no warning."""
+    import localconfig
+    assert localconfig._is_placeholder(address) is True
+
+
+@pytest.mark.parametrize("address", [
+    "svedbg@users.noreply.github.com",
+    "research@exampleclinic.co.uk",   # contains 'example' but is a real domain
+    "a.b+tag@sub.domain.org",
+])
+def test_real_addresses_are_accepted(address):
+    import localconfig
+    assert localconfig._is_placeholder(address) is False
