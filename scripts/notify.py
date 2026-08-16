@@ -20,6 +20,7 @@ import ssl
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -28,11 +29,59 @@ import localconfig
 from render_email import build_email_html
 
 ROOT = Path(__file__).resolve().parent.parent
+# What actually left the machine, so something other than this process can tell.
+# Delivery is the one stage with no evidence of its own: the report is on disk
+# whether or not it was sent, and heartbeat.py watches reports. A wrong SMTP
+# password therefore produced a written report, a healthy heartbeat, and silence
+# on the phone, indefinitely -- and the heartbeat's own alarm would have gone out
+# through the same dead channel.
+DELIVERY_LOG = ROOT / "data" / "last_delivery.json"
 
 
 def load_config() -> dict:
     """Settings come from scripts/localconfig.py so there is one loader, not two."""
     return localconfig.load()
+
+
+def configured_channels(cfg: dict) -> dict[str, bool]:
+    """Which channels have enough settings to be worth attempting.
+
+    Kept separate from the send result because `send_ntfy` and `send_email` both
+    return False when they are merely unconfigured, which is indistinguishable
+    from a failure at the call site. Recording that directly would report a
+    broken ntfy to anyone who deliberately runs email only.
+    """
+    return {
+        "ntfy": bool(cfg.get("NTFY_TOPIC")),
+        "email": bool(cfg.get("SMTP_HOST") and cfg.get("EMAIL_TO")),
+    }
+
+
+def record_delivery(session_date: str, channels: dict[str, bool | None],
+                    configured: dict[str, bool] | None = None) -> None:
+    """Write what each channel did. None means 'not attempted', not 'failed'.
+
+    Best-effort: a delivery that worked must not be reported as broken because
+    the note about it could not be written.
+    """
+    try:
+        DELIVERY_LOG.parent.mkdir(parents=True, exist_ok=True)
+        DELIVERY_LOG.write_text(json.dumps({
+            "at": datetime.now().isoformat(timespec="seconds"),
+            "session_date": session_date or None,
+            "channels": channels,
+            # What the machine is set up to do, as opposed to what this
+            # particular run had occasion to do. A quiet day with EMAIL_ALWAYS=0
+            # legitimately sends nothing, and that must not read as a fault --
+            # having nothing configured at all must.
+            "configured": configured if configured is not None else {},
+            # The question the heartbeat asks: did everything that was supposed
+            # to go out, go out?
+            "ok": all(v for v in channels.values() if v is not None),
+            "attempted": [k for k, v in channels.items() if v is not None],
+        }, indent=2))
+    except OSError as e:
+        print(f"[notify] could not record delivery state: {e}", file=sys.stderr)
 
 
 def send_ntfy(cfg: dict, title: str, body: str, priority: str = "default", tags: str = "pill") -> bool:
@@ -189,8 +238,15 @@ def main() -> int:
     session_date = sig.get("session_date") or ""
     has_alerts = bool(sig.get("notify") or sig.get("notify_exits"))
 
+    # None until a channel is actually attempted *and* configured, so "quiet
+    # day, email only" stays distinguishable from "ntfy is broken".
+    configured = configured_channels(cfg)
+    channels: dict[str, bool | None] = {"ntfy": None, "email": None}
+
     if has_alerts or cfg.get("NTFY_ALWAYS", "0") == "1":
         ok = send_ntfy(cfg, ntfy_title(summary, session_date), body, priority=priority)
+        if configured["ntfy"]:
+            channels["ntfy"] = ok
         print(f"[notify] ntfy sent={ok}", file=sys.stderr)
 
     if cfg.get("EMAIL_ALWAYS", "1") == "1" or has_alerts:
@@ -210,9 +266,22 @@ def main() -> int:
             cfg, email_subject(summary, session_date),
             report_md, html_body=html_body, attachment=report_path,
         )
+        if configured["email"]:
+            channels["email"] = ok
         print(f"[notify] email sent={ok} (html={bool(html_body)}, "
               f"attached={bool(report_path)})", file=sys.stderr)
 
+    record_delivery(session_date, channels, configured)
+
+    # Still 0 when a channel fails: the report is on disk either way, and taking
+    # the run down over a delivery problem would cost the archive and the
+    # scorecard too. The failure is now recorded instead, and heartbeat.py is
+    # what raises it -- from its own timer, which is the only way an alarm about
+    # a broken channel reaches anyone.
+    failed = [name for name, ok in channels.items() if ok is False]
+    if failed:
+        print(f"[notify] WARNING: {', '.join(failed)} did not deliver; recorded in "
+              f"{DELIVERY_LOG.name} for the heartbeat to pick up", file=sys.stderr)
     return 0
 
 

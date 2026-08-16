@@ -117,6 +117,13 @@ blocks the SETUP/ACT tiers when any of these are live:
 - `424B*` prospectus supplement within 10 days — **read it**: a priced takedown is
   a hard stop, an at-the-market programme is only registered capacity. The form
   type alone cannot distinguish them, so it vetoes until the report refutes it.
+  **`424B7` is excluded**: it registers shares existing holders already own, so
+  it is a resale, not an issuance, and it carries only the soft flag of that
+  name. It matched the `424B` prefix as well as its own soft rule, so every
+  resale registration took a priced-takedown veto sitting next to a soft flag
+  explaining it was only a resale — advice nobody could act on, because the veto
+  beside it had already blocked the name. Whatever dilution preceded it arrives
+  on its own hard veto as item 3.02.
 - 8-K item **3.01** (listing deficiency) within 45 days
 - 8-K item **3.02** (unregistered equity sale) within 10 days
 - 8-K item **4.01 / 4.02** (auditor change / non-reliance)
@@ -168,6 +175,34 @@ works. `session_date` in the output is always the parsed value, so `2026-8-15`
 is normalised to `2026-08-15` rather than naming a summary file the archive
 looks for under the canonical spelling and never finds.
 
+**Recording is only deferred, never skipped, so a session-less run leaves the
+alert state alone.** `state/alerts.json` is what makes an alert fire *once*, so
+writing it commits to having recorded the transition. It used to be written
+unconditionally: a run with no session logged no alert row — correctly — and
+then advanced every tier anyway, so the next run saw no change and never logged
+it either, while the notification had already gone out. Refusing to write the
+unreadable key and consuming the transition regardless turned an ungradeable row
+into no row at all. The state write is now gated on the same `session`, which
+defers the whole thing to the next run that can name its day: one duplicate
+buzz, against a permanently missing row.
+
+**The session is the newest bar, not `date.today()`.** `fetch.session_date()`
+derives `local_date` from the bars themselves — the date most sources agree is
+their newest, so one stale or bogus series cannot redate the run — and only
+`generated_at` reads the clock. Everything above measures from a value that was
+itself a clock reading, which is the session only when the day's bar already
+exists, and it routinely does not: the scheduled run fires 18 minutes after the
+US close, any hand run before then is hours early, and a market holiday has no
+bar at all. When they diverged the alert was keyed a day ahead of the bar its
+own numbers came from, and `score_alerts.py` — which resolves an alert to the
+first bar at or after its session date — then graded the entry from the *next*
+session, at a price that had already moved. The one live ARDX alert was recorded
+at 3.91 and graded from 4.06. Backfilled alerts are keyed to their own bar, so
+the two halves of the scorecard were not measured the same way, which is the one
+comparison it exists to make. **The report is named for the session too**
+(`run_daily.sh` reads it back out of `signals.json`), because `publish.py` pairs
+`reports/<d>.md` with `data/summaries/<d>.json` by that name.
+
 **A veto may only be overridden in the report with specific cited evidence.**
 This has already worked in practice: a COGT 424B5 was correctly refuted as a
 $400M ATM programme, and a PRAX item 4.01 as a clean auditor change.
@@ -176,8 +211,22 @@ $400M ATM programme, and a PRAX item 4.01 as a clean auditor change.
 
 - `WATCH` — RSI(14) < 40 **and** %B < 0.25 (approaching oversold)
 - `SETUP` — RSI(14) < 35 **and** %B < 0.15 **and** no hard veto
-- `ACT` — SETUP **and** price ≤ `entry_high` **and** (runway ≥ 3 quarters, not
-  stale and not superseded, **or** a catalyst within 90 days)
+- `ACT` — SETUP **and** price ≤ `entry_high` **and** a financing backdrop
+  (runway ≥ 3 quarters or cash-flow positive, in both cases neither stale nor
+  superseded, **or** a catalyst within 90 days) **and** `capitulation_volume`
+  **and**, in a `downtrend` regime, a `strong` conviction score.
+
+That is the whole of it. The last two conditions used to live only in the
+sections that derived them — "The finding that matters most" and "Market regime"
+— so this list, which is where a reader looks for the definition, described a
+looser tier than the code has fired since. **The financing half accepts a
+cash-generative company.** `runway()` returns quarters of liquidity at the
+current burn, and a company that funds itself from operations has no such
+number; folding that into `None` made `runway_ok` read the strongest balance
+sheet on the list as ignorance, so it needed a catalyst inside 90 days to reach
+ACT while a company with three quarters of cash did not. It now returns
+`cash_flow_positive: True` with `quarters: None`, and every consumer must branch
+on `is None` rather than on falsiness.
 
 The catalyst half of that test reads **both** clocks: the next active trial's
 primary-completion date from ClinicalTrials.gov, and any dated entry in
@@ -189,26 +238,63 @@ place `catalysts.toml` participates in a tier; everywhere else it warns only.
 ### Thresholds are measured, not chosen
 
 `scripts/backtest.py` replays the stored history (~29,000 ticker-days and
-growing, no lookahead) and scores each rule's forward return against an all-days
-baseline.
-**Re-run it before changing any threshold.** What it found (run of 2026-08-14;
+growing, no lookahead) and scores each rule two ways: against an all-days
+baseline, and against **XBI over the same calendar dates**.
+**Re-run it before changing any threshold.** What it found (run of 2026-08-16;
 the history grows daily, so re-run rather than quoting these):
 
-| Rule | Fires | Median edge @20d | @60d |
-|---|---|---|---|
-| RSI<30 & %B<0.05 (the old SETUP) | 1.81% | **+3.63pp** | +0.26pp |
-| RSI<35 & %B<0.15 (current SETUP) | 6.59% | +2.90pp | −0.49pp |
-| bottom decile of 1y range (the old WATCH) | 19.25% | +0.49pp | **−2.68pp** |
-| RSI<25 | 1.46% | +2.38pp | **−9.59pp** |
-| RSI<35 & %B<0.15 & volume>1.5× | 1.92% | +2.63pp | **+1.72pp** |
+| Rule | Fires | edge @20d | @60d | vs XBI @20d | vs XBI @60d |
+|---|---|---|---|---|---|
+| RSI<30 & %B<0.05 (superseded SETUP) | 1.82% | +3.61pp | +0.24pp | +1.05% | −3.56% |
+| RSI<35 & %B<0.15 (live SETUP) | 6.61% | +3.04pp | −0.50pp | +0.90% | −2.58% |
+| bottom decile of 1y range (the old WATCH) | 19.23% | +0.48pp | **−2.59pp** | −0.21% | −1.76% |
+| RSI<25 | 1.46% | +2.36pp | **−9.62pp** | +1.22% | **−11.95%** |
+| live SETUP + volume>1.5× (the ACT bar) | 1.92% | +2.71pp | **+1.76pp** | +0.18% | −1.55% |
+
+**Read the last two columns first.** The all-days baseline is the average
+ticker-day in this universe, which is not something anyone can buy; XBI is. The
+two disagree, and where they do the ETF settles it — every rule above is weaker
+against XBI than against the baseline, and the baseline itself runs −1.23% at
+20d and −3.03% at 60d against XBI. That gap *is* the finding in the next section,
+now visible in the same table rather than only in the scorecard.
 
 `backtest.py` builds the live rule from `SETUP_RSI` / `SETUP_PCTB` /
 `CAPITULATION_VOL` imported from `signals.py`, never from numbers retyped into
 it. It once hardcoded the old pair and labelled them "live SETUP" while calling
 the real rule "(looser)" — the instrument that justifies the thresholds was
-scoring a threshold the desk had already abandoned. The last two rows above are
-now labelled "live SETUP" and "live SETUP + volume (the ACT bar)"; the retired
-pair is kept as "superseded SETUP" for comparison.
+scoring a threshold the desk had already abandoned. The retired pair is kept as
+"superseded SETUP" for comparison. The zone rules below reconstruct the zone
+through `propose_zones.zone_from_closes()` for the same reason: one
+implementation, so the instrument cannot score a paraphrase of the rule.
+
+The benchmarks are **excluded from the universe** (`NOT_CANDIDATES`). XBI and
+IBB sit in the same `bars` table as the watchlist, and scoring them diluted the
+baseline every edge here is measured against while letting the rules fire on the
+very thing they are supposed to beat. `score_alerts.backfill` always excluded
+them; this file did not.
+
+#### Does a stale zone deserve to open ACT?
+
+`zone_stale` fires at 25% drift in either direction but only *gates* the upward
+one: above the zone `in_zone` is false and ACT cannot fire, while below it ACT
+fires normally — and below is the direction this desk hunts. Whether that
+permission is earned is a measurable question, so it was measured rather than
+argued. Splitting the ACT bar by it (zones reconstructed as of each day from
+prior bars only):
+
+| | Fires | vs XBI @20d | vs XBI @60d |
+|---|---|---|---|
+| ACT bar, in zone, **zone fresh** | 0.96% (n=280) | +1.85% med / +4.06% mean | −1.11% med |
+| ACT bar, in zone, **stale 25%+ down** | 0.36% (n=104) | **+2.38% med / +16.07% mean** | −1.77% med |
+
+**So the gate stays off.** The stale-to-the-downside subset is not worse than the
+fresh one at the 20-session horizon where the edge lives — it is slightly better
+on the median and far better on the mean, which is what a population of deeply
+beaten-down names that occasionally re-rate looks like. Blocking it would remove
+signals that perform at least as well as the ones it keeps. n=104 is small and
+both medians are negative by 60 sessions, so this is a reason not to add a gate
+rather than evidence that these are good trades; deciding a cheap name is broken
+remains the veto layer's job, not the zone's.
 
 Three consequences, all encoded above:
 
@@ -229,7 +315,17 @@ thresholds, not proof of edge.
 
 `scripts/score_alerts.py` grades alerts against **XBI**, not against an
 all-days baseline. That distinction changed the conclusion (run of 2026-08-14;
-`data/scorecard.txt` holds the current one, refreshed every run):
+`data/scorecard.txt` holds the current one, refreshed every run).
+
+Both ends of that comparison are the **ticker's own bar dates**, resolved
+through `bench_at()`. It used to advance the benchmark `h` positions through the
+ETF's bar list while the alert advanced `h` positions through the name's, so any
+session the name missed and the ETF did not compared two different calendar
+windows — the misalignment `relative_strength()` in `signals.py` already exists
+to prevent, absent from the module that produces the number below. No figure
+here moves today (the 15 affected names are only missing the most recent bar, so
+no scored window reaches the gap); the first mid-window halt would have shifted
+them silently.
 
 | | +20d vs XBI | +60d vs XBI |
 |---|---|---|
@@ -278,6 +374,26 @@ never blocks** — an approaching binary changes sizing, not permission.
 The daily run appends catalysts it establishes from filings, with sources. An
 invented date would silently distort every later run, so unsourced dates are
 forbidden.
+
+**Write every date as a quoted ISO string — `date = "2026-09-15"`.** This is the
+one hand-edited file the pipeline reads, and `_catalyst_date()` now normalises
+it because both ways of getting it slightly wrong reached a report:
+
+- *Unquoted* (`date = 2026-09-15`) is a TOML date literal, so `tomllib` returns
+  a `datetime.date` and the string comparisons in `load_catalysts` raised
+  `TypeError`. One missing pair of quotes killed the whole run.
+- *Unpadded* (`"2026-8-01"`) parses fine but sorts wrong — every filter here is
+  a string comparison and `'8' > '0'`, so a date that had already passed
+  compared as later than today. It was never filtered out as history, never
+  picked up by `resolved_catalysts`, and printed forever as `CATALYST IN -15
+  DAYS … size for the outcome, not the chart` — the strongest sizing
+  instruction the report emits, on a binary that already resolved.
+
+Unparseable dates are dropped with a warning rather than guessed at. Two
+catalysts may share a date (a PDUFA and its AdCom); the archive summary sorts on
+`(days_until, symbol)` explicitly, because comparing whole tuples fell through
+to comparing the catalyst dicts, which raised out of `main()` and cost the day's
+report.
 
 ## Float
 
@@ -342,10 +458,38 @@ once.
 ## Heartbeat
 
 `pharma-heartbeat.timer` / `com.pharma.heartbeat` (Mon-Fri) alerts if no report
-appears for two weekdays.
+appears for three weekdays — two of genuine slack, plus one for the
+gap between a session and the day it is checked on, since reports are named
+for the session and a run that loses the race with the provider dates its
+report a day back.
 **Silence is the desk's normal output**, so a broken run and a quiet market look
 identical. Separate unit on purpose: if the main run dies before reaching
 notify.py, run_daily.sh's own failure handler dies with it.
+
+**It also checks that the last run could actually deliver.** A report on disk is
+not evidence that anything was sent, and watching reports alone meant a wrong
+SMTP password read as a perfectly healthy desk: the run wrote its file, the
+heartbeat passed, and the phone stayed silent indefinitely. `notify.py` records
+each channel's outcome in `data/last_delivery.json` and
+`heartbeat.delivery_fault()` is the only place that answer exists.
+
+Two distinctions the record has to keep, or it cries wolf:
+
+- **`channels`** holds the send result, `None` meaning *not attempted*.
+  `send_ntfy` and `send_email` both return `False` when they are merely
+  unconfigured, which is indistinguishable from failure at the call site, so
+  the result is only recorded for a channel `configured_channels()` says is set
+  up. Otherwise anyone deliberately running email only gets a broken-ntfy alarm
+  every night.
+- **`configured`** is what the machine is set up to do, as opposed to what this
+  run had occasion to do. Sending nothing is not a fault — a quiet day with
+  `EMAIL_ALWAYS=0` correctly sends nothing, and silence is this desk's normal
+  output. Having nowhere to send is.
+
+A missing file is not a fault either — it means notify.py has not run since this
+was added. The alarm still goes out over the same channels it is reporting on,
+which is why the heartbeat also exits non-zero: when the fault *is* delivery,
+the scheduler's journal may be the only record that survives.
 
 ## Market regime
 
@@ -445,11 +589,35 @@ hand in `watchlist.toml`; re-run with `--apply` to refresh the rest. A name whos
 window is too short keeps whatever zone it already has rather than having it
 zeroed.
 
-**Zones go stale, and stale zones fail closed.** A zone describes the regime it
-was built from; once price is `ZONE_STALE_DRIFT_PCT` (25%) away, `zone_stale` is
-set and a soft flag raised. This matters because the failure is otherwise
-invisible: ACT simply never fires, which looks identical to "no opportunity".
-Refresh with `propose_zones.py --apply`.
+`--apply` **inserts a key the block does not have**, rather than only rewriting
+ones already present. It used to do the latter, so a ticker added by hand
+without an `invalidation_price` line never got one and `--apply` reported
+success anyway — the same shape as the bug that left `invalidation_price`
+unreachable for every name on the list: nothing looked broken, the field simply
+was not there. Insertions go at the end of that ticker's own block, deepest
+first so earlier ones do not shift later line numbers.
+
+The zone arithmetic lives in `zone_from_closes()`, which both `propose()` and
+`backtest.py` call. One implementation, so the instrument that justifies the
+rule cannot end up scoring a paraphrase of it.
+
+**Zones go stale, and which way they drifted decides what that costs.** A zone
+describes the regime it was built from; once price is `ZONE_STALE_DRIFT_PCT`
+(25%) away, `zone_stale` is set and a soft flag raised. Refresh with
+`propose_zones.py --apply`.
+
+*Above* the zone the failure is silent and total: `in_zone` is false, so ACT
+simply never fires, which looks identical to "no opportunity". *Below* it,
+`in_zone` is true and **ACT fires normally** — nothing in the tier logic
+consults `zone_stale`. The soft flag used to assert "ACT cannot fire for this
+name" in both cases, so a name could reach ACT carrying a flag that flatly
+denied it, and downward is the direction this desk actually hunts. The text is
+now direction-aware. The behaviour is deliberately unchanged, and that is a
+**measured** decision, not a default — see "Does a stale zone deserve to open
+ACT?" above: the stale-downward subset of the ACT bar performs at least as well
+as the fresh one at 20 sessions, so gating it would discard signals no worse
+than the ones kept. A price below `entry_low` is cheaper, not disqualifying, and
+deciding whether a name that cheap is broken is the veto layer's job.
 
 ## Buckets and sizing
 
@@ -481,10 +649,25 @@ grades them **over the identical holding period against XBI** — a +9% trade
 while the sector rose 12% is a losing decision, and absolute P&L says the
 opposite. Nothing here is validated forward, so this is what eventually answers
 whether the desk beats owning the ETF, at the cost of patience rather than
-capital. `paper.py report` states that verdict in words and refuses to let a
-sample under 20 trades read as a conclusion. `run_daily.sh` writes
-`paper.py status` to `data/paper_status.txt`, which the daily prompt covers
-*before* new ideas.
+capital. `run_daily.sh` writes `paper.py status` to `data/paper_status.txt`,
+which the daily prompt covers *before* new ideas.
+
+`paper.py report` states that verdict in words, and below
+`MIN_TRADES_FOR_A_VERDICT` (20) it **withholds the sentence rather than
+qualifying it**. It used to print "NOT beating XBI … buying the ETF would have
+been better" off a single closed trade and append "too few to conclude anything"
+underneath — which is a conclusion with a disclaimer, not a refusal to conclude,
+since the reader has already been handed the verdict by the time the caveat
+arrives. The numbers still print; only the sentence that acts on them waits.
+
+Dates typed at this CLI go through `iso_date()`. Every date in `paper_trades` is
+compared as a string — against bar dates and against each other — so `2026-1-1`
+sorts above `2026-01-14` and picks the wrong bar; it is normalised, and anything
+that is not a date at all is refused loudly. A close dated before its own open
+is rejected too: the holding period inverts, and `bench_return()` then runs the
+benchmark backwards over the same pair with nothing in the output to show it.
+This is the third file where a hand-typed date is compared lexically, after the
+session date and `catalysts.toml`.
 
 ## The local archive
 
@@ -507,7 +690,13 @@ which cells are significant and differ only in how they say so.
 and broker routing — the same material `watchlist.toml` is gitignored to protect
 — so `site/` is gitignored and nothing is uploaded. One consequence: because the
 converter is shared, anything escaping into HTML lands in a real browser here,
-not just in a sandboxed mail client. That is why link URLs are quote-escaped.
+not just in a sandboxed mail client. That is why link URLs are quote-escaped —
+**and why the scheme is allowlisted too**. Quote-escaping closed the
+attribute-breakout hole and left the scheme alone, so `[x](javascript:alert%281%29)`
+still rendered as a live handler: no quote required, nothing to escape. Only
+`http`, `https`, `mailto` and relative targets become an `<a href>`; anything
+else is rendered as inert text saying so. The report is written from WebFetch
+and WebSearch content, so this is untrusted input by construction.
 
 `data/summaries/<date>.json` is written by `signals.py` **only on a live run**,
 which is the same `--state` test that gates the alert log. A screening pass
@@ -527,15 +716,21 @@ project rather than driving it — nothing in the pipeline reads them.
 - Config in TOML, parsed with stdlib `tomllib`.
 - Stage 2 reads no clock. Ages and windows come from the snapshot's session
   date, passed in; `generated_at` is the one wall-clock value, because it
-  records when the run happened rather than what it analysed.
+  records when the run happened rather than what it analysed. Stage 1 sets that
+  session date from its own bars (`fetch.session_date`), not from
+  `date.today()` — see the veto layer for what the difference cost.
 - Secrets in `~/.config/pharma/pharma.env`, never in the repo. The older
   `notify.env` is still read so an existing install keeps working, but
   `pharma.env` wins and is the one to write to.
 - `data/history.sqlite` accumulates bars and filings so day-over-day deltas and
   "new since last run" work even when a provider has an outage.
-- Screening a candidate list must pass `--state` to `signals.py`. That flag is
-  what marks a run as *not* live, and it gates every shared artefact: the alert
-  log `score_alerts.py` grades, and the per-day summary the archive indexes.
+- Screening a candidate list must pass **`--screening`** to `signals.py`, and a
+  `--state` path of its own. Either marks a run as *not* live, and liveness
+  gates every shared artefact: the alert log `score_alerts.py` grades, and the
+  per-day summary the archive indexes. It used to be inferred from the state
+  file's basename alone, so a screening pass that forgot `--state` was silently
+  a live run. Both are kept deliberately — forgetting one is then the same
+  mistake as forgetting the other, rather than two independent ways to lose.
 - Adding a ticker means one `[[ticker]]` block; CIK and trial sponsor resolve
   automatically from SEC's company list.
 
@@ -545,6 +740,12 @@ project rather than driving it — nothing in the pipeline reads them.
 after the US close in every DST alignment, so the daily bar is settled. On
 Linux `Persistent=true` catches up a miss; launchd only coalesces across
 sleep, not shutdown — the heartbeat covers the gap.
+
+23:18 Europe/Sofia is 18 minutes after the 16:00 ET close in summer, which is a
+race against the provider publishing the daily bar at all. That is fine and
+needs no adjustment: the run analyses whatever the newest bar turns out to be
+and names itself after that session, so losing the race costs a day of latency
+rather than a day of wrong dates.
 
 ```bash
 # Linux
@@ -567,6 +768,27 @@ minutes, then proceeds anyway. It lives here rather than in the scheduler so
 that a cron or a hand run gets it too; the launchd desk job therefore does not
 wait separately, though the heartbeat — which never comes through this script —
 still does.
+
+Two traps in the units themselves, both now pinned by tests:
+
+- **`TimeoutStartSec` has to outlive the run it bounds.** `run_daily.sh` bounds
+  every stage itself, and those sum to ~107 minutes worst case. At the old
+  `TimeoutStartSec=3600` systemd's SIGTERM arrived 47 minutes early — and it
+  arrives *past* the failure handler, so a slow run died with no report and no
+  notification, looking exactly like the silence the desk emits on a quiet day.
+  Now 7200. The inner bounds do the work; this is the last resort behind them,
+  and a last resort that fires first is not one.
+- **A bare `ExecStart=` name ignores the unit's own `Environment=PATH`.**
+  systemd resolves it against its *compiled-in* search path instead, so
+  `ExecStart=python3` silently pins to `/usr/bin/python3` and skips the pyenv
+  shim the unit puts first — and a name present only on `Environment=PATH` does
+  not launch at all (verified on systemd 255). The heartbeat goes through
+  `/usr/bin/env python3`, which is absolute and then does the lookup with the
+  inherited PATH. It used to hardcode `%h/.pyenv/shims/python3`: a dead
+  `ExecStart` the moment pyenv is removed or has its version unset, in the one
+  unit whose whole job is to notice when things have gone quiet. Safe to fall
+  back because `heartbeat.py` is stdlib-only and needs neither `tomllib` nor
+  `pyexpat`.
 
 ### Installed units drift from the repo, silently
 

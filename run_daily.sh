@@ -17,9 +17,12 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT" || exit 1
 
+# $DATE is when this run happened; it names the log, which is a record of the
+# run. The *session* -- which names the report, and which every window in
+# signals.json is measured from -- is whatever the newest bar turns out to be,
+# so it is not known until after the fetch. See SESSION below.
 DATE="$(date +%F)"
 LOG="$ROOT/logs/$DATE.log"
-REPORT="$ROOT/reports/$DATE.md"
 mkdir -p "$ROOT/data" "$ROOT/logs" "$ROOT/reports"
 
 # Log before lock, so every refusal below -- a held lock, an unwritable lock
@@ -48,7 +51,7 @@ EOF
 #
 # Not routed through fail(): whoever passed the argument is either watching this
 # terminal, or is a scheduler, which records the non-zero exit and whose missing
-# report the heartbeat picks up within two weekdays. A typo should not buzz the
+# report the heartbeat picks up within three weekdays. A typo should not buzz the
 # phone; a broken unit still gets caught.
 NO_LLM=0
 for arg in "$@"; do
@@ -292,17 +295,58 @@ run_with_timeout 1800 "$PY" "$ROOT/scripts/fetch.py" || fail "fetch.py returned 
 echo "--- signals"
 run_with_timeout 900 "$PY" "$ROOT/scripts/signals.py" || fail "signals.py returned $?"
 
+# The report is named for the session it analyses, not for the day the run
+# fired. Those differ whenever the newest bar is not today's -- a hand run
+# before the close, a market holiday, or the provider not having published yet
+# -- and publish.py pairs reports/<d>.md with data/summaries/<d>.json by that
+# name, so naming the report after the wall clock would leave every such day
+# with no stats in the archive. Falls back to $DATE only if signals.json cannot
+# name a session, which is the same degraded case signals.py warns about.
+SESSION="$("$PY" -c '
+import json, sys
+try:
+    print(json.load(open(sys.argv[1]))["session_date"] or "")
+except Exception:
+    print("")
+' "$ROOT/data/signals.json" 2>/dev/null)"
+if [[ -z "$SESSION" ]]; then
+    echo "WARNING: signals.json names no session; filing the report under $DATE" >&2
+    SESSION="$DATE"
+fi
+[[ "$SESSION" == "$DATE" ]] || echo "[run] session $SESSION (run date $DATE)"
+REPORT="$ROOT/reports/$SESSION.md"
+
+# Capture a stage's output into a file only if the stage succeeded. Redirecting
+# straight onto the destination truncated it before the command ran, so a
+# transient failure replaced the last good scorecard with a Python traceback --
+# and the analysis pass reads that file, so the report then quoted the traceback
+# as the desk's performance record. Keeping the previous content is strictly
+# better: it is stale by one day and says so, rather than being wrong.
+capture_if_ok() {
+    local label="$1" dest="$2" secs="$3"; shift 3
+    local tmp="$dest.partial.$$"
+    if run_with_timeout "$secs" "$@" > "$tmp" 2>&1; then
+        mv -f "$tmp" "$dest"
+        return 0
+    fi
+    echo "WARNING: $label failed; keeping the previous $(basename "$dest")" >&2
+    tail -15 "$tmp" | sed 's/^/    | /' >&2
+    rm -f "$tmp"
+    return 1
+}
+
 # --- 2b. grade past alerts ------------------------------------------------
 # Non-fatal: a scoring failure must not cost you the day's report.
 echo "--- scorecard"
-run_with_timeout 600 "$PY" "$ROOT/scripts/score_alerts.py" > "$ROOT/data/scorecard.txt" 2>&1 \
-    || echo "WARNING: score_alerts.py failed"
-tail -20 "$ROOT/data/scorecard.txt" || true
+capture_if_ok score_alerts.py "$ROOT/data/scorecard.txt" 600 \
+    "$PY" "$ROOT/scripts/score_alerts.py" || true
+tail -20 "$ROOT/data/scorecard.txt" 2>/dev/null || true
 
 # --- 2c. open paper positions ---------------------------------------------
 echo "--- paper positions"
-run_with_timeout 300 "$PY" "$ROOT/scripts/paper.py" status > "$ROOT/data/paper_status.txt" 2>&1 || true
-cat "$ROOT/data/paper_status.txt" || true
+capture_if_ok paper.py "$ROOT/data/paper_status.txt" 300 \
+    "$PY" "$ROOT/scripts/paper.py" status || true
+cat "$ROOT/data/paper_status.txt" 2>/dev/null || true
 
 if [[ $NO_LLM -eq 1 ]]; then
     echo "--- skipping analysis (--no-llm)"
@@ -314,7 +358,10 @@ fi
 echo "--- analysis"
 PROMPT="$(cat "$ROOT/prompts/daily.md")
 
-Today is $DATE. Write the report to reports/$DATE.md.
+The session being analysed is $SESSION -- every price, filing age and catalyst
+countdown in data/signals.json is measured from that date, not from now. Today's
+wall-clock date is $DATE; use $SESSION for anything about the data.
+Write the report to reports/$SESSION.md.
 Run python scripts with: $PY (e.g. \`$PY scripts/detail.py TICKER\`)."
 
 # The analysis pass drills down via scripts/detail.py, so it needs to run the
@@ -341,7 +388,7 @@ run_with_timeout 1800 claude -p "$PROMPT" \
     || echo "WARNING: claude exited $? -- checking for a report anyway"
 
 if [[ ! -f "$REPORT" ]]; then
-    fail "no report produced at reports/$DATE.md"
+    fail "no report produced at reports/$SESSION.md"
 fi
 echo "--- report: $REPORT ($(wc -l < "$REPORT") lines)"
 

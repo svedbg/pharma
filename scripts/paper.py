@@ -24,12 +24,16 @@ import argparse
 import sqlite3
 import statistics
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "data" / "history.sqlite"
 BENCHMARK = "XBI"
+# Below this, `report` prints the numbers but refuses to draw the conclusion.
+# Not a statistical threshold, a humility one: at single-digit trade counts the
+# median moves on any one result.
+MIN_TRADES_FOR_A_VERDICT = 20
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS paper_trades (
@@ -52,6 +56,24 @@ def con():
     c = sqlite3.connect(DB)
     c.executescript(SCHEMA)
     return c
+
+
+def iso_date(raw: str | None, label: str) -> str | None:
+    """A hand-typed --date as canonical YYYY-MM-DD, or None if unusable.
+
+    Every date in this table is compared as a string -- against bar dates, and
+    against each other -- so an unpadded "2026-8-1" sorts above "2026-08-14" and
+    silently picks the wrong bar or none at all. Same failure the session date
+    and catalysts.toml both had; this is the third file where a date arrives by
+    hand and is compared lexically.
+    """
+    if raw is None:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+    except (ValueError, TypeError):
+        print(f"{label} {raw!r} is not a date. Use YYYY-MM-DD.", file=sys.stderr)
+        raise SystemExit(2) from None
 
 
 def price_on_or_before(c, ticker: str, day: str):
@@ -87,7 +109,7 @@ def cmd_open(c, a) -> int:
               f"Close it first.", file=sys.stderr)
         return 1
 
-    opened = a.date or date.today().isoformat()
+    opened = iso_date(a.date, "--date") or date.today().isoformat()
     if not a.entry:
         # A backdated entry must use the price on THAT day. Defaulting to the
         # latest close silently records a trade at a price that was never
@@ -115,7 +137,15 @@ def cmd_close(c, a) -> int:
         print(f"no open paper position in {a.ticker}", file=sys.stderr)
         return 1
     tid, opened, entry = row
-    closed = a.date or date.today().isoformat()
+    closed = iso_date(a.date, "--date") or date.today().isoformat()
+    # A close before the open inverts the holding period: the trade's return is
+    # measured forwards from `entry` while bench_return() runs the benchmark
+    # backwards over the same pair, so the excess is nonsense in a way no output
+    # here would show. Easy to type on a backdated close.
+    if closed < opened:
+        print(f"close date {closed} is before the open date {opened}; "
+              f"a trade cannot be closed before it was opened.", file=sys.stderr)
+        return 1
     px = a.price
     if not px:
         _, px = price_on_or_before(c, a.ticker.upper(), closed)
@@ -192,14 +222,26 @@ def cmd_report(c, a) -> int:
               f"mean {sum(exc_rets)/len(exc_rets):+.1f}pp  "
               f"win {100*sum(1 for r in exc_rets if r > 0)/len(exc_rets):.0f}%")
         print()
-        # The whole point of the exercise, stated rather than left implied.
-        if med > 0:
-            print(f"  Beating {BENCHMARK} by {med:+.1f}pp median. That is the case for sizing up.")
+        # The whole point of the exercise, stated rather than left implied --
+        # but only once there is enough of a sample to mean it. The verdict used
+        # to print unconditionally with "too few to conclude anything" appended
+        # underneath, which is not a refusal to conclude, it is a conclusion
+        # with a disclaimer: the reader has already been told the case for
+        # sizing up by the time the caveat arrives. Below the threshold the
+        # numbers still print; the sentence that acts on them does not.
+        if len(abs_rets) < MIN_TRADES_FOR_A_VERDICT:
+            print(f"  {len(abs_rets)} closed trade(s) -- too few to say anything. A verdict needs")
+            print(f"  at least {MIN_TRADES_FOR_A_VERDICT}. The numbers above are the sample so far,")
+            print("  not a finding, and at this size the median moves on any single trade.")
+        elif med > 0:
+            print(f"  Beating {BENCHMARK} by {med:+.1f}pp median over {len(abs_rets)} trades.")
+            print("  That is the case for sizing up.")
         else:
-            print(f"  NOT beating {BENCHMARK} ({med:+.1f}pp median). On this evidence, buying the")
-            print("  ETF would have been better than taking these trades.")
-    if len(abs_rets) < 20:
-        print(f"\n  {len(abs_rets)} trades is too few to conclude anything. Treat as provisional.")
+            print(f"  NOT beating {BENCHMARK} ({med:+.1f}pp median over {len(abs_rets)} trades).")
+            print("  On this evidence, buying the ETF would have been better than taking")
+            print("  these trades.")
+    elif len(abs_rets) < MIN_TRADES_FOR_A_VERDICT:
+        print(f"\n  {len(abs_rets)} closed trade(s) -- too few to conclude anything.")
     return 0
 
 

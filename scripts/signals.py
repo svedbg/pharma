@@ -175,6 +175,38 @@ def _days_between(a: str, b: str) -> int:
         return -1
 
 
+def _catalyst_date(raw) -> str | None:
+    """One catalyst's date as a canonical YYYY-MM-DD, or None if unusable.
+
+    catalysts.toml is hand-edited and the daily run appends to it, so its dates
+    get none of the guarantees a generated file has. Two ways they arrive wrong,
+    both of which reached a report:
+
+    An *unquoted* `date = 2026-09-15` is a TOML date literal, so tomllib returns
+    a `datetime.date` rather than a string, and the `d < today` comparisons
+    below raise TypeError and take the whole run down.
+
+    An *unpadded* `"2026-8-01"` parses fine but sorts wrong, and every filter
+    here is a string comparison: '8' > '0', so a date that has already passed
+    compares as later than today. It is therefore never filtered out as history
+    and never picked up by resolved_catalysts -- it sits in the file as a
+    permanently upcoming catalyst printing "CATALYST IN -15 DAYS ... size for
+    the outcome, not the chart", which is the strongest sizing instruction the
+    report emits, on a binary that already resolved.
+
+    Normalising here means every comparison downstream is between two canonical
+    strings, which is the only form in which lexical order matches date order.
+    """
+    if isinstance(raw, datetime):
+        return raw.date().isoformat()
+    if isinstance(raw, date):
+        return raw.isoformat()
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
 def _days_ago(d: str, asof: date) -> int:
     """Age of `d` measured from the session being analysed, not from wall clock.
 
@@ -206,6 +238,16 @@ def evaluate_filings(filings: list[dict], asof: date) -> tuple[list[dict], list[
         items = [c.strip() for c in (f.get("items") or "").split(",") if c.strip()]
 
         for prefix, (window, reason) in HARD_VETO_FORMS.items():
+            # 424B7 starts with 424B but is a *resale* prospectus: existing
+            # holders registering shares they already own, not the company
+            # issuing new ones. The dilution it follows, if any, already
+            # happened and arrives on its own hard veto as 8-K item 3.02. It
+            # was matching both loops, so every resale registration took the
+            # priced-takedown veto plus a soft flag saying it was only a
+            # resale -- the soft flag being unreachable advice, since the hard
+            # veto it sat next to had already blocked the name.
+            if prefix == "424B" and form.startswith("424B7"):
+                continue
             if form.startswith(prefix) and age <= window:
                 # fetch.py reads the document and tells us which kind it is. An
                 # ATM programme is registered capacity and belongs with the
@@ -371,10 +413,19 @@ def load_catalysts(path: Path, asof: date) -> dict:
     today = asof.isoformat()
     for c in raw:
         sym = (c.get("symbol") or "").upper()
-        d = c.get("date") or ""
-        if not sym or d < today:
+        d = _catalyst_date(c.get("date"))
+        if not sym:
+            continue
+        if d is None:
+            print(f"[signals] WARNING: {path.name} has a catalyst for "
+                  f"{sym} with an unreadable date {c.get('date')!r} -- "
+                  f"ignoring it. Dates must be quoted ISO strings, e.g. "
+                  f'date = "2026-09-15".', file=sys.stderr)
+            continue
+        if d < today:
             continue  # past catalysts are history, not a clock
         entry = dict(c)
+        entry["date"] = d          # canonical, so every consumer sorts correctly
         entry["days_until"] = _days_between(today, d)
         out.setdefault(sym, []).append(entry)
     for sym in out:
@@ -398,9 +449,10 @@ def resolved_catalysts(path: Path, asof: date, window_days: int = 21) -> dict:
     cutoff = (asof - timedelta(days=window_days)).isoformat()
     out: dict = {}
     for c in raw:
-        sym, d = (c.get("symbol") or "").upper(), c.get("date") or ""
-        if sym and cutoff <= d < today:
+        sym, d = (c.get("symbol") or "").upper(), _catalyst_date(c.get("date"))
+        if sym and d and cutoff <= d < today:
             entry = dict(c)
+            entry["date"] = d
             entry["days_ago"] = _days_between(d, today)
             out.setdefault(sym, []).append(entry)
     return out
@@ -676,8 +728,13 @@ def tradability(bars: list[dict], settings: dict):
     }
 
 
-def conviction(out: dict, hard: list, soft: list, catalyst_soon: bool) -> dict:
+def conviction(out: dict, hard: list, catalyst_soon: bool) -> dict:
     """Count independent lines of evidence for and against.
+
+    It took a `soft` list it never read. The soft flags that count against a
+    name -- a stale or superseded balance sheet -- are read from `out["runway"]`
+    instead, so nothing was lost, but a parameter nobody uses invites the next
+    reader to add a flag to the list and expect it to score.
 
     This is a transparent checklist, NOT a validated model -- the components are
     listed so any one of them can be disputed. Its value is that it refuses to
@@ -694,8 +751,11 @@ def conviction(out: dict, hard: list, soft: list, catalyst_soon: bool) -> dict:
     elif ins.get("notable_buy"):
         plus.append(f"insider bought ${ins['buy_value_usd']:,.0f}")
     rw = out.get("runway") or {}
-    if rw.get("quarters", 0) >= 4 and not rw.get("stale") and not rw.get("superseded_by"):
-        plus.append(f"{rw['quarters']}q of liquidity, no near-term financing pressure")
+    if not rw.get("stale") and not rw.get("superseded_by"):
+        if rw.get("cash_flow_positive"):
+            plus.append("funded from operations -- no financing pressure at all")
+        elif (rw.get("quarters") or 0) >= 4:
+            plus.append(f"{rw['quarters']}q of liquidity, no near-term financing pressure")
     if catalyst_soon:
         plus.append("catalyst inside 90 days")
     rs = out.get("relative_strength") or {}
@@ -806,9 +866,17 @@ def runway(fin: dict):
     liq = (fin or {}).get("liquidity") or {}
     burn = (fin or {}).get("burn") or {}
     total, q = liq.get("total_usd"), burn.get("quarterly_usd")
-    if not total or q is None or q >= 0:
-        return None  # cash-flow positive, or not reported
-    quarters = total / abs(q)
+    if not total or q is None:
+        return None  # nothing reported
+    # A company funding itself from operations has no runway to run out of, and
+    # that is the strongest financing position on this watchlist -- not a
+    # missing number. Folding it into None meant `runway_ok` read it as
+    # ignorance, so the safest balance sheet here needed a catalyst to reach
+    # ACT while a company with three quarters of cash did not. Trap 5 says
+    # absence of data is not distress; this is the same mistake pointed the
+    # other way, treating good news as absence.
+    cash_flow_positive = q >= 0
+    quarters = None if cash_flow_positive else total / abs(q)
     return {
         "liquidity_usd": total,
         "cash_usd": liq.get("cash_usd"),
@@ -825,12 +893,16 @@ def runway(fin: dict):
         "age_days": liq.get("age_days"),
         "stale": bool(liq.get("stale") or burn.get("stale")),
         "quarterly_burn_usd": abs(q),
-        "quarters": round(quarters, 2),
-        "months": round(quarters * 3, 1),
+        "cash_flow_positive": cash_flow_positive,
+        # None rather than a number when the company generates cash: there is no
+        # exhaustion date to compute, and every consumer must say "n/a" rather
+        # than invent one. Guard on `is None`, never on falsiness.
+        "quarters": None if cash_flow_positive else round(quarters, 2),
+        "months": None if cash_flow_positive else round(quarters * 3, 1),
         "estimated_exhaustion": (
             (datetime.strptime(liq["as_of"], "%Y-%m-%d").date()
              + timedelta(days=int(quarters * 91))).isoformat()
-            if liq.get("as_of") else None
+            if liq.get("as_of") and not cash_flow_positive else None
         ),
     }
 
@@ -943,7 +1015,7 @@ def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dic
             "reason": f"balance sheet is {rw.get('age_days')} days old -- runway estimate unreliable, verify before sizing",
             "url": None,
         })
-    elif rw and rw["quarters"] < 1.5:
+    elif rw and rw["quarters"] is not None and rw["quarters"] < 1.5:
         sup = rw.get("superseded_by")
         if sup:
             # The same figure cannot be too old to clear a name and fresh enough
@@ -1205,12 +1277,26 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
         out["zone_drift_pct"] = round(drift, 1)
         out["zone_stale"] = bool(abs(drift) >= ZONE_STALE_DRIFT_PCT)
         if out["zone_stale"]:
+            # The consequence depends on which way the price drifted, and this
+            # flag used to assert the upward one in both cases. Above the zone,
+            # `in_zone` is False and ACT genuinely cannot fire -- a silent
+            # failure worth naming. Below it, `in_zone` is True and ACT fires
+            # normally, so telling the reader it cannot is a flat contradiction
+            # printed next to a live ACT recommendation. Whether a name that
+            # cheap is broken is the veto layer's question, not the zone's.
+            above = drift > 0
+            consequence = (
+                "ACT cannot fire for this name until it is refreshed"
+                if above else
+                "ACT can still fire against it, so the zone it is measured "
+                "against is describing an older, higher regime"
+            )
             soft.append({
                 "form": "stale entry zone", "filed": "", "days_ago": None,
                 "reason": (f"price is {drift:+.0f}% from its entry zone "
                            f"(high ${zone_hi}); the zone predates this regime. "
-                           f"Re-run propose_zones.py or set it by hand -- until then "
-                           f"ACT cannot fire for this name"),
+                           f"Re-run propose_zones.py or set it by hand -- "
+                           f"{consequence}"),
                 "url": None,
             })
 
@@ -1234,7 +1320,8 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
         or any((c.get("date") or "9999") <= horizon for c in (out.get("catalysts") or []))
     )
     runway_ok = bool(
-        rw and not rw["stale"] and not rw.get("superseded_by") and rw["quarters"] >= min_rw
+        rw and not rw["stale"] and not rw.get("superseded_by")
+        and (rw["cash_flow_positive"] or rw["quarters"] >= min_rw)
     )
 
     # ACT requires volume confirmation. Scored against XBI on this watchlist's
@@ -1246,12 +1333,15 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
     # In a falling sector the same setup is a worse bet, so ACT demands more
     # corroboration rather than being blocked outright.
     regime_down = bool(regime and regime.get("label") == "downtrend")
+    # Computed once. Nothing between here and the end of the function touches an
+    # input it reads, so the ACT gate and the published score were always the
+    # same object built twice.
+    conv = conviction(out, hard, catalyst_soon)
     if tier == "SETUP" and in_zone and (runway_ok or catalyst_soon):
-        conv_now = conviction(out, hard, soft, catalyst_soon)
-        if regime_down and conv_now["label"] != "strong":
+        if regime_down and conv["label"] != "strong":
             reasons.append(
                 f"{BENCHMARK} is below its 200-day average: in a falling sector ACT requires "
-                f"a strong conviction score, and this one is '{conv_now['label']}'"
+                f"a strong conviction score, and this one is '{conv['label']}'"
             )
         elif out["capitulation_volume"]:
             tier = "ACT"
@@ -1326,7 +1416,7 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
         reasons.append(f"EXIT SIGNAL ({fl['severity']}) {fl['kind']}: {fl['detail'][:150]}")
 
     out["tier"] = tier
-    out["conviction"] = conviction(out, hard, soft, catalyst_soon)
+    out["conviction"] = conv
     out["reasons"] = reasons
     return out
 
@@ -1336,6 +1426,20 @@ def _r(v, nd: int = 2):
 
 
 # ---------------------------------------------------------------------- output
+
+
+def _runway_cell(rw: dict | None) -> str:
+    """Quarters of liquidity, or why there is no such number.
+
+    'cf+' is not the same as 'n/a': one says the company funds itself, the other
+    says nobody knows. Printing both as a blank was how the healthiest balance
+    sheet on the list looked identical to a foreign filer with no us-gaap XBRL.
+    """
+    if not rw:
+        return "n/a"
+    if rw.get("cash_flow_positive"):
+        return "cf+"
+    return f"{rw['quarters']}q" if rw.get("quarters") is not None else "n/a"
 
 
 def render_table(rows: list[dict]) -> str:
@@ -1355,7 +1459,7 @@ def render_table(rows: list[dict]) -> str:
             f"| [{r['symbol']}]({(r.get('links') or {}).get('finviz','#')}) | {r.get('bucket','')} "
             f"| ${p['close']} | {_pp(p['chg_1d_pct'])} "
             f"| {_pp(p['chg_5d_pct'])} | {_rs(r)} | {_pp(p['pct_off_52w_high'])} | {p['percentile_1y']} "
-            f"| {t['rsi14']} | {t['bollinger_pct_b']} | {str(rw['quarters']) + 'q' if rw else 'n/a'} "
+            f"| {t['rsi14']} | {t['bollinger_pct_b']} | {_runway_cell(rw)} "
             f"| {('**' + str(nveto) + '**') if nveto else '-'} "
             f"| {'**' + r['tier'] + '**' if r['tier'] in ('SETUP', 'ACT') else r['tier']} |"
         )
@@ -1379,6 +1483,14 @@ def main() -> int:
     # Screening a candidate list must not consume the live watchlist's alert
     # state, or a genuine tier change would be silently marked as already seen.
     ap.add_argument("--state", default=str(STATE / "alerts.json"))
+    # Liveness used to be inferred from the state file's basename alone, so a
+    # screening pass that forgot --state was silently a live run and overwrote
+    # the real day's alert log and archive summary. The inference stays, because
+    # it makes forgetting --state and forgetting this flag the same mistake
+    # rather than two independent ones, but --screening forces the safe answer
+    # regardless of what the path happens to be called.
+    ap.add_argument("--screening", action="store_true",
+                    help="not the live watchlist: write no alert log and no archive summary")
     args = ap.parse_args()
 
     snap = localconfig.require_data(Path(args.snapshot))
@@ -1446,8 +1558,17 @@ def main() -> int:
     # the flag that distinguishes the two, and it gates every shared artefact:
     # the alert log that score_alerts.py grades, and the per-day summary the
     # local archive builds its index from.
-    live_run = state_path.name == "alerts.json"
-    prev = json.loads(state_path.read_text()) if state_path.exists() else {}
+    live_run = not args.screening and state_path.name == "alerts.json"
+    # A corrupt state file is a reason to re-detect every tier change, not to
+    # take the run down: the alert log and the notification both key off `prev`,
+    # so the cost of rebuilding it is one duplicated buzz.
+    prev = {}
+    if state_path.exists():
+        try:
+            prev = json.loads(state_path.read_text())
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[signals] WARNING: could not read {state_path} ({e}); treating "
+                  f"every tier as new for this run", file=sys.stderr)
     changes, exit_alerts = [], []
     for r in rows:
         pr = prev.get(r["symbol"]) or {}
@@ -1575,9 +1696,16 @@ def main() -> int:
     if session and live_run:
         summaries = DATA / "summaries"
         summaries.mkdir(parents=True, exist_ok=True)
+        # Sorted on the first two fields only. Comparing whole tuples fell
+        # through to the catalyst dict whenever two entries tied on both
+        # days_until and symbol -- i.e. one ticker with two catalysts on the
+        # same date, which is an ordinary shape for a PDUFA and its AdCom and
+        # for a re-appended entry. Dicts are unorderable, so that raised
+        # TypeError out of main() and cost the whole day's report.
         nxt = sorted(
-            (c["days_until"], r["symbol"], c)
-            for r in rows for c in (r.get("catalysts") or [])
+            ((c["days_until"], r["symbol"], c)
+             for r in rows for c in (r.get("catalysts") or [])),
+            key=lambda x: (x[0], x[1]),
         )
         (summaries / f"{out['session_date']}.json").write_text(json.dumps({
             "session_date": out["session_date"],
@@ -1591,11 +1719,30 @@ def main() -> int:
                                "days_until": nxt[0][0], "kind": nxt[0][2].get("kind")}
                               if nxt else None),
         }, indent=2))
-    state_path.write_text(json.dumps(
-        {r["symbol"]: {"tier": r["tier"], "date": out["session_date"],
-                       "exit_key": r.get("_exit_key", "")}
-         for r in rows}, indent=2
-    ))
+    # The state file is what makes an alert fire *once*, so writing it commits
+    # to having recorded the transition. On a run with no session date nothing
+    # was recorded -- the alert log above is keyed by session and skipped it --
+    # yet this write still advanced every tier, so the next run saw no change
+    # and never logged it either. The notification had already gone out. The
+    # result was an alert on the phone that score_alerts.py can never grade,
+    # which is the exact loss refusing to write the row was meant to prevent:
+    # the fix stopped an unreadable key from being stored and left the
+    # transition consumed anyway.
+    #
+    # Leaving the state untouched defers the whole thing to the next run that
+    # can name its session. That run re-detects the change, logs it, and
+    # notifies again -- one duplicate buzz, against a permanently missing row in
+    # the only number that says whether the desk works.
+    if session:
+        state_path.write_text(json.dumps(
+            {r["symbol"]: {"tier": r["tier"], "date": out["session_date"],
+                           "exit_key": r.get("_exit_key", "")}
+             for r in rows}, indent=2
+        ))
+    else:
+        print("[signals] WARNING: leaving the alert state untouched -- this run "
+              "could not record what it raised, so the next run with a readable "
+              "session date must be free to raise it again", file=sys.stderr)
 
     print(out["table_markdown"])
     print(f"\n[signals] {len(out['notify'])} new alert(s), "

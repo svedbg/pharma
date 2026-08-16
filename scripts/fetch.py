@@ -1061,6 +1061,44 @@ def build_record(entry: dict, cik_map: dict, lookback: int, since: date):
 # -------------------------------------------------------------------------- main
 
 
+def session_date(snapshot: dict) -> str | None:
+    """The trading session this snapshot actually describes.
+
+    Not `date.today()`. Everything downstream measures filing ages, catalyst
+    windows, summary filenames and alert primary keys from this value, and the
+    calendar day the fetch happened to run on is only the same day when the
+    day's bar already exists. It routinely does not:
+
+      * the scheduled run fires 18 minutes after the US close, which is a race
+        against the provider publishing the daily bar at all;
+      * any hand run before ~23:00 local is hours ahead of the close;
+      * a US market holiday has no bar for that calendar day whatsoever.
+
+    When they diverge the alert is keyed one day ahead of the bar its own
+    numbers came from, and score_alerts.py -- which resolves an alert to the
+    first bar at or after its session date -- then grades the entry from the
+    *next* session, at a price that has already moved. Backfilled alerts are
+    keyed to their own bar, so the two halves of the scorecard end up measured
+    differently, which is exactly the comparison the scorecard exists to make.
+
+    Taken as the date most sources agree is their newest, so one ticker with a
+    stale or malformed series cannot move the session for the whole run. None
+    when there are no bars at all: that is a run with no session, and signals.py
+    already degrades honestly rather than inventing one.
+    """
+    newest = [
+        bars[-1]["date"]
+        for src in (snapshot.get("tickers") or {}, snapshot.get("benchmarks") or {})
+        for rec in src.values()
+        if (bars := rec.get("bars")) and bars[-1].get("date")
+    ]
+    if not newest:
+        return None
+    # Ties break toward the later date: if half the list has today's bar and
+    # half is still on yesterday's, today's session has begun to publish.
+    return max(newest, key=lambda d: (newest.count(d), d))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Fetch market + regulatory data for the watchlist")
     ap.add_argument("--watchlist", default=str(ROOT / "watchlist.toml"))
@@ -1081,8 +1119,10 @@ def main() -> int:
     since = date.today() - timedelta(days=400)
 
     snapshot: dict = {
+        # The one wall-clock value in the file: it records when the run
+        # happened, not what it analysed. `local_date` is filled in below from
+        # the bars themselves, once there are some.
         "generated_at": datetime.now(UTC).isoformat(),
-        "local_date": date.today().isoformat(),
         "settings": settings,
         "tickers": {},
         "errors": [],
@@ -1148,12 +1188,24 @@ def main() -> int:
     snapshot["status"] = "degraded" if snapshot["errors"] else "ok"
     snapshot["tickers_without_prices"] = hard_fail
 
+    snapshot["local_date"] = session_date(snapshot)
+    if snapshot["local_date"] is None:
+        snapshot["errors"].append("no bars in the snapshot -- the run has no session date")
+        snapshot["status"] = "degraded"
+    elif snapshot["local_date"] != date.today().isoformat():
+        # Worth saying out loud, because it is the normal case for a hand run
+        # and used to be papered over: the session analysed is not the day the
+        # run happened, and every window below is measured from the former.
+        print(f"[fetch] session is {snapshot['local_date']}, not today "
+              f"({date.today().isoformat()}) -- the newest bar available is what "
+              f"the run analyses", file=sys.stderr)
+
     Path(args.out).write_text(json.dumps(snapshot, indent=2))
     con.execute(
         "INSERT OR REPLACE INTO runs VALUES (?,?,?,?)",
         (
             datetime.now(UTC).isoformat(),
-            date.today().isoformat(),
+            snapshot["local_date"],
             snapshot["status"],
             "; ".join(snapshot["errors"])[:500],
         ),

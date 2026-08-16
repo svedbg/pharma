@@ -19,6 +19,7 @@ retrospective and carries all the biases in scripts/backtest.py.
 from __future__ import annotations
 
 import argparse
+import bisect
 import contextlib
 import json
 import sqlite3
@@ -78,6 +79,21 @@ def forward_returns(series, idx: int):
             if base:
                 out[h] = (later / base - 1.0) * 100.0
     return out
+
+
+def bench_at(bench: dict, bench_dates: list, day: str):
+    """Benchmark close on `day`, or the last session before it.
+
+    Looked up by DATE, never by index offset. The excess return used to advance
+    the benchmark `h` positions through its own bar list while the alert
+    advanced `h` positions through the ticker's -- so any session the ticker
+    missed and the ETF did not (a halt, a provider gap; 15 of 78 names here
+    carry at least one) silently compared two different calendar windows.
+    signals.py's relative_strength() already date-aligns for exactly this
+    reason; the module that grades the alerts did not.
+    """
+    i = bisect.bisect_right(bench_dates, day) - 1
+    return bench.get(bench_dates[i]) if i >= 0 else None
 
 
 def backfill(con) -> int:
@@ -178,13 +194,14 @@ def main() -> int:
             pending.append((sdate, tkr, tier, close, source))
             continue
         # Benchmark-relative: a bounce smaller than the sector's is not a win.
-        bidx = next((i for i, d in enumerate(bench_dates) if d >= sdate), None)
+        # Both ends are the ticker's OWN bar dates, so the two windows cover the
+        # same calendar span even when the name missed sessions the ETF traded.
         for h, val in fwd.items():
             excess = None
-            if bidx is not None and bidx + h < len(bench_dates):
-                b0, b1 = bench[bench_dates[bidx]], bench[bench_dates[bidx + h]]
-                if b0:
-                    excess = val - (b1 / b0 - 1.0) * 100.0
+            b0 = bench_at(bench, bench_dates, series[idx][0])
+            b1 = bench_at(bench, bench_dates, series[idx + h][0])
+            if b0 and b1:
+                excess = val - (b1 / b0 - 1.0) * 100.0
             scored.setdefault((source, h), {"abs": [], "exc": [], "capit": [], "capit_exc": [],
                                             "nocapit_exc": []})
             scored[(source, h)]["abs"].append(val)

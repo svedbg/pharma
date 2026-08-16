@@ -86,11 +86,17 @@ def main() -> int:
         rw, dl = sig.get("runway"), sig.get("dilution")
         if rw:
             stale = "  [STALE - verify before sizing]" if rw.get("stale") else ""
-            print(f"\nrunway: {rw['quarters']}q (~{rw['months']}mo){stale}")
+            head = ("cash-flow positive -- no runway to exhaust"
+                    if rw.get("cash_flow_positive")
+                    else f"{rw['quarters']}q (~{rw['months']}mo)")
+            print(f"\nrunway: {head}{stale}")
             print(f"  liquidity ${rw['liquidity_usd']:,.0f} as of {rw['cash_as_of']} "
                   f"({rw.get('age_days')}d old) = cash ${(rw.get('cash_usd') or 0):,.0f} "
                   f"+ short-term investments ${(rw.get('investments_usd') or 0):,.0f}")
-            print(f"  burn ${rw['quarterly_burn_usd']:,.0f}/q | dry ~{rw['estimated_exhaustion']}")
+            flow = ("generated" if rw.get("cash_flow_positive") else "burn")
+            print(f"  {flow} ${rw['quarterly_burn_usd']:,.0f}/q"
+                  + (f" | dry ~{rw['estimated_exhaustion']}"
+                     if rw.get("estimated_exhaustion") else ""))
         if dl:
             print(f"dilution: {dl['shares_start']:,.0f} -> {dl['shares_now']:,.0f} "
                   f"({dl['change_pct']:+}%) between {dl['from']} and {dl['to']}")

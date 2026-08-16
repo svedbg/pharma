@@ -138,7 +138,7 @@ Two timers, both weekday-only:
 
 - **pharma-desk** at 23:18 — after the US close, so the daily bar is settled.
   Adjust `OnCalendar` for your timezone.
-- **pharma-heartbeat** at 10:23 — alerts if no report appeared for two weekdays.
+- **pharma-heartbeat** at 10:23 — alerts if no report appeared for three weekdays.
   Separate on purpose: **silence is this system's normal output**, so a broken
   run and a quiet market look identical without it.
 

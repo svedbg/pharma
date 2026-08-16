@@ -54,6 +54,33 @@ def _styler(inline: bool):
     return attr
 
 
+# Schemes a link in a report may point at. Everything else -- javascript:,
+# data:, vbscript:, file: -- is rendered as inert text instead of a live href.
+_SAFE_SCHEMES = ("http://", "https://", "mailto:", "#", "/", "./", "../")
+
+
+def _is_safe_url(url: str) -> bool:
+    """Can this link target be put in an href that a browser will follow?
+
+    Quote-escaping the URL closed the attribute-breakout hole but left the
+    scheme alone, so `[x](javascript:alert%281%29)` still rendered as a working
+    handler -- no quote required, nothing to escape. Same threat model as the
+    breakout: the report is written from WebFetch and WebSearch content, and
+    publish.py feeds this converter into site/, which opens in a real browser.
+
+    An allowlist rather than a blocklist, matched by prefix on a lowercased copy
+    with whitespace and non-printables removed first. Browsers ignore embedded
+    control characters, so `java\x00script:` is a live scheme to them and an
+    unrecognised one to a naive string comparison -- and NUL is not `\\s`, so
+    the link regex hands it straight through. (Whitespace cannot reach here
+    through that regex today; stripping it costs nothing and keeps this correct
+    if the pattern ever loosens.)
+    """
+    probe = "".join(url.split()).lower()
+    probe = "".join(c for c in probe if c.isprintable())
+    return probe.startswith(_SAFE_SCHEMES)
+
+
 def _link(m: re.Match, sty) -> str:
     """Render one markdown link with the URL safe to sit inside an attribute.
 
@@ -70,6 +97,12 @@ def _link(m: re.Match, sty) -> str:
     double it into `&amp;amp;` in every URL that carries a query string.
     """
     url = m.group(2).replace('"', "&quot;")
+    if not _is_safe_url(m.group(2)):
+        # Kept visible rather than dropped: a report that cites a hostile link
+        # is itself the finding, and silently swallowing it hides that. `url`
+        # is the already-escaped text with its quotes neutralised too, so it is
+        # safe as content -- re-escaping here would double every `&amp;`.
+        return f"{m.group(1)} (unsafe link removed: {url})"
     a = sty(f"color:{ACCENT};text-decoration:none")
     return f'<a href="{url}"{a}>{m.group(1)}</a>'
 
