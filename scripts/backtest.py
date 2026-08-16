@@ -30,28 +30,47 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from signals import bollinger_pct_b, percentile_rank, rsi
+from signals import (
+    CAPITULATION_VOL,
+    RSI_TRAP,
+    SETUP_PCTB,
+    SETUP_RSI,
+    bollinger_pct_b,
+    percentile_rank,
+    rsi,
+)
 
 DB = ROOT / "data" / "history.sqlite"
 
 # Rules to compare. Each takes the indicator dict and returns True/False.
+#
+# The live rule is built from the constants signals.py actually uses, never from
+# numbers retyped here. This file used to label RSI<30 & %B<0.05 as "live SETUP"
+# and the real rule as "(looser)" -- so the instrument that justifies the
+# thresholds was silently scoring a threshold the desk had already abandoned.
+# The superseded rule is kept as a named comparison, which is what it is.
 RULES = {
-    "live SETUP (RSI<30 and %B<0.05)":
+    f"live SETUP (RSI<{SETUP_RSI:g} and %B<{SETUP_PCTB:g})":
+        lambda d: d["rsi"] < SETUP_RSI and d["pctb"] < SETUP_PCTB,
+    f"live SETUP + volume>{CAPITULATION_VOL:g}x (the ACT bar)":
+        lambda d: (d["rsi"] < SETUP_RSI and d["pctb"] < SETUP_PCTB
+                   and d["volr"] is not None and d["volr"] > CAPITULATION_VOL),
+    "superseded SETUP (RSI<30 and %B<0.05)":
         lambda d: d["rsi"] < 30 and d["pctb"] < 0.05,
     "RSI<30 only":
         lambda d: d["rsi"] < 30,
+    # Kept at the documented 25 so the table in CLAUDE.md stays reproducible,
+    # alongside the threshold the reasons actually warn at.
     "RSI<25 only":
         lambda d: d["rsi"] < 25,
+    f"RSI<{RSI_TRAP:g} only (the distress bucket)":
+        lambda d: d["rsi"] < RSI_TRAP,
     "%B<0.05 only":
         lambda d: d["pctb"] < 0.05,
-    "RSI<35 and %B<0.15 (looser)":
-        lambda d: d["rsi"] < 35 and d["pctb"] < 0.15,
     "bottom decile of 1y range":
         lambda d: d["pctile"] <= 10,
-    "RSI<30 and volume>1.5x avg (capitulation)":
-        lambda d: d["rsi"] < 30 and d["volr"] is not None and d["volr"] > 1.5,
-    "RSI<35 and %B<0.15 and vol>1.5x":
-        lambda d: d["rsi"] < 35 and d["pctb"] < 0.15 and d["volr"] is not None and d["volr"] > 1.5,
+    f"RSI<30 and volume>{CAPITULATION_VOL:g}x avg (capitulation)":
+        lambda d: d["rsi"] < 30 and d["volr"] is not None and d["volr"] > CAPITULATION_VOL,
 }
 
 

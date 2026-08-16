@@ -8,8 +8,9 @@ license = { file = "LICENSE" }
 
 # Deliberately empty. The runtime is stdlib-only so an unattended cron job has
 # nothing that can break on an upgrade, and no virtualenv is needed to run it.
-# Verified by tests/test_no_runtime_deps.py -- adding a third-party import to
-# scripts/ will fail the suite.
+# Verified by test_runtime_has_no_third_party_imports in
+# tests/test_config_and_email.py -- adding a third-party import to scripts/ will
+# fail the suite.
 dependencies = []
 
 [project.optional-dependencies]

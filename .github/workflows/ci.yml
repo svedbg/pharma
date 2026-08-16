@@ -26,8 +26,17 @@ jobs:
         run: pytest
       - name: Runtime must import on a bare interpreter
         # No virtualenv exists when the systemd timer fires, so every script has
-        # to import using nothing but the standard library.
+        # to import using nothing but the standard library -- and with no config
+        # present, since importing a module must never require configuration.
+        #
+        # This used to run ast.parse, which is a syntax check wearing an import
+        # check's name: `import requests` in scripts/ passed it without comment.
+        # Importing for real is what the step always claimed to do, and it costs
+        # nothing now that fetch.py resolves its SEC user agent lazily.
+        env:
+          SEC_CONTACT_EMAIL: ""
         run: |
-          for f in scripts/*.py; do
-            python -c "import ast,sys; ast.parse(open('$f').read())" || exit 1
+          cd scripts
+          for f in *.py; do
+            python -c "import importlib; importlib.import_module('${f%.py}')" || exit 1
           done

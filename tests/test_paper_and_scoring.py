@@ -108,6 +108,22 @@ def test_closing_without_an_open_position_fails(db):
     con.close()
 
 
+def test_closing_with_no_available_price_says_so(db, capsys):
+    """cmd_open already refuses politely when it cannot find a price; cmd_close
+    fell through to `px / entry` with px=None and raised TypeError instead. The
+    position it was trying to close stayed open, so the failure also lost data."""
+    con = paper.con()
+    paper.cmd_open(con, _args(ticker="GONE", entry=5.0))
+    capsys.readouterr()
+    # GONE has no bars at all, and no --price was passed.
+    assert paper.cmd_close(con, _args(ticker="GONE")) == 1
+    assert "pass --price" in capsys.readouterr().err
+    still_open = con.execute(
+        "SELECT COUNT(*) FROM paper_trades WHERE ticker='GONE' AND closed IS NULL").fetchone()
+    con.close()
+    assert still_open[0] == 1, "a refused close must leave the position untouched"
+
+
 def test_report_states_the_verdict_against_the_benchmark(db, capsys):
     con = paper.con()
     paper.cmd_open(con, _args(date="2026-01-01"))
@@ -199,6 +215,22 @@ def test_applying_zones_rewrites_only_the_intended_keys(tmp_path):
     assert 'invalidation = "keep me too"' in text
     import tomllib
     assert tomllib.loads(text)["ticker"][0]["entry_low"] == 1.5
+
+
+def test_a_zone_cannot_leak_into_a_later_section(tmp_path):
+    """The rewrite tracks sections by hand, and the last ticker used to stay
+    'current' through everything after it. A key of the same name in a section
+    below the ticker blocks would be silently overwritten with that ticker's
+    zone -- and these keys sit next to position-size settings."""
+    import tomllib
+    wl = tmp_path / "watchlist.toml"
+    wl.write_text('[[ticker]]\nsymbol = "X"\nentry_low = 0\nentry_high = 0\n\n'
+                  '[defaults]\nentry_low = 99\nentry_high = 99\n')
+    pz.apply_to_watchlist(wl, {"X": {"entry_low": 1.5, "entry_high": 2.0,
+                                     "invalidation_price": 1.0}})
+    parsed = tomllib.loads(wl.read_text())
+    assert parsed["ticker"][0]["entry_high"] == 2.0
+    assert parsed["defaults"] == {"entry_low": 99, "entry_high": 99}
 
 
 # ----------------------------------------------------------------- heartbeat

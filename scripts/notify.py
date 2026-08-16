@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Delivery: ntfy phone push + email.
 
-Credentials live in ~/.config/pharma/notify.env, never in the repo. Every
-channel is optional and failures are non-fatal -- a broken SMTP password should
-not cost you the report, which is on disk either way.
+Credentials live in ~/.config/pharma/pharma.env, never in the repo (the older
+notify.env is still read, so an existing install keeps working). Every channel
+is optional and failures are non-fatal -- a broken SMTP password should not cost
+you the report, which is on disk either way.
 
 Default behaviour:
   ntfy   fires only on a NEW SETUP/ACT tier (set NTFY_ALWAYS=1 to get every run)
@@ -27,27 +28,6 @@ import localconfig
 from render_email import build_email_html
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG = Path("~/.config/pharma/notify.env").expanduser()
-
-
-def _clean_value(raw: str) -> str:
-    """Strip a trailing inline comment and surrounding quotes.
-
-    `KEY=1  # explanation` must yield "1", not the whole string -- otherwise an
-    `EMAIL_ALWAYS=1 # ...` line silently disables email, and a commented-out
-    password line reads as a real credential. A '#' only starts a comment when
-    preceded by whitespace, so passwords containing '#' survive intact; quoted
-    values are taken verbatim up to the closing quote.
-    """
-    v = raw.strip()
-    if v[:1] in ('"', "'"):
-        quote = v[0]
-        end = v.find(quote, 1)
-        return v[1:end] if end > 0 else v[1:]
-    for sep in (" #", "\t#"):
-        if sep in v:
-            v = v.split(sep, 1)[0]
-    return v.strip()
 
 
 def load_config() -> dict:
@@ -160,7 +140,11 @@ def main() -> int:
 
     cfg = load_config()
     if not cfg:
-        print(f"[notify] no config at {CONFIG}; nothing sent", file=sys.stderr)
+        # Name the file the loader actually prefers. This used to point at
+        # notify.env, which is only read for backward compatibility, so the one
+        # message a new user sees named the wrong path.
+        print(f"[notify] no config at {localconfig.CONFIG_FILES[0]}; nothing sent",
+              file=sys.stderr)
         return 0
 
     if args.failure:

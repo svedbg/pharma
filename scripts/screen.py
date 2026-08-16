@@ -35,6 +35,7 @@ import tomllib
 
 import fetch
 from signals import (
+    CAPITULATION_VOL,
     SETUP_PCTB,
     SETUP_RSI,
     bollinger_pct_b,
@@ -88,7 +89,8 @@ def score(symbol: str, name: str) -> dict | None:
         return None
 
     closes = [b["adjclose"] for b in bars]
-    vols = [b["volume"] for b in bars if b.get("volume") is not None]
+    # Index-aligned with bars, gaps included -- see technical_metrics().
+    vols = [b.get("volume") for b in bars]
     last = closes[-1]
     r = rsi(closes)
     pctb, _u, _l = bollinger_pct_b(closes)
@@ -100,8 +102,9 @@ def score(symbol: str, name: str) -> dict | None:
         return None
 
     volr = None
-    if len(vols) >= 20 and sum(vols[-20:]):
-        volr = vols[-1] / (sum(vols[-20:]) / 20)
+    window = [v for v in vols[-20:] if v]
+    if vols[-1] and len(window) >= 10:
+        volr = vols[-1] / (sum(window) / len(window))
 
     year = closes[-252:]
     return {
@@ -114,7 +117,7 @@ def score(symbol: str, name: str) -> dict | None:
         "volume_ratio": round(volr, 2) if volr else None,
         "dollar_volume": tr.get("median_dollar_volume_20d"),
         "oversold": bool(r < SETUP_RSI and pctb < SETUP_PCTB),
-        "capitulation": bool(volr and volr > 1.5),
+        "capitulation": bool(volr and volr > CAPITULATION_VOL),
     }
 
 
