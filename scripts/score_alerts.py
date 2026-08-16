@@ -24,6 +24,7 @@ import json
 import sqlite3
 import statistics
 import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,6 +41,23 @@ from signals import (
 
 DB = ROOT / "data" / "history.sqlite"
 HORIZONS = (5, 20, 60)
+
+
+def usable_session(sdate) -> bool:
+    """Can this alert row be located in a price series at all?
+
+    Rows written before signals.py validated the snapshot's date can carry NULL
+    or a malformed string. Neither survives the lookup below: `d >= None` raises
+    and takes the whole scorecard with it, and a malformed string compares
+    greater than every ISO date, so the alert silently matches no bar and
+    disappears from the grading. Skipping them explicitly, and saying how many,
+    beats both.
+    """
+    try:
+        datetime.strptime(sdate, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return False
+    return True
 
 
 def bars_for(con, ticker: str):
@@ -140,6 +158,13 @@ def main() -> int:
         print("or wait for the desk to raise live ones.")
         return 0
 
+    # Filtered once here rather than guarded at each use. Every consumer below
+    # assumes a session date it can compare or concatenate, and there are more
+    # of them than there look to be: the per-alert scoring loop, and the
+    # per-source count, which builds its key as session_date + ticker.
+    undated = [a for a in alerts if not usable_session(a[0])]
+    alerts = [a for a in alerts if usable_session(a[0])]
+
     scored: dict = {}
     pending = []
     factor_rows = []
@@ -239,6 +264,11 @@ def main() -> int:
                 print(f"  {sdate}  {tkr:6} {tier:6} @ ${close}  ({source})")
         else:
             print("  re-run with --open to list them")
+    if undated:
+        # Never silently: an alert that cannot be graded is a hole in the only
+        # number that says whether the desk works.
+        print(f"\nSKIPPED  {len(undated)} alert(s) carry no usable session date "
+              f"and cannot be located in a price series.")
     con.close()
     return 0
 

@@ -108,12 +108,43 @@ def send_email(cfg: dict, subject: str, body: str, html_body: str | None = None,
         return False
 
 
+def ntfy_title(summary: str, session_date: str) -> str:
+    """Title for a push that arrives with no other context on the lock screen.
+
+    It carries the date because the phone stamps the message with when it
+    arrived, which is not the session it describes: the desk fires at 23:18, so
+    a run that overruns midnight pushes yesterday's session onto today's
+    notification, and a hand re-send is later still.
+    """
+    return f"{summary} - {session_date}" if session_date else summary
+
+
+def email_subject(summary: str, session_date: str) -> str:
+    """Subject line: name, then date, then what happened.
+
+    Date near the front so a mailbox sorted by subject groups by day. Omitted
+    entirely rather than left as a dangling separator when the run has none.
+    """
+    if not session_date:
+        return f"[biotech desk] {summary}"
+    return f"[biotech desk] {session_date} - {summary}"
+
+
 def build_alert_text(sig: dict) -> tuple[str, str, str]:
+    """What happened, as (summary, body, priority).
+
+    The summary carries no date and no product name. It used to carry both,
+    because it also served as the ntfy title, which has to stand alone on a
+    phone -- and the email subject then prefixed its own, so every notification
+    said the date twice and a quiet day went out as
+    "[biotech desk] 2026-08-15 - Biotech desk 2026-08-15". One string cannot be
+    both a standalone title and a subject suffix, so it is now neither: each
+    channel stamps this one once, its own way, through the two helpers above.
+    """
     alerts = sig.get("notify") or []
     exits = sig.get("notify_exits") or []
-    date = sig.get("session_date", "")
     if not alerts and not exits:
-        return (f"Biotech desk {date}", "No new setups. Report written.", "default")
+        return ("No new setups", "No new setups. Report written.", "default")
 
     lines = []
     # Exits lead: a thesis breaking is more urgent than a new idea appearing.
@@ -128,7 +159,7 @@ def build_alert_text(sig: dict) -> tuple[str, str, str]:
         bits.append(f"{len(exits)} EXIT")
     if alerts:
         bits.append(f"{len(alerts)} new setup{'s' if len(alerts) > 1 else ''}")
-    return f"{' + '.join(bits)} - {date}", "\n".join(lines), priority
+    return " + ".join(bits), "\n".join(lines), priority
 
 
 def main() -> int:
@@ -154,11 +185,12 @@ def main() -> int:
         return 0
 
     sig = json.loads(Path(args.signals).read_text())
-    title, body, priority = build_alert_text(sig)
+    summary, body, priority = build_alert_text(sig)
+    session_date = sig.get("session_date") or ""
     has_alerts = bool(sig.get("notify") or sig.get("notify_exits"))
 
     if has_alerts or cfg.get("NTFY_ALWAYS", "0") == "1":
-        ok = send_ntfy(cfg, title, body, priority=priority)
+        ok = send_ntfy(cfg, ntfy_title(summary, session_date), body, priority=priority)
         print(f"[notify] ntfy sent={ok}", file=sys.stderr)
 
     if cfg.get("EMAIL_ALWAYS", "1") == "1" or has_alerts:
@@ -175,7 +207,7 @@ def main() -> int:
             print(f"[notify] HTML render failed, sending plain text: {e}", file=sys.stderr)
 
         ok = send_email(
-            cfg, f"[biotech desk] {sig.get('session_date')} - {title}",
+            cfg, email_subject(summary, session_date),
             report_md, html_body=html_body, attachment=report_path,
         )
         print(f"[notify] email sent={ok} (html={bool(html_body)}, "

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 import localconfig
+import notify
 from render_email import BAD, GOOD, MAX_HTML_BYTES, build_email_html, md_to_html
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -248,3 +249,66 @@ def test_placeholder_addresses_are_refused(address):
 ])
 def test_real_addresses_are_accepted(address):
     assert localconfig._is_placeholder(address) is False
+
+
+def test_a_run_with_no_session_date_still_renders_html():
+    """`sig.get("session_date", "")` returns None when the key is present and
+    null, and html.escape(None) raises. notify.py catches that and falls back to
+    plain text, so the HTML email vanished silently on exactly the run that had
+    already gone wrong enough to lose its session date."""
+    sig = {"session_date": None, "signals": [], "notify": []}
+    html = build_email_html("# Report\n\nNothing to do today.", sig)
+    assert "Nothing to do today" in html
+    assert "None" not in html
+
+
+# ---------------------------------------------------- notification text
+
+
+def _sig(session_date="2026-08-15", alerts=(), exits=()):
+    return {"session_date": session_date, "notify": list(alerts),
+            "notify_exits": list(exits)}
+
+
+ONE_SETUP = ({"symbol": "X", "tier": "SETUP", "close": 1.0,
+              "previous_tier": None, "reason": "oversold"},)
+ONE_EXIT = ({"symbol": "Y", "close": 2.0, "flags": ["invalidation_breached"]},)
+
+
+@pytest.mark.parametrize(("alerts", "exits"), [
+    ((), ()),                    # quiet day
+    (ONE_SETUP, ()),
+    (ONE_SETUP, ONE_EXIT),
+])
+def test_each_channel_stamps_the_session_date_exactly_once(alerts, exits):
+    """One string used to serve both the standalone ntfy title and the email
+    subject's suffix, while the subject also prefixed its own date. Every
+    notification carried it twice, and a quiet day went out as
+    "[biotech desk] 2026-08-15 - Biotech desk 2026-08-15"."""
+    sig = _sig(alerts=alerts, exits=exits)
+    summary, _body, _priority = notify.build_alert_text(sig)
+    date = sig["session_date"]
+    assert date not in summary, "the summary must not carry a date of its own"
+    assert notify.ntfy_title(summary, date).count(date) == 1
+    assert notify.email_subject(summary, date).count(date) == 1
+
+
+def test_a_quiet_day_reports_what_happened_rather_than_the_product_name():
+    summary, body, priority = notify.build_alert_text(_sig())
+    assert summary == "No new setups"
+    assert "Report written" in body
+    assert priority == "default"
+
+
+def test_an_exit_still_outranks_a_setup_in_both_the_summary_and_the_priority():
+    summary, body, priority = notify.build_alert_text(
+        _sig(alerts=ONE_SETUP, exits=ONE_EXIT))
+    assert summary == "1 EXIT + 1 new setup"
+    assert body.startswith("EXIT Y"), "a thesis breaking leads the message"
+    assert priority == "high"
+
+
+def test_a_run_with_no_session_date_leaves_no_dangling_separator():
+    summary, _, _ = notify.build_alert_text(_sig(session_date=None, alerts=ONE_SETUP))
+    assert notify.ntfy_title(summary, "") == "1 new setup"
+    assert notify.email_subject(summary, "") == "[biotech desk] 1 new setup"

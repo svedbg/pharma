@@ -403,7 +403,11 @@ def _render(report_md: str, sig: dict, truncated: bool) -> str:
     counts = {t: sum(1 for r in signals if r.get("tier") == t)
               for t in ("ACT", "SETUP", "WATCH")}
     alerts = sig.get("notify") or []
-    session = sig.get("session_date", "")
+    # A run whose snapshot carried no usable date has session_date None, and
+    # html.escape(None) raises -- which notify.py catches, so the whole HTML
+    # email is silently replaced by plain text on a day that already went
+    # wrong. Coalesce instead.
+    session = sig.get("session_date") or ""
 
     if alerts:
         head = "".join(
