@@ -28,8 +28,16 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 REPORTS = ROOT / "reports"
 DELIVERY_LOG = ROOT / "data" / "last_delivery.json"
-# Two missed weekdays: one is a holiday or a slow night, two is a fault.
-MAX_WEEKDAYS_STALE = 2
+# Two missed weekdays of slack -- one is a holiday or a slow night, two is a
+# fault -- plus one for the gap between a session and the day it is checked on.
+#
+# Reports are named for the *session* they analyse, not the day the run fired,
+# and those differ whenever the newest bar is not today's. The scheduled run is
+# 18 minutes after the US close, so losing that race to the provider dates the
+# report a day back. At a threshold of 2 a persistent one-day lag sat exactly on
+# the limit: still passing, but with none of the holiday slack this number
+# exists to provide, so the first real miss would look like the second.
+MAX_WEEKDAYS_STALE = 3
 
 
 def weekdays_between(start: date, end: date) -> int:

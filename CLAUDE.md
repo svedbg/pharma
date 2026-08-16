@@ -411,7 +411,10 @@ once.
 ## Heartbeat
 
 `pharma-heartbeat.timer` / `com.pharma.heartbeat` (Mon-Fri) alerts if no report
-appears for two weekdays.
+appears for three weekdays — two of genuine slack, plus one for the
+gap between a session and the day it is checked on, since reports are named
+for the session and a run that loses the race with the provider dates its
+report a day back.
 **Silence is the desk's normal output**, so a broken run and a quiet market look
 identical. Separate unit on purpose: if the main run dies before reaching
 notify.py, run_daily.sh's own failure handler dies with it.

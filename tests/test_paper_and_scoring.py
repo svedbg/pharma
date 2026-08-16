@@ -266,6 +266,26 @@ def test_heartbeat_finds_the_newest_dated_report(tmp_path, monkeypatch):
     assert path.name == "2026-08-14.md"
 
 
+def test_a_session_lagging_the_run_still_leaves_holiday_slack():
+    """Reports are named for the session, not the run date, so a run that loses
+    the race with the provider dates its report a day back.
+
+    At the old threshold of 2 a persistent one-day lag sat exactly on the limit
+    -- passing, but with none of the slack the number exists to provide, so the
+    first genuine miss would have looked like the second.
+    """
+    from datetime import date
+
+    import heartbeat
+    # Friday's run files Thursday's session; checked the following Tuesday.
+    lagging = heartbeat.weekdays_between(date(2026, 8, 13), date(2026, 8, 18))
+    assert lagging == 3
+    assert lagging <= heartbeat.MAX_WEEKDAYS_STALE, "a lagging session is not a fault"
+    # But a genuinely dead desk still trips it.
+    dead = heartbeat.weekdays_between(date(2026, 8, 13), date(2026, 8, 19))
+    assert dead > heartbeat.MAX_WEEKDAYS_STALE
+
+
 def test_a_broken_delivery_channel_is_a_heartbeat_fault(tmp_path, monkeypatch):
     """A report on disk is not evidence that anything was sent.
 
