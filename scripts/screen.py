@@ -119,7 +119,7 @@ def score(symbol: str, name: str) -> dict | None:
     if r is None or pctb is None or last < MIN_PRICE:
         return None
 
-    tr = tradability(bars, {}) or {}
+    tr = tradability(bars) or {}
     if (tr.get("median_dollar_volume_20d") or 0) < MIN_DOLLAR_VOLUME:
         return None
 

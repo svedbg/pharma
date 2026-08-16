@@ -166,11 +166,21 @@ blocks the SETUP/ACT tiers when any of these are live:
 - `NT 10-Q` / `NT 10-K` late filing within 45 days
 - any single-session move ≤ **−25%** in the last 10 sessions, with the likely
   causal filing attached
-- liquidity below **1.5 quarters** of burn, when the balance sheet is neither
-  stale nor superseded
+- liquidity below `runway_veto_quarters` (default **1.5**) of burn, when the
+  balance sheet is neither stale nor superseded
 
 Soft flags (shelf registrations, officer departures, charter amendments, new
 debt, stale or superseded financials) annotate but do not block.
+
+**Both runway thresholds live in `watchlist.toml [settings]`, and they have to
+stay ordered.** The veto bar was a bare `1.5` inside `financial_vetoes()` while
+its counterpart `min_runway_quarters_for_act` — the bar for *clearing* a name —
+was configurable: the looser rule was the one you could see and tune, and the
+one that blocks a name outright was neither. Set the veto above the ACT bar and
+the band between them inverts, so a name in it is simultaneously proof of
+distress and proof of a sound balance sheet — the same contradiction the
+superseded-runway fix below exists to remove. `main()` warns when they are the
+wrong way round.
 
 **The runway veto and `runway_ok` must agree about which balance sheets they
 trust.** They did not: ACT already refused a `superseded_by` runway as
@@ -188,6 +198,15 @@ threads it through `_days_ago`, `evaluate_filings`, `financial_vetoes`,
 `load_catalysts`, `resolved_catalysts`, `next_catalyst` and `analyse`; those
 functions require it rather than defaulting, because a default is silent when
 wrong and nothing in the output records which clock produced a `days_ago`.
+
+`analyse` was the exception, and it is the function every signal flows through.
+It defaulted to today "so an ad-hoc caller need not construct one", with its own
+docstring conceding that the default was what made the function's determinism
+conditional — which is a plain statement that the convenience cost the property.
+An ad-hoc caller did not get a slightly inconvenient answer; it got a different
+one on Tuesday than on Monday, with nothing in the output to say so. It now
+requires `asof` like the rest, and the tests name their session rather than
+inheriting the day they happen to run on.
 
 The two clocks diverge whenever `signals.py` runs on a different day from the
 fetch — re-running it to pick up a watchlist edit (which this file recommends,
@@ -303,11 +322,21 @@ scoring a threshold the desk had already abandoned. The retired pair is kept as
 through `propose_zones.zone_from_closes()` for the same reason: one
 implementation, so the instrument cannot score a paraphrase of the rule.
 
-The benchmarks are **excluded from the universe** (`NOT_CANDIDATES`). XBI and
-IBB sit in the same `bars` table as the watchlist, and scoring them diluted the
-baseline every edge here is measured against while letting the rules fire on the
-very thing they are supposed to beat. `score_alerts.backfill` always excluded
-them; this file did not.
+The benchmarks are **excluded from the universe** (`signals.NOT_CANDIDATES`).
+XBI and IBB sit in the same `bars` table as the watchlist, and scoring them
+diluted the baseline every edge here is measured against while letting the rules
+fire on the very thing they are supposed to beat. `score_alerts.backfill` always
+excluded them; this file did not.
+
+That list was then written three times, spelled three ways: `NOT_CANDIDATES` in
+`backtest.py`, an inline `(BENCHMARK, "IBB")` in `score_alerts.py`, and
+`BENCHMARKS` in `fetch.py`. Adding a third benchmark would have updated one of
+them and silently left the ETF in the universe of the others — scored as a
+candidate by the very instrument that measures whether the rules beat it. There
+is one definition now, in `signals.py`, and `paper.py` imports `BENCHMARK`
+instead of retyping `"XBI"`. Stage 2 deliberately does not import stage 1, so a
+test pins `signals.NOT_CANDIDATES` to `fetch.BENCHMARKS` instead: **adding a
+benchmark to the fetch fails the suite until it is added to both.**
 
 #### Does a stale zone deserve to open ACT?
 

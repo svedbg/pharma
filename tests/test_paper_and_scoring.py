@@ -637,6 +637,40 @@ def test_the_benchmark_is_not_scored_as_a_candidate():
     assert "IBB" in backtest.NOT_CANDIDATES
 
 
+def test_every_module_excludes_exactly_the_benchmarks_that_get_fetched():
+    """The exclusion list was written three times, spelled three ways:
+    backtest.NOT_CANDIDATES, an inline (BENCHMARK, "IBB") in score_alerts, and
+    fetch.BENCHMARKS.
+
+    Adding a third benchmark would have updated one of them and silently left
+    the ETF in the universe of the others -- scored as a candidate by the very
+    instrument that measures whether the rules beat it. There is one definition
+    now, and stage 2 deliberately does not import stage 1, so this is what
+    keeps the two ends in step: adding a benchmark to fetch fails here until it
+    is added to signals too.
+    """
+    import backtest
+    import fetch
+    import score_alerts
+    import signals
+
+    assert set(signals.NOT_CANDIDATES) == set(fetch.BENCHMARKS), (
+        "fetch.BENCHMARKS and signals.NOT_CANDIDATES have drifted -- a benchmark "
+        "is being stored in the bars table and scored as a watchlist candidate")
+    assert backtest.NOT_CANDIDATES is signals.NOT_CANDIDATES
+    assert score_alerts.NOT_CANDIDATES is signals.NOT_CANDIDATES
+
+
+def test_paper_grades_against_the_same_benchmark_as_everything_else():
+    """paper.py retyped BENCHMARK = "XBI" instead of importing it, so it would
+    have kept grading against XBI on the day the desk moved -- silently, since
+    the label in its own output is built from that same name, leaving the report
+    agreeing with itself and wrong."""
+    import paper
+    import signals
+    assert paper.BENCHMARK == signals.BENCHMARK
+
+
 def test_excess_return_is_aligned_on_dates_not_index_offsets():
     """The name misses a session the ETF traded. Advancing both by `h`
     positions through their own bar lists then compares two different calendar

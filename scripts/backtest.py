@@ -16,7 +16,7 @@ Known biases, stated so the numbers are not over-read:
   * no costs -- micro-cap spreads are wide and are not modelled here.
 
     python3 scripts/backtest.py
-    python3 scripts/backtest.py --horizon 20 --min-obs 20
+    python3 scripts/backtest.py --horizons 20 --min-obs 20
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from propose_zones import zone_from_closes
 from signals import (
     BENCHMARK,
     CAPITULATION_VOL,
+    NOT_CANDIDATES,
     RSI_TRAP,
     SETUP_PCTB,
     SETUP_RSI,
@@ -44,12 +45,6 @@ from signals import (
 )
 
 DB = ROOT / "data" / "history.sqlite"
-# The benchmarks live in the same bars table as the watchlist. They are not
-# candidates and must not be scored as if they were: an ETF's ticker-days
-# diluted the "every day, every name" baseline that every edge here is measured
-# against, and the rules could fire on the very thing they are supposed to beat.
-# score_alerts.py already excluded them; this file did not.
-NOT_CANDIDATES = (BENCHMARK, "IBB")
 
 # Rules to compare. Each takes the indicator dict and returns True/False.
 #

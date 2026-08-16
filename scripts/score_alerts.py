@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from signals import (
     BENCHMARK,
     CAPITULATION_VOL,
+    NOT_CANDIDATES,
     SETUP_PCTB,
     SETUP_RSI,
     bollinger_pct_b,
@@ -98,8 +99,10 @@ def bench_at(bench: dict, bench_dates: list, day: str):
 
 def backfill(con) -> int:
     """Replay history through the current rules and log the alerts they'd raise."""
+    placeholders = ",".join("?" * len(NOT_CANDIDATES))
     tickers = [r[0] for r in con.execute(
-        "SELECT DISTINCT ticker FROM bars WHERE ticker NOT IN (?,?)", (BENCHMARK, "IBB"))]
+        f"SELECT DISTINCT ticker FROM bars WHERE ticker NOT IN ({placeholders})",
+        NOT_CANDIDATES)]
     rows, n = [], 0
     for tkr in tickers:
         series = bars_for(con, tkr)

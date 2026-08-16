@@ -12,6 +12,7 @@ from datetime import date, timedelta
 import pytest
 
 from signals import (
+    RUNWAY_VETO_QUARTERS,
     conviction,
     evaluate_filings,
     exit_signals,
@@ -199,17 +200,35 @@ def test_stale_balance_sheet_is_flagged_not_trusted():
 # -------------------------------------------------- runway as a hard veto
 
 
-def _veto_run(filings, cash=5_000_000, burn=-10_000_000, as_of="2026-03-31"):
+def _veto_run(filings, cash=5_000_000, burn=-10_000_000, as_of="2026-03-31",
+              settings=None):
     """Run financial_vetoes over one short-runway name and return (hard, soft)."""
     out = {"recent_events": [], "runway": runway(_fin(cash, 0, burn, as_of=as_of, age=40))}
     hard, soft = [], []
-    financial_vetoes(out, {"filings": filings}, hard, soft, {}, SESSION)
+    financial_vetoes(out, {"filings": filings}, hard, soft, settings or {}, SESSION)
     return hard, soft, out["runway"]
 
 
 def test_short_runway_is_a_hard_veto_when_the_balance_sheet_is_current():
     hard, _soft, rw = _veto_run(filings=[])
-    assert rw["quarters"] < 1.5
+    assert rw["quarters"] < RUNWAY_VETO_QUARTERS
+    assert any(h["form"] == "cash runway" for h in hard)
+
+
+def test_the_runway_veto_bar_is_configurable_like_the_one_that_clears_a_name():
+    """It was a bare 1.5 inside financial_vetoes while its counterpart,
+    min_runway_quarters_for_act, sat in watchlist.toml [settings].
+
+    The looser rule -- the bar for *clearing* a name -- was the one you could
+    see and tune; the one that blocks a name outright was neither. They have to
+    move together to stay ordered, so they have to be settable the same way.
+    """
+    # 0.5 quarters of liquidity: vetoed by default, and not at a lower bar.
+    hard, _soft, rw = _veto_run(filings=[], settings={"runway_veto_quarters": 0.25})
+    assert rw["quarters"] < RUNWAY_VETO_QUARTERS, "test setup"
+    assert not any(h["form"] == "cash runway" for h in hard), hard
+
+    hard, _soft, _rw = _veto_run(filings=[], settings={"runway_veto_quarters": 4.0})
     assert any(h["form"] == "cash runway" for h in hard)
 
 
@@ -358,14 +377,14 @@ def test_float_rejects_short_interest_exceeding_float():
 
 def test_tradability_flags_a_name_nobody_can_trade():
     bars = [{"close": 1.0, "volume": 15_000} for _ in range(20)]
-    out = tradability(bars, {})
+    out = tradability(bars)
     assert out["very_illiquid"] is True
     assert out["comfortable_position_usd"] == pytest.approx(1500, rel=0.1)
 
 
 def test_tradability_passes_a_liquid_name():
     bars = [{"close": 50.0, "volume": 1_000_000} for _ in range(20)]
-    out = tradability(bars, {})
+    out = tradability(bars)
     assert out["illiquid"] is False
 
 
