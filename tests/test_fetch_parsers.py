@@ -314,6 +314,20 @@ def test_a_stale_cik_map_beats_no_run_at_all(monkeypatch, tmp_path):
     assert got["ARDX"]["cik"] == "0001437402"
 
 
+@pytest.mark.parametrize("junk", ['["not", "a", "map"]', '"a string"', "{}", "not json"])
+def test_an_unusable_cached_map_is_no_map_at_all(monkeypatch, tmp_path, junk):
+    """Shape-checked, not merely parsed. A file that is valid JSON but not a
+    mapping makes .values() raise AttributeError, which no caller guards -- and
+    this is the fallback for a failed fetch, so raising would take the run down
+    by the very path that exists to keep it alive."""
+    (tmp_path / "cik_map.json").write_text(junk)
+    monkeypatch.setattr(fetch, "DATA", tmp_path)
+    monkeypatch.setattr(fetch, "get_json",
+                        lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("HTTP 503")))
+    with pytest.raises(fetch.FetchError):
+        fetch.load_cik_map()
+
+
 def test_no_cached_map_and_no_network_still_fails_loudly(monkeypatch, tmp_path):
     """The fallback is for a stale map, not for no map. Without one there is
     nothing to run on, and inventing a silent empty map would resolve no CIK

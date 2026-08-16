@@ -440,7 +440,14 @@ def load_cik_map(force: bool = False) -> dict[str, dict]:
             cached = json.loads(cache.read_text())
         except (json.JSONDecodeError, OSError):
             return None
-        if cached and isinstance(next(iter(cached.values())), dict):
+        # Shape-checked, not just parsed. A file that is valid JSON but not a
+        # mapping makes `.values()` raise AttributeError, which no caller
+        # guards -- and this function is now the fallback for a failed fetch,
+        # so raising here would take the run down by the very path added to
+        # keep it alive.
+        if not isinstance(cached, dict) or not cached:
+            return None
+        if isinstance(next(iter(cached.values())), dict):
             return cached  # ignore the older ticker->str format
         return None
 
