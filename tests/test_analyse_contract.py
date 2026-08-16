@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
-from signals import analyse
+import signals
 
 SETTINGS = {"max_position_pct": 28, "max_position_pct_lottery": 5,
             "min_cash_reserve_pct": 15, "min_runway_quarters_for_act": 3}
@@ -33,7 +33,7 @@ def _rec(prices, **kw):
 
 
 def test_returns_no_data_without_enough_history():
-    out = analyse(_rec([10.0] * 5), SETTINGS)
+    out = signals.analyse(_rec([10.0] * 5), SETTINGS)
     assert out["tier"] == "NO_DATA"
     assert "insufficient" in out["reasons"][0]
 
@@ -41,7 +41,7 @@ def test_returns_no_data_without_enough_history():
 def test_output_carries_the_keys_the_report_depends_on():
     """The report and the email renderer index these directly; a rename here
     silently empties sections downstream."""
-    out = analyse(_rec([10.0 + (i % 9) * 0.3 for i in range(120)]), SETTINGS)
+    out = signals.analyse(_rec([10.0 + (i % 9) * 0.3 for i in range(120)]), SETTINGS)
     for key in ("symbol", "bucket", "tier", "reasons", "price", "technicals",
                 "max_position_pct", "hard_vetoes", "soft_flags", "recent_events",
                 "conviction", "exit_flags", "links", "links_md", "tradability"):
@@ -53,9 +53,9 @@ def test_output_carries_the_keys_the_report_depends_on():
 
 
 def test_lottery_bucket_gets_the_smaller_ceiling():
-    out = analyse(_rec([10.0] * 40 + [10.5] * 40, tier="lottery"), SETTINGS)
+    out = signals.analyse(_rec([10.0] * 40 + [10.5] * 40, tier="lottery"), SETTINGS)
     assert out["max_position_pct"] == 5
-    assert analyse(_rec([10.0] * 80, tier="A"), SETTINGS)["max_position_pct"] == 28
+    assert signals.analyse(_rec([10.0] * 80, tier="A"), SETTINGS)["max_position_pct"] == 28
 
 
 def test_a_hard_veto_blocks_setup():
@@ -63,8 +63,8 @@ def test_a_hard_veto_blocks_setup():
     falling = [100 - i * 1.5 for i in range(60)]
     veto = [{"form": "424B5", "filed": "2026-01-01", "items": "",
              "offering_type": "priced", "url": "u"}]
-    clean = analyse(_rec(falling), SETTINGS)
-    vetoed = analyse(_rec(falling, filings=veto), SETTINGS)
+    clean = signals.analyse(_rec(falling), SETTINGS)
+    vetoed = signals.analyse(_rec(falling, filings=veto), SETTINGS)
     assert vetoed["tier"] != "ACT"
     assert len(vetoed["hard_vetoes"]) >= len(clean["hard_vetoes"])
 
@@ -73,7 +73,7 @@ def test_act_requires_a_declared_zone():
     """Without entry_high the ACT tier is structurally unreachable, and the
     reasons must say so rather than failing silently."""
     falling = [100 - i * 1.5 for i in range(60)]
-    out = analyse(_rec(falling), SETTINGS)
+    out = signals.analyse(_rec(falling), SETTINGS)
     assert out["tier"] != "ACT"
     if out["tier"] == "SETUP":
         assert any("no entry zone" in r for r in out["reasons"])
@@ -81,13 +81,13 @@ def test_act_requires_a_declared_zone():
 
 def test_stale_zone_is_flagged_as_a_soft_flag():
     prices = [10.0] * 60 + [20.0] * 20          # price far above its zone
-    out = analyse(_rec(prices, entry_high=10.0, entry_low=8.0), SETTINGS)
+    out = signals.analyse(_rec(prices, entry_high=10.0, entry_low=8.0), SETTINGS)
     assert out["zone_stale"] is True
     assert any("stale entry zone" in f["form"] for f in out["soft_flags"])
 
 
 def test_conviction_is_always_present_and_labelled():
-    out = analyse(_rec([10.0 + (i % 5) * 0.2 for i in range(120)]), SETTINGS)
+    out = signals.analyse(_rec([10.0 + (i % 5) * 0.2 for i in range(120)]), SETTINGS)
     assert out["conviction"]["label"] in ("strong", "moderate", "weak", "avoid")
     assert isinstance(out["conviction"]["supporting"], list)
     assert isinstance(out["conviction"]["against"], list)
@@ -96,8 +96,8 @@ def test_conviction_is_always_present_and_labelled():
 def test_deterministic_for_the_same_input():
     """Stage 2 must be pure arithmetic: identical input, identical output."""
     rec = _rec([10.0 + (i % 11) * 0.4 for i in range(150)])
-    a = json.dumps(analyse(rec, SETTINGS), sort_keys=True, default=str)
-    b = json.dumps(analyse(rec, SETTINGS), sort_keys=True, default=str)
+    a = json.dumps(signals.analyse(rec, SETTINGS), sort_keys=True, default=str)
+    b = json.dumps(signals.analyse(rec, SETTINGS), sort_keys=True, default=str)
     assert a == b
 
 
@@ -121,8 +121,8 @@ def test_a_sourced_catalyst_satisfies_the_act_backdrop():
                            "kind": "PDUFA", "confidence": "confirmed",
                            "description": "action date", "source": "8-K"}]}
 
-    withc = analyse(rec, SETTINGS, catalysts=catalysts)
-    without = analyse(rec, SETTINGS)
+    withc = signals.analyse(rec, SETTINGS, catalysts=catalysts)
+    without = signals.analyse(rec, SETTINGS)
     assert withc["capitulation_volume"] is True, "test setup: needs volume confirmation"
     assert withc["tier"] == "ACT"
     # Nothing else changed, so the catalyst is demonstrably what carried it.
