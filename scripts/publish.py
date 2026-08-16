@@ -80,6 +80,12 @@ td { padding:8px 9px; border-bottom:1px solid var(--line); }
 tbody tr:hover { background:rgba(127,127,127,.06); }
 .scroll { overflow-x:auto; border:1px solid var(--line); border-radius:8px; margin:12px 0; }
 .scroll table { margin:0; }
+/* Cell meaning, classified once in render_email._cell_kind() and coloured here
+   from the theme variables so it survives a dark background. */
+td.pos { color:var(--good); }
+td.neg { color:var(--bad); }
+td.act { color:var(--good); font-weight:700; }
+td.setup { color:var(--warn); font-weight:650; }
 .sub { color:var(--muted); font-size:14px; margin:0 0 18px; }
 .pill { display:inline-block; padding:2px 8px; border-radius:20px; font-size:12px;
         font-weight:700; }
@@ -201,10 +207,11 @@ def build() -> int:
                 + '</div>'
             )
 
-        body = md_to_html(path.read_text())
-        # Tables need their own scroll container on a phone.
-        body = body.replace("<table", '<div class="scroll"><table').replace(
-            "</table>", "</table></div>")
+        # Semantic markup, not the mail client's inline styles: the stylesheet
+        # above -- including its dark palette -- can only apply to elements that
+        # do not already carry their own CSS. The converter emits the scroll
+        # container itself, so nothing needs wrapping afterwards.
+        body = md_to_html(path.read_text(), inline_styles=False)
         (SITE / f"{day}.html").write_text(
             page(f"Biotech desk — {day}", stats + body, nav))
 
@@ -216,11 +223,17 @@ def build() -> int:
         md = path.read_text()
         alerts = s.get("alerts") or []
         exits = s.get("exits") or []
+        # Escaped like every other value on this page. These are ticker symbols
+        # rather than free text, but the escaping rule is worth more than the
+        # exemption: the one place a page skips it is where the next kind of
+        # value gets added without anyone rechecking.
         flags = ""
         if alerts:
-            flags += f' <span class="pill setup">{", ".join(alerts)}</span>'
+            syms = html.escape(", ".join(alerts))
+            flags += f' <span class="pill setup">{syms}</span>'
         if exits:
-            flags += f' <span class="pill act">exit: {", ".join(exits)}</span>'
+            syms = html.escape(", ".join(exits))
+            flags += f' <span class="pill act">exit: {syms}</span>'
         cat = s.get("next_catalyst") or {}
         rows.append(
             f'<tr><td class="d"><a href="{day}.html">{day}</a><br>'

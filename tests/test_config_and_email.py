@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import ast
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
 
 import localconfig
-from render_email import MAX_HTML_BYTES, build_email_html, md_to_html
+from render_email import BAD, GOOD, MAX_HTML_BYTES, build_email_html, md_to_html
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -75,6 +76,88 @@ def test_report_text_cannot_inject_markup():
     html = md_to_html("A <script>alert(1)</script> line")
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
+
+
+def test_a_quote_in_a_link_cannot_escape_the_href_attribute():
+    """Escaping the text was not enough on its own. `html.escape(..., quote=False)`
+    leaves the quote character alone and the URL went straight into `href="..."`,
+    so a link target carrying a quote closed the attribute and opened one of its
+    own -- rendering a live event handler. Inert in a mail client, but publish.py
+    reuses this converter for site/, which is opened in a real browser, and the
+    report is written from fetched web content rather than trusted input.
+    """
+    rendered = md_to_html('[x](https://h.example/a"onmouseover="alert(1))')
+
+    # The payload may survive as text inside the href value -- that is harmless
+    # and is what escaping looks like. What must not survive is a second
+    # *attribute*, so the anchor is parsed and its attribute names checked
+    # rather than the raw string being grepped.
+    class _Anchors(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.attrs = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "a":
+                self.attrs.append({k for k, _ in attrs})
+
+    p = _Anchors()
+    p.feed(rendered)
+    assert p.attrs == [{"href", "style"}], f"injected attribute: {p.attrs}"
+    assert "&quot;onmouseover=&quot;" in rendered
+
+
+def test_the_archive_gets_semantic_markup_not_mail_client_styles():
+    """publish.py ships a stylesheet with a dark palette, and an inline style
+    beats a stylesheet on every element -- so the archive was rendered in
+    near-black #1a1d21 body text on a #0f1216 dark background. The stylesheet was
+    written, correct, and completely overridden. The site target must therefore
+    emit no inline CSS at all."""
+    md = "# Title\n\nSome **text** with a [link](https://example.org).\n\n- item\n"
+    site = md_to_html(md, inline_styles=False)
+    assert 'style="' not in site, "an inline style overrides the archive's theme"
+    assert "<h1>" in site and "<p>" in site and "<li>" in site
+    # The link target still has to survive as an attribute.
+    assert 'href="https://example.org"' in site
+
+
+def test_the_email_target_is_unchanged_and_still_inlines_everything():
+    """Mail clients strip <style> blocks, so the default target must keep
+    carrying CSS on every element."""
+    email = md_to_html("# Title\n\nSome text.\n")
+    assert 'style="font-size:20px' in email
+    assert "color:" in email
+
+
+def test_each_table_gets_exactly_one_scroll_container():
+    """publish.py used to bolt a second container on with a string replace, so
+    every table in the archive sat inside two nested overflow boxes with the
+    mail client's light-mode border baked into the outer one."""
+    md = "| A | B |\n|---|---|\n| 1 | 2 |\n\n| C | D |\n|---|---|\n| 3 | 4 |"
+    site = md_to_html(md, inline_styles=False)
+    assert site.count("<table") == 2
+    assert site.count('class="scroll"') == 2
+    # And the email keeps its own inline-styled wrapper, one per table.
+    assert md_to_html(md).count("overflow-x:auto") == 2
+
+
+def test_table_cells_are_classified_the_same_way_for_both_targets():
+    """The two targets must agree about which cells are significant and differ
+    only in how they say so, or the site and the email disagree about the data."""
+    md = "| Chg | Tier |\n|---|---|\n| -2.5% | ACT |"
+    site = md_to_html(md, inline_styles=False)
+    email = md_to_html(md)
+    assert '<td class="neg">' in site and '<td class="act">' in site
+    assert f"color:{BAD}" in email and f"color:{GOOD}" in email
+
+
+def test_query_strings_in_links_are_not_double_escaped():
+    """The fix must handle the quote only: the text arrives already escaped with
+    quote=False, so re-escaping wholesale would turn every `&` in a chart URL
+    into `&amp;amp;`."""
+    html = md_to_html("[EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?CIK=1&type=8-K)")
+    assert "CIK=1&amp;type=8-K" in html
+    assert "&amp;amp;" not in html
 
 
 def test_email_always_fits_under_the_clip_limit():
