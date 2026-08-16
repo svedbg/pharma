@@ -116,13 +116,16 @@ def test_a_sourced_catalyst_satisfies_the_act_backdrop():
     rec = _rec(prices, entry_high=round(prices[-1] * 1.2, 4), entry_low=1.0)
     rec["bars"] = bars
 
-    soon = (date.today() + timedelta(days=30)).isoformat()
+    # Pinned to a fixed session like the rest of the date-sensitive tests, so
+    # this describes the ACT gate rather than the day the suite runs on.
+    session = date(2026, 8, 15)
+    soon = (session + timedelta(days=30)).isoformat()
     catalysts = {"TEST": [{"symbol": "TEST", "date": soon, "days_until": 30,
                            "kind": "PDUFA", "confidence": "confirmed",
                            "description": "action date", "source": "8-K"}]}
 
-    withc = signals.analyse(rec, SETTINGS, catalysts=catalysts)
-    without = signals.analyse(rec, SETTINGS)
+    withc = signals.analyse(rec, SETTINGS, catalysts=catalysts, asof=session)
+    without = signals.analyse(rec, SETTINGS, asof=session)
     assert withc["capitulation_volume"] is True, "test setup: needs volume confirmation"
     assert withc["tier"] == "ACT"
     # Nothing else changed, so the catalyst is demonstrably what carried it.
@@ -184,30 +187,79 @@ def test_invalidation_price_reaches_analyse_through_the_watchlist_overlay(monkey
     assert "invalidation_breached" in result["notify_exits"][0]["flags"]
 
 
+def _run_main(monkeypatch, tmp_path, snapshot: dict,
+              state_name: str = "candidate_alerts.json") -> dict:
+    """Drive main() over one snapshot and return the signals it wrote.
+
+    `state_name` is what tells signals.py whether the run is live: anything but
+    alerts.json is a screening pass, which gates the alert log and the archive
+    summary. It defaults to a non-live name so these tests never write into the
+    shared artefacts, even though DATA is redirected at tmp_path anyway.
+    """
+    monkeypatch.setattr(signals, "ROOT", tmp_path)
+    monkeypatch.setattr(signals, "DATA", tmp_path)
+    monkeypatch.setattr(signals, "STATE", tmp_path)
+    snap_path = tmp_path / "snap.json"
+    snap_path.write_text(json.dumps(snapshot))
+    watchlist = tmp_path / "watchlist.toml"
+    watchlist.write_text('[settings]\n\n[[ticker]]\nsymbol = "TEST"\n')
+    out_path = tmp_path / "signals.json"
+    monkeypatch.setattr("sys.argv", [
+        "signals.py", "--snapshot", str(snap_path), "--watchlist", str(watchlist),
+        "--out", str(out_path), "--state", str(tmp_path / state_name),
+    ])
+    assert signals.main() == 0
+    return json.loads(out_path.read_text())
+
+
 def test_a_screening_run_leaves_no_trace_in_the_live_archive(monkeypatch, tmp_path):
     """Screening borrows this module against a candidate file. CLAUDE.md already
     required --state so it cannot consume the live alert state, but the per-day
     summary the local archive indexes from was written unconditionally, so a
     screen silently overwrote the real day's entry."""
-    monkeypatch.setattr(signals, "ROOT", tmp_path)
-    monkeypatch.setattr(signals, "DATA", tmp_path)
-    monkeypatch.setattr(signals, "STATE", tmp_path)
-
     prices = [10.0 + (i % 7) * 0.2 for i in range(60)]
-    snap_path = tmp_path / "candidates_snapshot.json"
-    snap_path.write_text(json.dumps({
+    _run_main(monkeypatch, tmp_path, {
         "local_date": "2026-08-15", "status": "ok", "benchmarks": {},
         "tickers": {"TEST": {"symbol": "TEST", "tier": "B", "filings": [],
                              "financials": {}, "trials": [], "bars": _bars(prices)}},
-    }))
-    watchlist = tmp_path / "candidates.toml"
-    watchlist.write_text('[settings]\n\n[[ticker]]\nsymbol = "TEST"\n')
-
-    monkeypatch.setattr("sys.argv", [
-        "signals.py", "--snapshot", str(snap_path), "--watchlist", str(watchlist),
-        "--out", str(tmp_path / "candidate_signals.json"),
-        "--state", str(tmp_path / "screen_alerts.json"),
-    ])
-    assert signals.main() == 0
+    }, state_name="screen_alerts.json")
     assert not (tmp_path / "summaries").exists(), \
         "a screening run must not write the live archive's per-day summary"
+
+
+def test_main_ages_filings_from_the_snapshot_not_from_today(monkeypatch, tmp_path):
+    """The end-to-end proof that the session date, not the wall clock, sets the
+    veto windows.
+
+    The filing below is two days old as of the snapshot's own date and would be
+    months old measured from now. Under the wall clock it fell out of the 10-day
+    prospectus window and the veto silently disappeared -- which is what happened
+    whenever signals.py ran on a different day from the fetch: re-running it to
+    pick up a watchlist edit, pointing --snapshot at an archived file, or a run
+    that straddled midnight.
+    """
+    prices = [10.0 + (i % 7) * 0.2 for i in range(60)]
+    result = _run_main(monkeypatch, tmp_path, {
+        "local_date": "2026-06-01", "status": "ok", "benchmarks": {},
+        "tickers": {"TEST": {
+            "symbol": "TEST", "tier": "A", "financials": {}, "trials": [],
+            "bars": _bars(prices),
+            "filings": [{"form": "424B5", "filed": "2026-05-30", "items": "",
+                         "offering_type": "priced", "report_date": None, "url": "u"}],
+        }},
+    })
+    vetoes = result["signals"][0]["hard_vetoes"]
+    assert [v["form"] for v in vetoes] == ["424B5"], vetoes
+    assert vetoes[0]["days_ago"] == 2
+
+
+def test_main_says_so_when_a_snapshot_has_no_session_date(monkeypatch, tmp_path, capsys):
+    """Falling back to today is sometimes the only option, but doing it quietly
+    would reintroduce the very drift the session date removes."""
+    prices = [10.0 + (i % 7) * 0.2 for i in range(60)]
+    _run_main(monkeypatch, tmp_path, {
+        "status": "ok", "benchmarks": {},
+        "tickers": {"TEST": {"symbol": "TEST", "tier": "A", "filings": [],
+                             "financials": {}, "trials": [], "bars": _bars(prices)}},
+    })
+    assert "no usable local_date" in capsys.readouterr().err

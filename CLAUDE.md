@@ -139,6 +139,22 @@ number and the superseding filing, and `conviction()` still counts it against
 the name. It simply no longer blocks on its own. Trap 5's rule generalises:
 absence of *current* data is ignorance, not distress.
 
+**Every window above is measured from the snapshot's own `local_date`, never
+from the wall clock.** `signals.py` derives one `asof` date in `main()` and
+threads it through `_days_ago`, `evaluate_filings`, `financial_vetoes`,
+`load_catalysts`, `resolved_catalysts`, `next_catalyst` and `analyse`; those
+functions require it rather than defaulting, because a default is silent when
+wrong and nothing in the output records which clock produced a `days_ago`.
+
+The two clocks diverge whenever `signals.py` runs on a different day from the
+fetch — re-running it to pick up a watchlist edit (which this file recommends,
+since the overlay exists so hand edits need not wait for a fetch), pointing
+`--snapshot` at an archived file, or a run that straddles midnight. Re-running
+yesterday's snapshot this morning aged OTLK's two 424B5 vetoes from 1 and 3 days
+to 2 and 4, HUMA's listing deficiency from 15 to 16, and PRAX's auditor change
+from 44 to 45. None crossed a threshold that day; a filing sitting on one would
+have. A snapshot with no usable `local_date` falls back to today and says so.
+
 **A veto may only be overridden in the report with specific cited evidence.**
 This has already worked in practice: a COGT 424B5 was correctly refuted as a
 $400M ATM programme, and a PRAX item 4.01 as a clean auditor change.
@@ -490,6 +506,9 @@ project rather than driving it — nothing in the pipeline reads them.
 
 - Stdlib only in `scripts/` — no pip dependencies to rot in a cron job.
 - Config in TOML, parsed with stdlib `tomllib`.
+- Stage 2 reads no clock. Ages and windows come from the snapshot's session
+  date, passed in; `generated_at` is the one wall-clock value, because it
+  records when the run happened rather than what it analysed.
 - Secrets in `~/.config/pharma/pharma.env`, never in the repo. The older
   `notify.env` is still read so an existing install keeps working, but
   `pharma.env` wins and is the one to write to.

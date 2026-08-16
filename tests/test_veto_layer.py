@@ -17,14 +17,22 @@ from signals import (
     exit_signals,
     financial_vetoes,
     float_metrics,
+    load_catalysts,
     move_profile,
+    resolved_catalysts,
     runway,
     tradability,
 )
 
+# A fixed session to measure against, so these tests describe the veto windows
+# rather than the day they happen to run on. Every age below is relative to it,
+# which is exactly the relationship the code now enforces.
+SESSION = date(2026, 8, 15)
+
 
 def _recent(days_ago: int) -> str:
-    return (date.today() - timedelta(days=days_ago)).isoformat()
+    """A filing date `days_ago` before the session under test."""
+    return (SESSION - timedelta(days=days_ago)).isoformat()
 
 
 # ------------------------------------------------------------------ filings
@@ -33,7 +41,7 @@ def _recent(days_ago: int) -> str:
 def test_priced_offering_is_a_hard_veto():
     hard, soft = evaluate_filings([
         {"form": "424B5", "filed": _recent(2), "items": "",
-         "offering_type": "priced", "url": "u"}])
+         "offering_type": "priced", "url": "u"}], SESSION)
     assert len(hard) == 1 and not soft
 
 
@@ -42,7 +50,7 @@ def test_atm_programme_is_only_a_soft_flag():
     takedown. Treating them alike produced the most frequent false veto."""
     hard, soft = evaluate_filings([
         {"form": "424B5", "filed": _recent(2), "items": "",
-         "offering_type": "atm", "url": "u"}])
+         "offering_type": "atm", "url": "u"}], SESSION)
     assert not hard
     assert len(soft) == 1 and "at-the-market" in soft[0]["reason"]
 
@@ -50,20 +58,58 @@ def test_atm_programme_is_only_a_soft_flag():
 def test_unclassified_offering_stays_a_hard_veto():
     # Unknown must fail safe toward caution, not toward permission.
     hard, _ = evaluate_filings([
-        {"form": "424B5", "filed": _recent(2), "items": "", "url": "u"}])
+        {"form": "424B5", "filed": _recent(2), "items": "", "url": "u"}], SESSION)
     assert len(hard) == 1
 
 
 def test_listing_deficiency_is_a_hard_veto():
     hard, _ = evaluate_filings([
-        {"form": "8-K", "filed": _recent(5), "items": "3.01", "url": "u"}])
+        {"form": "8-K", "filed": _recent(5), "items": "3.01", "url": "u"}], SESSION)
     assert any("listing" in h["reason"] for h in hard)
 
 
 def test_stale_filings_fall_out_of_the_window():
     hard, soft = evaluate_filings([
-        {"form": "424B5", "filed": _recent(400), "items": "", "url": "u"}])
+        {"form": "424B5", "filed": _recent(400), "items": "", "url": "u"}], SESSION)
     assert not hard and not soft
+
+
+def test_filing_age_is_measured_from_the_session_not_the_wall_clock():
+    """The same filing is inside or outside its veto window depending only on
+    which session is being analysed. Reading the clock instead meant re-running
+    signals.py against an existing snapshot -- the documented way to pick up a
+    watchlist edit without waiting for a fetch -- silently aged every window by
+    however long ago that fetch was."""
+    filing = [{"form": "424B5", "filed": "2026-08-13", "items": "",
+               "offering_type": "priced", "url": "u"}]
+
+    # Two days after the filing: inside the 10-day prospectus window.
+    hard, _ = evaluate_filings(filing, date(2026, 8, 15))
+    assert len(hard) == 1
+    assert hard[0]["days_ago"] == 2
+
+    # Thirty days after: the same filing, out of the window.
+    hard_later, _ = evaluate_filings(filing, date(2026, 9, 12))
+    assert not hard_later
+
+
+def test_an_unreadable_filing_date_is_ancient_but_an_unreadable_asof_raises():
+    """The guard in _days_ago covers one of those and must not cover the other.
+
+    An unreadable *filing* date has a safe answer: treat it as ancient, so it
+    cannot hold a veto open on a date nobody can read. An unreadable *asof* is a
+    programming error, and swallowing it would age every filing to 10**6 days
+    and drop every veto in the run -- a fail-open on the one layer that must
+    never fail open.
+    """
+    filing = [{"form": "424B5", "filed": "not-a-date", "items": "",
+               "offering_type": "priced", "url": "u"}]
+    hard, soft = evaluate_filings(filing, SESSION)
+    assert not hard and not soft
+
+    with pytest.raises(TypeError):
+        evaluate_filings([{"form": "424B5", "filed": "2026-08-13", "items": "",
+                           "offering_type": "priced", "url": "u"}], None)
 
 
 # ------------------------------------------------------------------ runway
@@ -103,7 +149,7 @@ def _veto_run(filings, cash=5_000_000, burn=-10_000_000, as_of="2026-03-31"):
     """Run financial_vetoes over one short-runway name and return (hard, soft)."""
     out = {"recent_events": [], "runway": runway(_fin(cash, 0, burn, as_of=as_of, age=40))}
     hard, soft = [], []
-    financial_vetoes(out, {"filings": filings}, hard, soft, {})
+    financial_vetoes(out, {"filings": filings}, hard, soft, {}, SESSION)
     return hard, soft, out["runway"]
 
 
@@ -128,6 +174,36 @@ def test_a_superseded_short_runway_does_not_fire_the_hard_veto():
     flag = next(f for f in soft if f["form"] == "short runway, superseded")
     # The number must survive the downgrade -- this is a demotion, not a deletion.
     assert "0.5" in flag["reason"] or "0.59" in flag["reason"]
+
+
+# ------------------------------------------------------- catalyst clock
+
+
+def _catalyst_file(tmp_path, when: str):
+    p = tmp_path / "catalysts.toml"
+    p.write_text('[[catalyst]]\nsymbol = "X"\n'
+                 f'date = "{when}"\nkind = "PDUFA"\n'
+                 'confidence = "confirmed"\ndescription = "action date"\n')
+    return p
+
+
+def test_a_catalyst_on_the_session_date_is_still_upcoming(tmp_path):
+    """days_until 0, not a resolved binary. The two lists are exclusive and the
+    boundary belongs to the upcoming one -- on the morning of a PDUFA the desk
+    should be counting down, not writing the thesis off."""
+    path = _catalyst_file(tmp_path, "2026-08-15")
+    upcoming = load_catalysts(path, date(2026, 8, 15))
+    assert upcoming["X"][0]["days_until"] == 0
+    assert not resolved_catalysts(path, date(2026, 8, 15))
+
+
+def test_a_catalyst_resolves_relative_to_the_session(tmp_path):
+    path = _catalyst_file(tmp_path, "2026-08-15")
+    # Three days later it has resolved and is no longer on the clock.
+    assert resolved_catalysts(path, date(2026, 8, 18))["X"][0]["days_ago"] == 3
+    assert "X" not in load_catalysts(path, date(2026, 8, 18))
+    # Past the 21-day re-underwrite window it drops out of both.
+    assert not resolved_catalysts(path, date(2026, 9, 30))
 
 
 def test_conviction_still_counts_a_superseded_balance_sheet_against_the_name():
