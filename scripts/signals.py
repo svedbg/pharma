@@ -81,6 +81,16 @@ BENCHMARK = "XBI"
 # Price this far from its entry zone means the zone predates the current regime.
 ZONE_STALE_DRIFT_PCT = 25.0
 
+# Fields a human edits in watchlist.toml, which the overlay in main() copies over
+# whatever the snapshot happened to capture at fetch time. Anything analyse()
+# reads from a ticker record and a person can set by hand must be listed here:
+# invalidation_price was missing for months, which left `invalidation_breached`
+# -- the highest-severity exit flag, and the one that pushes to ntfy -- silently
+# unreachable for every name on the list.
+WATCHLIST_FIELDS = (
+    "entry_low", "entry_high", "invalidation_price", "tier", "thesis", "invalidation",
+)
+
 
 # ------------------------------------------------------------------ indicators
 
@@ -889,24 +899,46 @@ def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dic
                       "not run -- verify before treating a short runway as distress",
             "url": None,
         })
-    if rw and rw["quarters"] < 1.5 and not rw["stale"]:
-        hard.append({
-            "form": "cash runway", "filed": rw["cash_as_of"], "days_ago": _days_ago(rw["cash_as_of"] or ""),
-            "reason": (
-                f"only {rw['quarters']} quarters of liquidity "
-                f"(${rw['liquidity_usd']:,.0f} as of {rw['cash_as_of']}) at current burn "
-                f"-- a dilutive raise is near-certain"
-                + (" [cash-only balance confirmed by a full XBRL tag sweep]"
-                   if rw["cash_only_verified"] else "")
-            ),
-            "url": None,
-        })
-    elif rw and rw["stale"]:
+    if rw and rw["stale"]:
         soft.append({
             "form": "stale financials", "filed": rw["cash_as_of"], "days_ago": rw.get("age_days"),
             "reason": f"balance sheet is {rw.get('age_days')} days old -- runway estimate unreliable, verify before sizing",
             "url": None,
         })
+    elif rw and rw["quarters"] < 1.5:
+        sup = rw.get("superseded_by")
+        if sup:
+            # The same figure cannot be too old to clear a name and fresh enough
+            # to condemn it. runway_ok already refuses superseded data, so
+            # letting it fire a hard veto trusted it in exactly the direction
+            # that hurts: OTLK carried a 0.59-quarter veto off a balance sheet
+            # its own later filing had replaced. The number stays visible here
+            # and in conviction()'s `against` list -- it just no longer blocks
+            # on its own.
+            soft.append({
+                "form": "short runway, superseded", "filed": sup.get("filed"),
+                "days_ago": _days_ago(sup.get("filed") or ""),
+                "reason": (
+                    f"the {rw['cash_as_of']} balance sheet shows only {rw['quarters']} quarters "
+                    f"of liquidity (${rw['liquidity_usd']:,.0f}), but {sup['form']} filed "
+                    f"{sup.get('filed')} reports a later period -- read it before treating this "
+                    f"as a financing veto, and re-check it if that filing confirms the shortfall"
+                ),
+                "url": sup.get("url"),
+            })
+        else:
+            hard.append({
+                "form": "cash runway", "filed": rw["cash_as_of"],
+                "days_ago": _days_ago(rw["cash_as_of"] or ""),
+                "reason": (
+                    f"only {rw['quarters']} quarters of liquidity "
+                    f"(${rw['liquidity_usd']:,.0f} as of {rw['cash_as_of']}) at current burn "
+                    f"-- a dilutive raise is near-certain"
+                    + (" [cash-only balance confirmed by a full XBRL tag sweep]"
+                       if rw["cash_only_verified"] else "")
+                ),
+                "url": None,
+            })
 
 
 def price_metrics(bars: list[dict], closes: list[float]) -> dict:
@@ -931,11 +963,23 @@ def price_metrics(bars: list[dict], closes: list[float]) -> dict:
 
 
 def technical_metrics(bars: list[dict], closes: list[float], vols: list[float]) -> dict:
-    """Indicator readings. RSI and %B are the two the tier rules actually use."""
+    """Indicator readings. RSI and %B are the two the tier rules actually use.
+
+    `vols` is index-aligned with `bars` and may contain None for a session that
+    reported no volume. The ratio is taken against the mean of whatever the last
+    20 sessions actually reported rather than a fixed divisor of 20: dividing a
+    partial window by 20 understates the average and inflates every ratio
+    computed from it, which is the wrong direction for a threshold that gates ACT.
+    """
     last = closes[-1]
     pctb, _upper, lower = bollinger_pct_b(closes)
     a = atr(bars)
     s20, s50, s200 = sma(closes, 20), sma(closes, 50), sma(closes, 200)
+    last_vol = vols[-1] if vols else None
+    # At least half the window must have reported, or the average is describing
+    # too few sessions to call anything "unusual volume".
+    window = [v for v in vols[-20:] if v]
+    avg_vol = sum(window) / len(window) if len(window) >= 10 else None
     return {
         "rsi14": _r(rsi(closes)),
         "bollinger_pct_b": _r(pctb, 3),
@@ -945,11 +989,8 @@ def technical_metrics(bars: list[dict], closes: list[float], vols: list[float]) 
         "pct_vs_sma200": _r((last / s200 - 1.0) * 100.0) if s200 else None,
         "atr14": _r(a),
         "atr_pct_of_price": _r(a / last * 100.0) if a and last else None,
-        "volume_last": vols[-1] if vols else None,
-        "volume_vs_20d_avg": (
-            _r(vols[-1] / (sum(vols[-20:]) / 20), 2)
-            if len(vols) >= 20 and sum(vols[-20:]) else None
-        ),
+        "volume_last": last_vol,
+        "volume_vs_20d_avg": _r(last_vol / avg_vol, 2) if last_vol and avg_vol else None,
     }
 
 
@@ -961,7 +1002,11 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
     # pin a collapse to the wrong session.
     bars = [b for b in (rec.get("bars") or []) if b.get("adjclose") is not None]
     closes = [b["adjclose"] for b in bars]
-    vols = [b["volume"] for b in bars if b.get("volume") is not None]
+    # Index-aligned with bars, gaps included. Compacting out the missing days
+    # instead would silently shift the series: a name whose newest bar carries no
+    # volume would have yesterday's volume read as today's, and ACT now turns on
+    # exactly that ratio via capitulation_volume.
+    vols = [b.get("volume") for b in bars]
     bucket = rec.get("tier", "") or "A"
     out: dict = {"symbol": rec["symbol"], "company": rec.get("company", ""),
                  "bucket": bucket, "thesis": rec.get("thesis", ""),
@@ -1121,9 +1166,18 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
     # exists to find. "Broken" is the veto layer's job, not the zone's.
     # entry_low is carried through as a scale-in reference for the report.
     in_zone = bool(rec.get("entry_high", 0) and last <= rec["entry_high"])
+    # Both clocks count. `next_catalyst` is derived from ClinicalTrials.gov
+    # primary-completion dates, which are sponsor estimates and slip constantly;
+    # `catalysts` comes from catalysts.toml, where every entry is dated and
+    # carries a source because the daily run is forbidden from inventing one.
+    # Gating on the derived clock alone meant a sourced PDUFA three weeks out did
+    # not satisfy a test that a soft trial estimate did -- the trustworthy
+    # calendar was the one being ignored.
+    horizon = (date.today() + timedelta(days=90)).isoformat()
     catalyst_soon = bool(
-        out["next_catalyst"] and out["next_catalyst"].get("primary_completion", "9999")
-        <= (date.today() + timedelta(days=90)).isoformat()
+        (out["next_catalyst"]
+         and out["next_catalyst"].get("primary_completion", "9999") <= horizon)
+        or any((c.get("date") or "9999") <= horizon for c in (out.get("catalysts") or []))
     )
     runway_ok = bool(
         rw and not rw["stale"] and not rw.get("superseded_by") and rw["quarters"] >= min_rw
@@ -1286,7 +1340,7 @@ def main() -> int:
         t = overlay.get(sym)
         if not t:
             continue
-        for field in ("entry_low", "entry_high", "tier", "thesis", "invalidation"):
+        for field in WATCHLIST_FIELDS:
             if field in t:
                 rec[field] = t[field]
 
@@ -1312,6 +1366,12 @@ def main() -> int:
     # has been oversold for three weeks should not ping every single evening.
     STATE.mkdir(parents=True, exist_ok=True)
     state_path = Path(args.state)
+    # A screening pass over a candidate file borrows this whole module, so it
+    # must not leave anything behind that the live desk reads back. --state is
+    # the flag that distinguishes the two, and it gates every shared artefact:
+    # the alert log that score_alerts.py grades, and the per-day summary the
+    # local archive builds its index from.
+    live_run = state_path.name == "alerts.json"
     prev = json.loads(state_path.read_text()) if state_path.exists() else {}
     changes, exit_alerts = [], []
     for r in rows:
@@ -1331,10 +1391,17 @@ def main() -> int:
     # If several correlated names fire at once, sizing each at its bucket cap
     # would commit more than the whole book. Nothing else computes this, and in
     # a sector drawdown these names all trigger together.
-    actionable = [r for r in rows if r["tier"] in ("ACT", "SETUP")]
+    # SETUP is counted alongside ACT deliberately: this is the worst case, not a
+    # buy list. SETUP means "research this", and the concentration question is
+    # precisely what happens if the research says yes to all of them at once.
+    # `tiers_counted` is published so the report cannot mistake it for a
+    # committed figure.
+    counted_tiers = ("ACT", "SETUP")
+    actionable = [r for r in rows if r["tier"] in counted_tiers]
     requested = sum(r.get("max_position_pct", 0) for r in actionable)
     reserve = float(settings.get("min_cash_reserve_pct", 15))
     exposure = {
+        "tiers_counted": list(counted_tiers),
         "actionable_names": len(actionable),
         "symbols": [r["symbol"] for r in actionable],
         "requested_pct_if_all_taken": round(requested, 1),
@@ -1377,7 +1444,7 @@ def main() -> int:
     # Record what was actually raised so score_alerts.py can grade it later.
     # Only real alerts are logged, not every day a name happens to sit at SETUP:
     # the question being answered is "did the alerts I sent work?"
-    if changes and Path(args.state).name == "alerts.json":
+    if changes and live_run:
         try:
             con = sqlite3.connect(DATA / "history.sqlite")
             # Older databases predate the context column; add it on the fly.
@@ -1423,7 +1490,7 @@ def main() -> int:
     # A small per-day record so the local site can build an accurate index
     # without re-deriving anything from the prose. signals.json is overwritten
     # each run; these accumulate.
-    if out["session_date"]:
+    if out["session_date"] and live_run:
         summaries = DATA / "summaries"
         summaries.mkdir(parents=True, exist_ok=True)
         nxt = sorted(

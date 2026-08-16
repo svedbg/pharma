@@ -497,8 +497,15 @@ INVEST_NAME_BLOCKERS = (
 )
 
 
-def discover_investments(cik: str, as_of: str) -> dict | None:
+def discover_investments(cik: str, as_of: str) -> tuple[bool, dict | None]:
     """Find whatever tag this filer actually uses for short-term investments.
+
+    Returns `(ran, best)`. The two are separate because "the sweep completed and
+    this company genuinely holds no securities" and "the sweep never happened"
+    are opposite facts that a bare `None` conflates -- and the caller turns the
+    first into `cash_only_verified`, which is printed inside a hard veto as
+    "confirmed by a full XBRL tag sweep". A timed-out request must never buy
+    that sentence.
 
     A fixed tag list is guaranteed to keep failing: Edgewise reported $388.9M
     under `MarketableSecurities`, which was absent from the list, and the desk
@@ -515,7 +522,7 @@ def discover_investments(cik: str, as_of: str) -> dict | None:
     try:
         data = sec_get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json")
     except FetchError:
-        return None
+        return False, None
 
     best = None
     for tag, body in ((data.get("facts") or {}).get("us-gaap") or {}).items():
@@ -542,7 +549,7 @@ def discover_investments(cik: str, as_of: str) -> dict | None:
                     best = {"tag": tag, "value_usd": val, "as_of": as_of,
                             "form": r.get("form"), "discovered": True,
                             "combined": combined}
-    return best
+    return True, best
 
 
 def _latest_per_tag(cik: str, tags: list[str], taxonomy: str = "us-gaap") -> dict:
@@ -590,9 +597,9 @@ def fetch_financials(cik: str) -> dict:
         # company about to run out of money. A clinical-stage biotech holding
         # only cash and no securities is the signature of the EWTX bug, so the
         # discovery sweep runs before that number is allowed to fire a veto.
-        discovered = None
+        discovered, discovery_ran = None, False
         if not inv_val:
-            discovered = discover_investments(cik, as_of)
+            discovery_ran, discovered = discover_investments(cik, as_of)
             if discovered:
                 inv_tag = discovered["tag"]
                 if discovered.get("combined"):
@@ -603,9 +610,11 @@ def fetch_financials(cik: str) -> dict:
                     inv_val = discovered["value_usd"]
 
         out["liquidity"] = {
-            # Recorded either way: if the sweep ran and found nothing, the
-            # cash-only figure is trustworthy and a veto on it is justified.
-            "investments_discovery_ran": bool(not inv_at),
+            # True only when the sweep actually completed. If it ran and found
+            # nothing, the cash-only figure is trustworthy and a veto on it is
+            # justified; if the request failed, nothing was verified and the
+            # veto must not claim otherwise.
+            "investments_discovery_ran": discovery_ran,
             "investments_discovered": bool(discovered),
             "total_usd": (cash_val or 0) + (inv_val or 0),
             "cash_usd": cash_val,
@@ -997,6 +1006,10 @@ def build_record(entry: dict, cik_map: dict, lookback: int, since: date):
         "thesis": entry.get("thesis", ""),
         "entry_low": entry.get("entry_low", 0) or 0,
         "entry_high": entry.get("entry_high", 0) or 0,
+        # signals.py overlays the live watchlist on top of this, so the snapshot
+        # copy is what detail.py and any offline reader see. Omitting it left
+        # detail.py unable to show the level an exit would be measured against.
+        "invalidation_price": entry.get("invalidation_price", 0) or 0,
         "invalidation": entry.get("invalidation", ""),
         "errors": [],
     }
