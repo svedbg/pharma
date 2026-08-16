@@ -144,6 +144,11 @@ The desk is no longer buy-side only. Treat these with the same weight as entries
   in the flag** and say whether the shortfall is real. If it is, treat the name
   as financing-constrained regardless of the tier; if the company has since
   raised, say so and the flag is answered.
+- **`runway.cash_flow_positive`** means the company funds itself from
+  operations, so `quarters` is `null` and there is no exhaustion date. That is
+  the strongest financing position on the list — never report it as unknown
+  runway, and never confuse it with a name that simply has no XBRL (a foreign
+  filer, per trap 7), where `runway` is absent entirely.
 
 ## Hard rules
 
@@ -190,7 +195,10 @@ so every buy idea must name the venue and the order type.
 
 ## Output
 
-Write the report to `reports/YYYY-MM-DD.md` (today's date), in this order:
+Write the report to `reports/YYYY-MM-DD.md`, named for the **session** in
+`signals.json.session_date` — the day the data describes, which is not always
+today. The run tells you both dates; use the session for every statement about
+the data, and note it in the report. Order:
 
 1. **Bottom line** — 1–3 sentences. Actionable today, or explicitly nothing.
 2. **Big movers** — names flagged `big_move`, ranked by sigma, each with the

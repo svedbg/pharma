@@ -263,3 +263,60 @@ def test_http_errors_that_cannot_succeed_are_not_retried(monkeypatch):
     with pytest.raises(fetch.FetchError):
         fetch.http_get("https://example.org/x", tries=3)
     assert calls["n"] == 1, "404 must not be retried"
+
+
+# ------------------------------------------------------- the session date
+
+
+def _snap(ticker_dates, benchmark_dates=()):
+    def rec(dates):
+        return {"bars": [{"date": d, "adjclose": 1.0} for d in dates]}
+    return {
+        "tickers": {f"T{i}": rec(d) for i, d in enumerate(ticker_dates)},
+        "benchmarks": {f"B{i}": rec(d) for i, d in enumerate(benchmark_dates)},
+    }
+
+
+def test_the_session_is_the_newest_bar_not_the_calendar_day():
+    """`local_date` was `date.today()`, which is only the session when the day's
+    bar already exists.
+
+    It routinely does not: the scheduled run fires 18 minutes after the US
+    close, any hand run before then is hours early, and a market holiday has no
+    bar at all. When they diverge the alert is keyed a day ahead of the bar its
+    own numbers came from, and score_alerts.py -- which resolves an alert to the
+    first bar at or after its session date -- grades the entry from the *next*
+    session at a price that has already moved. Backfilled alerts are keyed to
+    their own bar, so the two halves of the scorecard stop being comparable,
+    which is the one comparison it exists to make.
+    """
+    snap = _snap([["2026-08-13", "2026-08-14"]] * 3, [["2026-08-14"]])
+    assert fetch.session_date(snap) == "2026-08-14"
+
+
+def test_one_lagging_ticker_cannot_move_the_session_for_the_run():
+    """Taken as the date most sources agree is their newest, so a single stale
+    or halted series does not redate the whole run."""
+    snap = _snap([["2026-08-15"]] * 20 + [["2026-07-01"]])
+    assert fetch.session_date(snap) == "2026-08-15"
+
+
+def test_one_ticker_with_a_bogus_future_bar_cannot_move_it_either():
+    """The reason this is a mode and not a max()."""
+    snap = _snap([["2026-08-15"]] * 20 + [["2027-01-01"]])
+    assert fetch.session_date(snap) == "2026-08-15"
+
+
+def test_a_snapshot_with_no_bars_has_no_session():
+    """Not today's date as a consolation prize. signals.py already degrades
+    honestly on a missing session -- it warns, and it writes nothing keyed by a
+    date it cannot name."""
+    assert fetch.session_date({"tickers": {}, "benchmarks": {}}) is None
+    assert fetch.session_date({"tickers": {"T": {"bars": []}}}) is None
+
+
+def test_a_half_published_session_resolves_to_the_newer_date():
+    """Ties break forward: if half the list has today's bar and half is still on
+    yesterday's, today's session has started to publish."""
+    snap = _snap([["2026-08-14"]] * 5 + [["2026-08-15"]] * 5)
+    assert fetch.session_date(snap) == "2026-08-15"

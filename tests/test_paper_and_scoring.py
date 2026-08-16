@@ -266,6 +266,112 @@ def test_heartbeat_finds_the_newest_dated_report(tmp_path, monkeypatch):
     assert path.name == "2026-08-14.md"
 
 
+def test_a_broken_delivery_channel_is_a_heartbeat_fault(tmp_path, monkeypatch):
+    """A report on disk is not evidence that anything was sent.
+
+    The heartbeat watched reports only, so a wrong SMTP password read as a
+    completely healthy desk: the run wrote its file, this check passed, and the
+    phone stayed silent for as long as nobody thought to wonder. notify.py now
+    records what each channel did, and this is the only place that answer
+    exists.
+    """
+    import json
+
+    import heartbeat
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    (tmp_path / "last_delivery.json").write_text(json.dumps({
+        "at": "2026-08-15T23:20:00", "session_date": "2026-08-15",
+        "channels": {"ntfy": True, "email": False},
+        "configured": {"ntfy": True, "email": True}, "attempted": ["ntfy", "email"],
+    }))
+    fault = heartbeat.delivery_fault()
+    assert fault and "email" in fault and "ntfy" not in fault
+
+
+def test_a_clean_delivery_is_not_a_fault(tmp_path, monkeypatch):
+    import json
+
+    import heartbeat
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    (tmp_path / "last_delivery.json").write_text(json.dumps({
+        "at": "2026-08-15T23:20:00", "session_date": "2026-08-15",
+        "channels": {"ntfy": None, "email": True},
+        "configured": {"ntfy": False, "email": True}, "attempted": ["email"],
+    }))
+    assert heartbeat.delivery_fault() is None
+
+
+def test_a_quiet_day_that_sent_nothing_is_not_a_fault(tmp_path, monkeypatch):
+    """EMAIL_ALWAYS=0 with no alerts correctly sends nothing at all. Treating
+    "attempted nothing" as broken would cry wolf on every quiet day -- and
+    silence is this desk's normal output."""
+    import json
+
+    import heartbeat
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    (tmp_path / "last_delivery.json").write_text(json.dumps({
+        "at": "2026-08-15T23:20:00", "session_date": "2026-08-15",
+        "channels": {"ntfy": None, "email": None},
+        "configured": {"ntfy": True, "email": True}, "attempted": [],
+    }))
+    assert heartbeat.delivery_fault() is None
+
+
+def test_an_unconfigured_channel_is_not_reported_as_a_broken_one(tmp_path, monkeypatch):
+    """send_ntfy and send_email both return False when merely unconfigured,
+    which is indistinguishable from a failure at the call site. Recording that
+    straight through would report a broken ntfy to anyone running email only."""
+    import notify
+    monkeypatch.setattr(notify, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    cfg = {"SMTP_HOST": "smtp.example.org", "EMAIL_TO": "a@example.org"}
+    assert notify.configured_channels(cfg) == {"ntfy": False, "email": True}
+
+    import heartbeat
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    notify.record_delivery("2026-08-15", {"ntfy": None, "email": True},
+                           notify.configured_channels(cfg))
+    assert heartbeat.delivery_fault() is None
+
+
+def test_a_missing_delivery_record_is_not_a_fault(tmp_path, monkeypatch):
+    """It means notify.py has not run since this was added. Inventing an alarm
+    out of that would fire once on every install."""
+    import heartbeat
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "nope.json")
+    assert heartbeat.delivery_fault() is None
+
+
+def test_a_desk_with_nowhere_to_send_is_a_fault(tmp_path, monkeypatch):
+    """Sending nothing is fine; having nowhere to send is not. From the phone's
+    point of view an unconfigured desk and a dead one are the same thing."""
+    import json
+
+    import heartbeat
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    (tmp_path / "last_delivery.json").write_text(json.dumps({
+        "at": "2026-08-15T23:20:00", "session_date": "2026-08-15",
+        "channels": {"ntfy": None, "email": None},
+        "configured": {"ntfy": False, "email": False}, "attempted": [],
+    }))
+    assert "no delivery channel configured" in (heartbeat.delivery_fault() or "")
+
+
+def test_notify_records_what_each_channel_did(tmp_path, monkeypatch):
+    """None means 'not configured', not 'failed' -- a quiet day that sends email
+    only must not read as a broken ntfy."""
+    import json
+
+    import notify
+    monkeypatch.setattr(notify, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    notify.record_delivery("2026-08-15", {"ntfy": None, "email": True})
+    rec = json.loads((tmp_path / "last_delivery.json").read_text())
+    assert rec["ok"] is True and rec["attempted"] == ["email"]
+
+    notify.record_delivery("2026-08-15", {"ntfy": False, "email": True})
+    rec = json.loads((tmp_path / "last_delivery.json").read_text())
+    assert rec["ok"] is False
+
+
 # ------------------------------------------------------- alert grading
 
 

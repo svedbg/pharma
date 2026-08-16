@@ -117,6 +117,13 @@ blocks the SETUP/ACT tiers when any of these are live:
 - `424B*` prospectus supplement within 10 days — **read it**: a priced takedown is
   a hard stop, an at-the-market programme is only registered capacity. The form
   type alone cannot distinguish them, so it vetoes until the report refutes it.
+  **`424B7` is excluded**: it registers shares existing holders already own, so
+  it is a resale, not an issuance, and it carries only the soft flag of that
+  name. It matched the `424B` prefix as well as its own soft rule, so every
+  resale registration took a priced-takedown veto sitting next to a soft flag
+  explaining it was only a resale — advice nobody could act on, because the veto
+  beside it had already blocked the name. Whatever dilution preceded it arrives
+  on its own hard veto as item 3.02.
 - 8-K item **3.01** (listing deficiency) within 45 days
 - 8-K item **3.02** (unregistered equity sale) within 10 days
 - 8-K item **4.01 / 4.02** (auditor change / non-reliance)
@@ -168,6 +175,34 @@ works. `session_date` in the output is always the parsed value, so `2026-8-15`
 is normalised to `2026-08-15` rather than naming a summary file the archive
 looks for under the canonical spelling and never finds.
 
+**Recording is only deferred, never skipped, so a session-less run leaves the
+alert state alone.** `state/alerts.json` is what makes an alert fire *once*, so
+writing it commits to having recorded the transition. It used to be written
+unconditionally: a run with no session logged no alert row — correctly — and
+then advanced every tier anyway, so the next run saw no change and never logged
+it either, while the notification had already gone out. Refusing to write the
+unreadable key and consuming the transition regardless turned an ungradeable row
+into no row at all. The state write is now gated on the same `session`, which
+defers the whole thing to the next run that can name its day: one duplicate
+buzz, against a permanently missing row.
+
+**The session is the newest bar, not `date.today()`.** `fetch.session_date()`
+derives `local_date` from the bars themselves — the date most sources agree is
+their newest, so one stale or bogus series cannot redate the run — and only
+`generated_at` reads the clock. Everything above measures from a value that was
+itself a clock reading, which is the session only when the day's bar already
+exists, and it routinely does not: the scheduled run fires 18 minutes after the
+US close, any hand run before then is hours early, and a market holiday has no
+bar at all. When they diverged the alert was keyed a day ahead of the bar its
+own numbers came from, and `score_alerts.py` — which resolves an alert to the
+first bar at or after its session date — then graded the entry from the *next*
+session, at a price that had already moved. The one live ARDX alert was recorded
+at 3.91 and graded from 4.06. Backfilled alerts are keyed to their own bar, so
+the two halves of the scorecard were not measured the same way, which is the one
+comparison it exists to make. **The report is named for the session too**
+(`run_daily.sh` reads it back out of `signals.json`), because `publish.py` pairs
+`reports/<d>.md` with `data/summaries/<d>.json` by that name.
+
 **A veto may only be overridden in the report with specific cited evidence.**
 This has already worked in practice: a COGT 424B5 was correctly refuted as a
 $400M ATM programme, and a PRAX item 4.01 as a clean auditor change.
@@ -176,8 +211,22 @@ $400M ATM programme, and a PRAX item 4.01 as a clean auditor change.
 
 - `WATCH` — RSI(14) < 40 **and** %B < 0.25 (approaching oversold)
 - `SETUP` — RSI(14) < 35 **and** %B < 0.15 **and** no hard veto
-- `ACT` — SETUP **and** price ≤ `entry_high` **and** (runway ≥ 3 quarters, not
-  stale and not superseded, **or** a catalyst within 90 days)
+- `ACT` — SETUP **and** price ≤ `entry_high` **and** a financing backdrop
+  (runway ≥ 3 quarters or cash-flow positive, in both cases neither stale nor
+  superseded, **or** a catalyst within 90 days) **and** `capitulation_volume`
+  **and**, in a `downtrend` regime, a `strong` conviction score.
+
+That is the whole of it. The last two conditions used to live only in the
+sections that derived them — "The finding that matters most" and "Market regime"
+— so this list, which is where a reader looks for the definition, described a
+looser tier than the code has fired since. **The financing half accepts a
+cash-generative company.** `runway()` returns quarters of liquidity at the
+current burn, and a company that funds itself from operations has no such
+number; folding that into `None` made `runway_ok` read the strongest balance
+sheet on the list as ignorance, so it needed a catalyst inside 90 days to reach
+ACT while a company with three quarters of cash did not. It now returns
+`cash_flow_positive: True` with `quarters: None`, and every consumer must branch
+on `is None` rather than on falsiness.
 
 The catalyst half of that test reads **both** clocks: the next active trial's
 primary-completion date from ClinicalTrials.gov, and any dated entry in
@@ -279,6 +328,26 @@ The daily run appends catalysts it establishes from filings, with sources. An
 invented date would silently distort every later run, so unsourced dates are
 forbidden.
 
+**Write every date as a quoted ISO string — `date = "2026-09-15"`.** This is the
+one hand-edited file the pipeline reads, and `_catalyst_date()` now normalises
+it because both ways of getting it slightly wrong reached a report:
+
+- *Unquoted* (`date = 2026-09-15`) is a TOML date literal, so `tomllib` returns
+  a `datetime.date` and the string comparisons in `load_catalysts` raised
+  `TypeError`. One missing pair of quotes killed the whole run.
+- *Unpadded* (`"2026-8-01"`) parses fine but sorts wrong — every filter here is
+  a string comparison and `'8' > '0'`, so a date that had already passed
+  compared as later than today. It was never filtered out as history, never
+  picked up by `resolved_catalysts`, and printed forever as `CATALYST IN -15
+  DAYS … size for the outcome, not the chart` — the strongest sizing
+  instruction the report emits, on a binary that already resolved.
+
+Unparseable dates are dropped with a warning rather than guessed at. Two
+catalysts may share a date (a PDUFA and its AdCom); the archive summary sorts on
+`(days_until, symbol)` explicitly, because comparing whole tuples fell through
+to comparing the catalyst dicts, which raised out of `main()` and cost the day's
+report.
+
 ## Float
 
 `dei:EntityPublicFloat` (10-K cover, annual) divided by the price on that date
@@ -346,6 +415,31 @@ appears for two weekdays.
 **Silence is the desk's normal output**, so a broken run and a quiet market look
 identical. Separate unit on purpose: if the main run dies before reaching
 notify.py, run_daily.sh's own failure handler dies with it.
+
+**It also checks that the last run could actually deliver.** A report on disk is
+not evidence that anything was sent, and watching reports alone meant a wrong
+SMTP password read as a perfectly healthy desk: the run wrote its file, the
+heartbeat passed, and the phone stayed silent indefinitely. `notify.py` records
+each channel's outcome in `data/last_delivery.json` and
+`heartbeat.delivery_fault()` is the only place that answer exists.
+
+Two distinctions the record has to keep, or it cries wolf:
+
+- **`channels`** holds the send result, `None` meaning *not attempted*.
+  `send_ntfy` and `send_email` both return `False` when they are merely
+  unconfigured, which is indistinguishable from failure at the call site, so
+  the result is only recorded for a channel `configured_channels()` says is set
+  up. Otherwise anyone deliberately running email only gets a broken-ntfy alarm
+  every night.
+- **`configured`** is what the machine is set up to do, as opposed to what this
+  run had occasion to do. Sending nothing is not a fault — a quiet day with
+  `EMAIL_ALWAYS=0` correctly sends nothing, and silence is this desk's normal
+  output. Having nowhere to send is.
+
+A missing file is not a fault either — it means notify.py has not run since this
+was added. The alarm still goes out over the same channels it is reporting on,
+which is why the heartbeat also exits non-zero: when the fault *is* delivery,
+the scheduler's journal may be the only record that survives.
 
 ## Market regime
 
@@ -445,11 +539,20 @@ hand in `watchlist.toml`; re-run with `--apply` to refresh the rest. A name whos
 window is too short keeps whatever zone it already has rather than having it
 zeroed.
 
-**Zones go stale, and stale zones fail closed.** A zone describes the regime it
-was built from; once price is `ZONE_STALE_DRIFT_PCT` (25%) away, `zone_stale` is
-set and a soft flag raised. This matters because the failure is otherwise
-invisible: ACT simply never fires, which looks identical to "no opportunity".
-Refresh with `propose_zones.py --apply`.
+**Zones go stale, and which way they drifted decides what that costs.** A zone
+describes the regime it was built from; once price is `ZONE_STALE_DRIFT_PCT`
+(25%) away, `zone_stale` is set and a soft flag raised. Refresh with
+`propose_zones.py --apply`.
+
+*Above* the zone the failure is silent and total: `in_zone` is false, so ACT
+simply never fires, which looks identical to "no opportunity". *Below* it,
+`in_zone` is true and **ACT fires normally** — nothing in the tier logic
+consults `zone_stale`. The soft flag used to assert "ACT cannot fire for this
+name" in both cases, so a name could reach ACT carrying a flag that flatly
+denied it, and downward is the direction this desk actually hunts. The text is
+now direction-aware. The behaviour is deliberately unchanged: a price below
+`entry_low` is cheaper, not disqualifying, and deciding whether a name that
+cheap is broken is the veto layer's job, not the zone's.
 
 ## Buckets and sizing
 
@@ -507,7 +610,13 @@ which cells are significant and differ only in how they say so.
 and broker routing — the same material `watchlist.toml` is gitignored to protect
 — so `site/` is gitignored and nothing is uploaded. One consequence: because the
 converter is shared, anything escaping into HTML lands in a real browser here,
-not just in a sandboxed mail client. That is why link URLs are quote-escaped.
+not just in a sandboxed mail client. That is why link URLs are quote-escaped —
+**and why the scheme is allowlisted too**. Quote-escaping closed the
+attribute-breakout hole and left the scheme alone, so `[x](javascript:alert%281%29)`
+still rendered as a live handler: no quote required, nothing to escape. Only
+`http`, `https`, `mailto` and relative targets become an `<a href>`; anything
+else is rendered as inert text saying so. The report is written from WebFetch
+and WebSearch content, so this is untrusted input by construction.
 
 `data/summaries/<date>.json` is written by `signals.py` **only on a live run**,
 which is the same `--state` test that gates the alert log. A screening pass
@@ -527,15 +636,21 @@ project rather than driving it — nothing in the pipeline reads them.
 - Config in TOML, parsed with stdlib `tomllib`.
 - Stage 2 reads no clock. Ages and windows come from the snapshot's session
   date, passed in; `generated_at` is the one wall-clock value, because it
-  records when the run happened rather than what it analysed.
+  records when the run happened rather than what it analysed. Stage 1 sets that
+  session date from its own bars (`fetch.session_date`), not from
+  `date.today()` — see the veto layer for what the difference cost.
 - Secrets in `~/.config/pharma/pharma.env`, never in the repo. The older
   `notify.env` is still read so an existing install keeps working, but
   `pharma.env` wins and is the one to write to.
 - `data/history.sqlite` accumulates bars and filings so day-over-day deltas and
   "new since last run" work even when a provider has an outage.
-- Screening a candidate list must pass `--state` to `signals.py`. That flag is
-  what marks a run as *not* live, and it gates every shared artefact: the alert
-  log `score_alerts.py` grades, and the per-day summary the archive indexes.
+- Screening a candidate list must pass **`--screening`** to `signals.py`, and a
+  `--state` path of its own. Either marks a run as *not* live, and liveness
+  gates every shared artefact: the alert log `score_alerts.py` grades, and the
+  per-day summary the archive indexes. It used to be inferred from the state
+  file's basename alone, so a screening pass that forgot `--state` was silently
+  a live run. Both are kept deliberately — forgetting one is then the same
+  mistake as forgetting the other, rather than two independent ways to lose.
 - Adding a ticker means one `[[ticker]]` block; CIK and trial sponsor resolve
   automatically from SEC's company list.
 
@@ -545,6 +660,12 @@ project rather than driving it — nothing in the pipeline reads them.
 after the US close in every DST alignment, so the daily bar is settled. On
 Linux `Persistent=true` catches up a miss; launchd only coalesces across
 sleep, not shutdown — the heartbeat covers the gap.
+
+23:18 Europe/Sofia is 18 minutes after the 16:00 ET close in summer, which is a
+race against the provider publishing the daily bar at all. That is fine and
+needs no adjustment: the run analyses whatever the newest bar turns out to be
+and names itself after that session, so losing the race costs a day of latency
+rather than a day of wrong dates.
 
 ```bash
 # Linux

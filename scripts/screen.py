@@ -11,7 +11,13 @@ Two stages, because the wide universe is too expensive to fetch in full:
                list that is not already watched. One request per name.
   2. Deep   -- the shortlist alone gets the full treatment; run the normal
                pipeline against a candidates file to see filings, runway and
-               vetoes.
+               vetoes. That second stage is by hand, and it must be marked as
+               not-live or it consumes the desk's own alert state and archive:
+
+                   python3 scripts/signals.py --screening \
+                       --snapshot data/candidates.json \
+                       --out data/candidates_signals.json \
+                       --state state/candidate_alerts.json
 
 The output is deliberately a *shortlist to research*, not a buy list. It applies
 the same technical thresholds as the desk, which are known not to be an edge on

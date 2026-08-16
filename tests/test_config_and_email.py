@@ -108,6 +108,48 @@ def test_a_quote_in_a_link_cannot_escape_the_href_attribute():
     assert "&quot;onmouseover=&quot;" in rendered
 
 
+@pytest.mark.parametrize("url", [
+    "javascript:alert(1",                 # the regex stops at the first ')'
+    "javascript:alert%281%29",            # so this is the working payload
+    "JaVaScRiPt:alert%281%29",
+    "java\x00script:alert%281%29",        # NUL is not \s, so it reaches the href
+    "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+    "vbscript:msgbox(1)",
+    "file:///etc/passwd",
+])
+def test_a_link_cannot_smuggle_an_executable_scheme_into_the_archive(url):
+    """Quote-escaping closed the attribute-breakout hole and left the scheme
+    alone, so `[x](javascript:alert%281%29)` still rendered as a live handler --
+    no quote required, nothing to escape.
+
+    Same threat model as the breakout, and the one CLAUDE.md already names: the
+    report is written from WebFetch and WebSearch content, and publish.py feeds
+    this converter into site/, which is opened in a real browser rather than a
+    sandboxed mail client.
+
+    The invariant is that no anchor survives, not how it was stopped: a target
+    containing whitespace never matches the link regex in the first place, while
+    these reach _link and are refused there.
+    """
+    rendered = md_to_html(f"[click me]({url})", inline_styles=False)
+    assert "<a href" not in rendered, rendered
+    assert "click me" in rendered
+    assert "unsafe link removed" in rendered
+
+
+@pytest.mark.parametrize("url", [
+    "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1",
+    "http://example.org/a",
+    "mailto:someone@example.org",
+    "#section",
+])
+def test_the_links_the_report_actually_uses_still_render(url):
+    """The allowlist must not break chart_links, EDGAR or in-page anchors."""
+    rendered = md_to_html(f"[x]({url})", inline_styles=False)
+    assert "<a href=" in rendered, rendered
+    assert "unsafe link removed" not in rendered
+
+
 def test_the_archive_gets_semantic_markup_not_mail_client_styles():
     """publish.py ships a stylesheet with a dark palette, and an inline style
     beats a stylesheet on every element -- so the archive was rendered in

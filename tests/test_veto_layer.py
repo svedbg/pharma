@@ -62,6 +62,29 @@ def test_unclassified_offering_stays_a_hard_veto():
     assert len(hard) == 1
 
 
+def test_a_resale_prospectus_is_a_soft_flag_and_not_a_dilution_veto():
+    """424B7 starts with 424B and was matching the hard loop as well as its own
+    soft one, so every resale registration carried a priced-takedown veto next
+    to a soft flag explaining it was only a resale -- advice the reader could
+    never act on, since the veto beside it had already blocked the name.
+
+    A 424B7 registers shares existing holders already own. Whatever dilution
+    preceded it arrives on its own hard veto as 8-K item 3.02.
+    """
+    hard, soft = evaluate_filings(
+        [{"form": "424B7", "filed": _recent(2), "items": "", "url": "u"}], SESSION)
+    assert hard == []
+    assert [s["form"] for s in soft] == ["424B7"]
+    assert "resale" in soft[0]["reason"]
+
+
+def test_a_priced_supplement_is_still_a_hard_veto_alongside_it():
+    """The narrowing above must not reach 424B3/424B5."""
+    hard, _ = evaluate_filings(
+        [{"form": "424B5", "filed": _recent(2), "items": "", "url": "u"}], SESSION)
+    assert [h["form"] for h in hard] == ["424B5"]
+
+
 def test_listing_deficiency_is_a_hard_veto():
     hard, _ = evaluate_filings([
         {"form": "8-K", "filed": _recent(5), "items": "3.01", "url": "u"}], SESSION)
@@ -132,9 +155,40 @@ def test_runway_counts_investments_not_just_cash():
     assert rw["quarters"] == pytest.approx(13.1, abs=0.2)
 
 
-def test_cash_flow_positive_company_has_no_runway_figure():
-    # A company generating cash has no burn rate; reporting one is misleading.
-    assert runway(_fin(50_000_000, 0, quarterly_burn=+10_000_000)) is None
+def test_cash_flow_positive_company_has_no_quarters_but_is_not_unknown():
+    """A company generating cash has no burn rate, so no runway figure -- but it
+    is the strongest financing position on the list, not a missing number.
+
+    Returning None conflated the two, and `runway_ok` reads None as ignorance:
+    the safest balance sheet here needed a catalyst inside 90 days to reach ACT
+    while a company with three quarters of cash did not. Trap 5 in the same
+    direction: absence of data is not distress, and good news is not absence.
+    """
+    rw = runway(_fin(50_000_000, 0, quarterly_burn=+10_000_000))
+    assert rw is not None
+    assert rw["cash_flow_positive"] is True
+    # No number may be invented for any of these.
+    assert rw["quarters"] is None
+    assert rw["months"] is None
+    assert rw["estimated_exhaustion"] is None
+
+
+def test_a_cash_generative_name_can_reach_act_without_a_catalyst():
+    """The end-to-end consequence of the above: the ACT financing backdrop."""
+    rw = runway(_fin(50_000_000, 0, quarterly_burn=+10_000_000))
+    assert not rw["stale"] and not rw.get("superseded_by")
+    assert rw["cash_flow_positive"] or rw["quarters"] >= 3, \
+        "this is the expression runway_ok evaluates"
+
+
+def test_a_cash_generative_name_fires_no_financing_veto():
+    """It must also not fall through into the short-runway branch, which used to
+    be unreachable only because runway() returned None."""
+    out = {"recent_events": [],
+           "runway": runway(_fin(50_000_000, 0, +10_000_000, age=40))}
+    hard, soft = [], []
+    financial_vetoes(out, {"filings": []}, hard, soft, {}, SESSION)
+    assert not any(h["form"] == "cash runway" for h in hard), hard
 
 
 def test_stale_balance_sheet_is_flagged_not_trusted():
@@ -206,12 +260,57 @@ def test_a_catalyst_resolves_relative_to_the_session(tmp_path):
     assert not resolved_catalysts(path, date(2026, 9, 30))
 
 
+def test_an_unpadded_past_date_does_not_become_a_permanent_countdown(tmp_path):
+    """Every filter on this file is a string comparison, and '2026-8-01' sorts
+    above '2026-08-16' because '8' > '0'.
+
+    So a catalyst that had already happened was never filtered out as history,
+    never picked up by resolved_catalysts, and printed forever as "CATALYST IN
+    -15 DAYS ... size for the outcome, not the chart" -- the strongest sizing
+    instruction in the report, on a binary that already resolved. strptime
+    accepts the unpadded form, so this is a real date typed slightly wrong,
+    not a broken one; normalising it is what makes lexical order date order.
+    """
+    path = _catalyst_file(tmp_path, "2026-8-01")
+    asof = date(2026, 8, 16)
+    assert "X" not in load_catalysts(path, asof), "a past catalyst is not upcoming"
+    assert resolved_catalysts(path, asof)["X"][0]["days_ago"] == 15
+
+
+def test_an_unpadded_future_date_is_normalised_rather_than_dropped(tmp_path):
+    """The same date typed the same way, but still ahead: it has to survive, and
+    it has to come back in canonical form so later sorts agree with it."""
+    got = load_catalysts(_catalyst_file(tmp_path, "2026-9-01"), date(2026, 8, 16))
+    assert got["X"][0]["date"] == "2026-09-01"
+    assert got["X"][0]["days_until"] == 16
+
+
+def test_an_unquoted_toml_date_does_not_take_the_run_down(tmp_path):
+    """`date = 2026-09-15` without quotes is a TOML date literal, so tomllib
+    hands back a datetime.date and every `d < today` below raised TypeError --
+    one missing pair of quotes in a hand-edited file killed the whole run."""
+    p = tmp_path / "catalysts.toml"
+    p.write_text('[[catalyst]]\nsymbol = "X"\ndate = 2026-09-15\nkind = "PDUFA"\n')
+    got = load_catalysts(p, date(2026, 8, 16))
+    assert got["X"][0]["date"] == "2026-09-15"
+    assert got["X"][0]["days_until"] == 30
+
+
+def test_an_unreadable_catalyst_date_is_dropped_with_a_warning(tmp_path, capsys):
+    """Not silently, and not by inventing a date: an unsourced or unparseable
+    catalyst must not gate sizing in either direction."""
+    p = tmp_path / "catalysts.toml"
+    p.write_text('[[catalyst]]\nsymbol = "X"\ndate = "H2 2026"\nkind = "PDUFA"\n')
+    assert load_catalysts(p, date(2026, 8, 16)) == {}
+    assert "unreadable date" in capsys.readouterr().err
+
+
 def test_conviction_still_counts_a_superseded_balance_sheet_against_the_name():
     """The demotion above must not make the shortfall invisible to the checklist."""
     out = {"runway": {"quarters": 0.6, "stale": False, "superseded_by": {"form": "10-Q"}},
            "relative_strength": {}, "short": {}, "tradability": {}, "technicals": {},
            "insiders": {}}
-    assert any("superseded" in m for m in conviction(out, [], [], False)["against"])
+    assert any("superseded" in m for m in conviction(out, [], False)["against"])
 
 
 # ------------------------------------------------------------------- float
@@ -321,10 +420,19 @@ def test_conviction_counts_evidence_on_both_sides():
            "insiders": {"cluster_buy": True, "distinct_buyers": 3, "buy_value_usd": 100_000},
            "runway": {"quarters": 8.0, "stale": False},
            "relative_strength": {}, "short": {}, "tradability": {}, "technicals": {"rsi14": 30}}
-    good = conviction(out, hard=[], soft=[], catalyst_soon=True)
+    good = conviction(out, hard=[], catalyst_soon=True)
     assert good["label"] in ("strong", "moderate") and good["score"] > 0
 
     vetoed = conviction({**out, "capitulation_volume": False},
                         hard=[{"reason": "priced offering"}, {"reason": "delisting"}],
-                        soft=[], catalyst_soon=False)
+                        catalyst_soon=False)
     assert vetoed["score"] < good["score"]
+
+
+def test_being_funded_by_operations_counts_in_its_favour():
+    """The checklist scored cash-flow-positive names as having no liquidity
+    evidence at all, because runway() handed it None."""
+    out = {"runway": runway(_fin(50_000_000, 0, quarterly_burn=+10_000_000)),
+           "relative_strength": {}, "short": {}, "tradability": {}, "technicals": {},
+           "insiders": {}}
+    assert any("operations" in p for p in conviction(out, [], False)["supporting"])
