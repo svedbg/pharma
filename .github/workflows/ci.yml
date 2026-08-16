@@ -91,7 +91,16 @@ jobs:
           chmod +x "$stub/claude"
           export PATH="$stub:$PATH"
 
-          out="$(./launchd/install-launchd.sh --check 2>&1)"; rc=$?
+          # `|| rc=$?`, not `; rc=$?`. GitHub runs every step as `bash -e`, and
+          # `set -uo pipefail` above does not turn that off -- so a bare
+          # assignment from a command that exits non-zero aborts the step at
+          # that line. Which is precisely the case being tested: on macOS this
+          # installer is SUPPOSED to exit 1. The first version of this step died
+          # silently before printing anything, so the one platform it was added
+          # to cover was the one it could not evaluate. Being the left operand
+          # of `||` is what makes a failure survivable here.
+          rc=0
+          out="$(./launchd/install-launchd.sh --check 2>&1)" || rc=$?
           echo "$out"
           echo "--- exit $rc"
 
