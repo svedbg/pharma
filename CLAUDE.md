@@ -238,26 +238,63 @@ place `catalysts.toml` participates in a tier; everywhere else it warns only.
 ### Thresholds are measured, not chosen
 
 `scripts/backtest.py` replays the stored history (~29,000 ticker-days and
-growing, no lookahead) and scores each rule's forward return against an all-days
-baseline.
-**Re-run it before changing any threshold.** What it found (run of 2026-08-14;
+growing, no lookahead) and scores each rule two ways: against an all-days
+baseline, and against **XBI over the same calendar dates**.
+**Re-run it before changing any threshold.** What it found (run of 2026-08-16;
 the history grows daily, so re-run rather than quoting these):
 
-| Rule | Fires | Median edge @20d | @60d |
-|---|---|---|---|
-| RSI<30 & %B<0.05 (the old SETUP) | 1.81% | **+3.63pp** | +0.26pp |
-| RSI<35 & %B<0.15 (current SETUP) | 6.59% | +2.90pp | −0.49pp |
-| bottom decile of 1y range (the old WATCH) | 19.25% | +0.49pp | **−2.68pp** |
-| RSI<25 | 1.46% | +2.38pp | **−9.59pp** |
-| RSI<35 & %B<0.15 & volume>1.5× | 1.92% | +2.63pp | **+1.72pp** |
+| Rule | Fires | edge @20d | @60d | vs XBI @20d | vs XBI @60d |
+|---|---|---|---|---|---|
+| RSI<30 & %B<0.05 (superseded SETUP) | 1.82% | +3.61pp | +0.24pp | +1.05% | −3.56% |
+| RSI<35 & %B<0.15 (live SETUP) | 6.61% | +3.04pp | −0.50pp | +0.90% | −2.58% |
+| bottom decile of 1y range (the old WATCH) | 19.23% | +0.48pp | **−2.59pp** | −0.21% | −1.76% |
+| RSI<25 | 1.46% | +2.36pp | **−9.62pp** | +1.22% | **−11.95%** |
+| live SETUP + volume>1.5× (the ACT bar) | 1.92% | +2.71pp | **+1.76pp** | +0.18% | −1.55% |
+
+**Read the last two columns first.** The all-days baseline is the average
+ticker-day in this universe, which is not something anyone can buy; XBI is. The
+two disagree, and where they do the ETF settles it — every rule above is weaker
+against XBI than against the baseline, and the baseline itself runs −1.23% at
+20d and −3.03% at 60d against XBI. That gap *is* the finding in the next section,
+now visible in the same table rather than only in the scorecard.
 
 `backtest.py` builds the live rule from `SETUP_RSI` / `SETUP_PCTB` /
 `CAPITULATION_VOL` imported from `signals.py`, never from numbers retyped into
 it. It once hardcoded the old pair and labelled them "live SETUP" while calling
 the real rule "(looser)" — the instrument that justifies the thresholds was
-scoring a threshold the desk had already abandoned. The last two rows above are
-now labelled "live SETUP" and "live SETUP + volume (the ACT bar)"; the retired
-pair is kept as "superseded SETUP" for comparison.
+scoring a threshold the desk had already abandoned. The retired pair is kept as
+"superseded SETUP" for comparison. The zone rules below reconstruct the zone
+through `propose_zones.zone_from_closes()` for the same reason: one
+implementation, so the instrument cannot score a paraphrase of the rule.
+
+The benchmarks are **excluded from the universe** (`NOT_CANDIDATES`). XBI and
+IBB sit in the same `bars` table as the watchlist, and scoring them diluted the
+baseline every edge here is measured against while letting the rules fire on the
+very thing they are supposed to beat. `score_alerts.backfill` always excluded
+them; this file did not.
+
+#### Does a stale zone deserve to open ACT?
+
+`zone_stale` fires at 25% drift in either direction but only *gates* the upward
+one: above the zone `in_zone` is false and ACT cannot fire, while below it ACT
+fires normally — and below is the direction this desk hunts. Whether that
+permission is earned is a measurable question, so it was measured rather than
+argued. Splitting the ACT bar by it (zones reconstructed as of each day from
+prior bars only):
+
+| | Fires | vs XBI @20d | vs XBI @60d |
+|---|---|---|---|
+| ACT bar, in zone, **zone fresh** | 0.96% (n=280) | +1.85% med / +4.06% mean | −1.11% med |
+| ACT bar, in zone, **stale 25%+ down** | 0.36% (n=104) | **+2.38% med / +16.07% mean** | −1.77% med |
+
+**So the gate stays off.** The stale-to-the-downside subset is not worse than the
+fresh one at the 20-session horizon where the edge lives — it is slightly better
+on the median and far better on the mean, which is what a population of deeply
+beaten-down names that occasionally re-rate looks like. Blocking it would remove
+signals that perform at least as well as the ones it keeps. n=104 is small and
+both medians are negative by 60 sessions, so this is a reason not to add a gate
+rather than evidence that these are good trades; deciding a cheap name is broken
+remains the veto layer's job, not the zone's.
 
 Three consequences, all encoded above:
 
@@ -278,7 +315,17 @@ thresholds, not proof of edge.
 
 `scripts/score_alerts.py` grades alerts against **XBI**, not against an
 all-days baseline. That distinction changed the conclusion (run of 2026-08-14;
-`data/scorecard.txt` holds the current one, refreshed every run):
+`data/scorecard.txt` holds the current one, refreshed every run).
+
+Both ends of that comparison are the **ticker's own bar dates**, resolved
+through `bench_at()`. It used to advance the benchmark `h` positions through the
+ETF's bar list while the alert advanced `h` positions through the name's, so any
+session the name missed and the ETF did not compared two different calendar
+windows — the misalignment `relative_strength()` in `signals.py` already exists
+to prevent, absent from the module that produces the number below. No figure
+here moves today (the 15 affected names are only missing the most recent bar, so
+no scored window reaches the gap); the first mid-window halt would have shifted
+them silently.
 
 | | +20d vs XBI | +60d vs XBI |
 |---|---|---|
@@ -542,6 +589,18 @@ hand in `watchlist.toml`; re-run with `--apply` to refresh the rest. A name whos
 window is too short keeps whatever zone it already has rather than having it
 zeroed.
 
+`--apply` **inserts a key the block does not have**, rather than only rewriting
+ones already present. It used to do the latter, so a ticker added by hand
+without an `invalidation_price` line never got one and `--apply` reported
+success anyway — the same shape as the bug that left `invalidation_price`
+unreachable for every name on the list: nothing looked broken, the field simply
+was not there. Insertions go at the end of that ticker's own block, deepest
+first so earlier ones do not shift later line numbers.
+
+The zone arithmetic lives in `zone_from_closes()`, which both `propose()` and
+`backtest.py` call. One implementation, so the instrument that justifies the
+rule cannot end up scoring a paraphrase of it.
+
 **Zones go stale, and which way they drifted decides what that costs.** A zone
 describes the regime it was built from; once price is `ZONE_STALE_DRIFT_PCT`
 (25%) away, `zone_stale` is set and a soft flag raised. Refresh with
@@ -553,9 +612,12 @@ simply never fires, which looks identical to "no opportunity". *Below* it,
 consults `zone_stale`. The soft flag used to assert "ACT cannot fire for this
 name" in both cases, so a name could reach ACT carrying a flag that flatly
 denied it, and downward is the direction this desk actually hunts. The text is
-now direction-aware. The behaviour is deliberately unchanged: a price below
-`entry_low` is cheaper, not disqualifying, and deciding whether a name that
-cheap is broken is the veto layer's job, not the zone's.
+now direction-aware. The behaviour is deliberately unchanged, and that is a
+**measured** decision, not a default — see "Does a stale zone deserve to open
+ACT?" above: the stale-downward subset of the ACT bar performs at least as well
+as the fresh one at 20 sessions, so gating it would discard signals no worse
+than the ones kept. A price below `entry_low` is cheaper, not disqualifying, and
+deciding whether a name that cheap is broken is the veto layer's job.
 
 ## Buckets and sizing
 
@@ -587,10 +649,25 @@ grades them **over the identical holding period against XBI** — a +9% trade
 while the sector rose 12% is a losing decision, and absolute P&L says the
 opposite. Nothing here is validated forward, so this is what eventually answers
 whether the desk beats owning the ETF, at the cost of patience rather than
-capital. `paper.py report` states that verdict in words and refuses to let a
-sample under 20 trades read as a conclusion. `run_daily.sh` writes
-`paper.py status` to `data/paper_status.txt`, which the daily prompt covers
-*before* new ideas.
+capital. `run_daily.sh` writes `paper.py status` to `data/paper_status.txt`,
+which the daily prompt covers *before* new ideas.
+
+`paper.py report` states that verdict in words, and below
+`MIN_TRADES_FOR_A_VERDICT` (20) it **withholds the sentence rather than
+qualifying it**. It used to print "NOT beating XBI … buying the ETF would have
+been better" off a single closed trade and append "too few to conclude anything"
+underneath — which is a conclusion with a disclaimer, not a refusal to conclude,
+since the reader has already been handed the verdict by the time the caveat
+arrives. The numbers still print; only the sentence that acts on them waits.
+
+Dates typed at this CLI go through `iso_date()`. Every date in `paper_trades` is
+compared as a string — against bar dates and against each other — so `2026-1-1`
+sorts above `2026-01-14` and picks the wrong bar; it is normalised, and anything
+that is not a date at all is refused loudly. A close dated before its own open
+is rejected too: the holding period inverts, and `bench_return()` then runs the
+benchmark backwards over the same pair with nothing in the output to show it.
+This is the third file where a hand-typed date is compared lexically, after the
+session date and `catalysts.toml`.
 
 ## The local archive
 

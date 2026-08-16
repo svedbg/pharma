@@ -91,6 +91,49 @@ def anchor_window(bars: list[dict]) -> tuple[list[float], str]:
     return closes[-YEAR_BARS:], "trailing 1y"
 
 
+def zone_from_closes(closes: list[float]) -> dict | None:
+    """The zone a close series implies, or None when it cannot support one.
+
+    Split out of propose() so scripts/backtest.py can reconstruct the zone as of
+    any historical day and score it, without a second copy of the rule. The
+    threshold table in CLAUDE.md is only worth anything if the instrument
+    measures the rule the desk actually runs -- backtest.py already learned that
+    once, by scoring an abandoned RSI pair while calling it live.
+
+    Takes closes rather than bars because that is all the arithmetic needs, and
+    a caller replaying history has the closes already.
+    """
+    window, note = anchor_window([{"adjclose": c} for c in closes])
+    if not window or len(window) < MIN_WINDOW_BARS:
+        return None
+    dist = percentile(sorted(window), HIGH_PCTILE)
+    if dist <= 0:
+        return None
+
+    # A pure distribution percentile is useless for a name in a strong uptrend:
+    # SLS at $12.36 would get a "buy zone" of $1.91, the price before it
+    # re-rated, which it will never revisit if the thesis is working. So the
+    # zone is the higher of the distribution level and a realistic pullback --
+    # the 50-day average, capped at 5% below spot so we never define a zone that
+    # amounts to chasing.
+    last = closes[-1]
+    sma50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else None
+    pullback = min(sma50, last * 0.95) if sma50 else last * 0.95
+    hi = max(dist, pullback)
+    return {
+        "entry_high": round_price(hi),
+        # Scale-in reference, not a gate: below this, verify the thesis before adding.
+        "entry_low": round_price(hi * (1 - SCALE_IN_DROP)),
+        # Invalidation sits below the anchor window's own low: if the name trades
+        # under the worst level of the regime the zone was built from, the setup
+        # that justified the zone no longer exists. Mechanical and overridable.
+        "invalidation_price": round_price(min(window) * 0.95),
+        "window_note": note,
+        "anchor": "distribution" if dist >= pullback else "pullback to SMA50",
+        "window_bars": len(window),
+    }
+
+
 def propose(rec: dict) -> dict:
     sym = rec["symbol"]
     bars = rec.get("bars") or []
@@ -107,37 +150,21 @@ def propose(rec: dict) -> dict:
         out["status"] = f"skip: only {len(window)} sessions since the break -- too soon for a zone"
         return out
 
-    s = sorted(window)
-    dist = percentile(s, HIGH_PCTILE)
-    if dist <= 0:
+    z = zone_from_closes(closes)
+    if z is None:
         out["status"] = "skip: degenerate range"
         return out
 
-    # A pure distribution percentile is useless for a name in a strong uptrend:
-    # SLS at $12.36 would get a "buy zone" of $1.91, the price before it
-    # re-rated, which it will never revisit if the thesis is working. So the
-    # zone is the higher of the distribution level and a realistic pullback --
-    # the 50-day average, capped at 5% below spot so we never define a zone that
-    # amounts to chasing.
     last = closes[-1]
-    sma50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else None
-    pullback = min(sma50, last * 0.95) if sma50 else last * 0.95
-    hi = max(dist, pullback)
-    anchor = "distribution" if dist >= pullback else "pullback to SMA50"
-
-    out["entry_high"] = round_price(hi)
-    # Scale-in reference, not a gate: below this, verify the thesis before adding.
-    out["entry_low"] = round_price(hi * (1 - SCALE_IN_DROP))
-    # Invalidation sits below the anchor window's own low: if the name trades
-    # under the worst level of the regime the zone was built from, the setup
-    # that justified the zone no longer exists. Mechanical and overridable.
-    out["invalidation_price"] = round_price(min(window) * 0.95)
-    out["note"] = f"{note}, {anchor}"
+    out["entry_high"] = z["entry_high"]
+    out["entry_low"] = z["entry_low"]
+    out["invalidation_price"] = z["invalidation_price"]
+    out["note"] = f"{note}, {z['anchor']}"
 
     if last <= out["entry_high"]:
         out["status"] = "IN ZONE"
     else:
-        out["status"] = f"above zone by {((last / hi) - 1) * 100:.0f}%"
+        out["status"] = f"above zone by {((last / out['entry_high']) - 1) * 100:.0f}%"
     return out
 
 
@@ -149,8 +176,20 @@ def apply_to_watchlist(path: Path, zones: dict) -> int:
     the writer's convenience. That means tracking which section each line
     belongs to by hand -- see the reset below.
     """
+    KEYS = ("entry_low", "entry_high", "invalidation_price")
     lines = path.read_text().splitlines()
     current, changed = None, 0
+    # Which of KEYS each ticker's block already contains, and where that block
+    # ends. A key the block does not have cannot be rewritten in place, and
+    # rewriting is all this used to do -- so a ticker added by hand without an
+    # `invalidation_price` line never got one, and --apply reported success
+    # having silently skipped the highest-severity exit flag the desk has. That
+    # is the same shape as the bug that left invalidation_price unreachable for
+    # every name on the list: nothing looked broken, the field simply was not
+    # there.
+    seen: dict[str, set[str]] = {}
+    last_line: dict[str, int] = {}
+
     for i, line in enumerate(lines):
         # Any section header ends the previous ticker's scope. Without this the
         # last ticker in the file stayed "current" through everything after it,
@@ -162,20 +201,40 @@ def apply_to_watchlist(path: Path, zones: dict) -> int:
         m = re.match(r'\s*symbol\s*=\s*"([^"]+)"', line)
         if m:
             current = m.group(1).upper()
+            seen.setdefault(current, set())
+            last_line[current] = i
             continue
-        if current and current in zones:
-            z = zones[current]
-            if not z["entry_high"]:
-                continue
-            if re.match(r"\s*entry_low\s*=", line):
-                lines[i] = f'entry_low = {z["entry_low"]}'
-                changed += 1
-            elif re.match(r"\s*entry_high\s*=", line):
-                lines[i] = f'entry_high = {z["entry_high"]}'
-            elif re.match(r"\s*invalidation_price\s*=", line):
-                lines[i] = f'invalidation_price = {z.get("invalidation_price", 0)}'
+        if not current or current not in zones:
+            continue
+        if line.strip():
+            last_line[current] = i
+        z = zones[current]
+        if not z["entry_high"]:
+            continue
+        for key in KEYS:
+            if re.match(rf"\s*{key}\s*=", line):
+                lines[i] = f"{key} = {z[key]}"
+                seen[current].add(key)
+                if key == "entry_low":
+                    changed += 1
+                break
+
+    # Insert whatever the block was missing, at the end of that block, deepest
+    # first so the earlier insertions do not shift the later line numbers.
+    added = 0
+    for sym, at in sorted(last_line.items(), key=lambda kv: -kv[1]):
+        z = zones.get(sym)
+        if not z or not z["entry_high"]:
+            continue
+        missing = [k for k in KEYS if k not in seen.get(sym, set())]
+        if not missing:
+            continue
+        lines[at + 1:at + 1] = [f"{k} = {z[k]}" for k in missing]
+        added += len(missing)
+        print(f"[zones] {sym}: added missing {', '.join(missing)}", file=sys.stderr)
+
     path.write_text("\n".join(lines) + "\n")
-    return changed
+    return changed + added
 
 
 def main() -> int:
@@ -188,7 +247,10 @@ def main() -> int:
     snap = localconfig.require_data(Path(args.snapshot))
     zones = {sym: propose(rec) for sym, rec in snap["tickers"].items()}
 
-    order = {"IN ZONE": 0, "below zone": 1}
+    # "below zone" was in this map but propose() has never produced it -- the
+    # statuses are "IN ZONE", "above zone by N%" and the skips. A sort key for a
+    # value that cannot occur reads as though the vocabulary is wider than it is.
+    order = {"IN ZONE": 0}
     rows = sorted(zones.values(), key=lambda z: (order.get(z["status"], 2), z["symbol"]))
     print(f"{'Ticker':<8}{'Close':>10}{'entry_low':>11}{'entry_high':>12}  {'Status':<18} Window")
     print("-" * 92)

@@ -124,7 +124,16 @@ def test_closing_with_no_available_price_says_so(db, capsys):
     assert still_open[0] == 1, "a refused close must leave the position untouched"
 
 
-def test_report_states_the_verdict_against_the_benchmark(db, capsys):
+def test_report_withholds_the_verdict_on_too_small_a_sample(db, capsys):
+    """It used to print "NOT beating XBI ... buying the ETF would have been
+    better" off a single trade, then append "too few to conclude anything"
+    underneath.
+
+    That is not a refusal to conclude, it is a conclusion with a disclaimer --
+    the reader has already been handed the verdict by the time the caveat
+    arrives. CLAUDE.md claims this refuses to let a sample under 20 read as a
+    conclusion, and now it does.
+    """
     con = paper.con()
     paper.cmd_open(con, _args(date="2026-01-01"))
     paper.cmd_close(con, _args(date="2026-01-20", price=10.9))
@@ -132,8 +141,65 @@ def test_report_states_the_verdict_against_the_benchmark(db, capsys):
     paper.cmd_report(con, _args())
     con.close()
     out = capsys.readouterr().out
+    assert "NOT beating XBI" not in out
+    assert "too few to say anything" in out
+    # The numbers themselves still print -- this withholds the verdict, not the data.
+    assert "vs XBI" in out
+
+
+def test_report_states_the_verdict_once_the_sample_is_big_enough(db, capsys):
+    """And above the bar it must actually commit to one."""
+    con = paper.con()
+    # XYZ rises 5% over the window while XBI rises 10%: a loser on the measure
+    # that counts, and absolute P&L would have said the opposite.
+    for i in range(paper.MIN_TRADES_FOR_A_VERDICT):
+        con.execute(
+            "INSERT INTO paper_trades (ticker,opened,entry,closed,exit_price) "
+            "VALUES (?,?,?,?,?)", (f"T{i}", "2026-01-01", 10.0, "2026-01-20", 10.5))
+    con.commit()
+    capsys.readouterr()
+    paper.cmd_report(con, _args())
+    con.close()
+    out = capsys.readouterr().out
     assert "NOT beating XBI" in out
-    assert "too few to conclude" in out   # refuses to over-read one trade
+    assert f"over {paper.MIN_TRADES_FOR_A_VERDICT} trades" in out
+    assert "too few" not in out
+
+
+@pytest.mark.parametrize("bad", ["01/02/2026", "not-a-date", "2026-02-30", "2026"])
+def test_a_hand_typed_date_that_is_not_a_date_is_refused(db, bad):
+    """Refused loudly rather than stored. Every date here is compared as a
+    string -- against bar dates and against each other -- so a value that is not
+    one silently picks the wrong bar or none at all."""
+    con = paper.con()
+    with pytest.raises(SystemExit):
+        paper.cmd_open(con, _args(date=bad))
+    con.close()
+
+
+def test_an_unpadded_date_is_normalised_rather_than_refused(db, capsys):
+    """'2026-1-1' is a real date typed slightly wrong -- strptime takes it. Left
+    as-is it would sort above '2026-01-14' and pick the wrong bar, so it is
+    stored canonically. Third file where this exact shape mattered, after the
+    session date and catalysts.toml."""
+    con = paper.con()
+    paper.cmd_open(con, _args(date="2026-1-3", entry=10.0))
+    stored = con.execute("SELECT opened FROM paper_trades").fetchone()[0]
+    con.close()
+    assert stored == "2026-01-03"
+
+
+def test_a_trade_cannot_be_closed_before_it_was_opened(db, capsys):
+    """The holding period inverts: the trade's return runs forwards from entry
+    while bench_return() runs the benchmark backwards over the same pair, so the
+    excess is nonsense and nothing in the output would show it."""
+    con = paper.con()
+    paper.cmd_open(con, _args(date="2026-01-10"))
+    capsys.readouterr()
+    rc = paper.cmd_close(con, _args(date="2026-01-05", price=11.0))
+    con.close()
+    assert rc == 1
+    assert "before the open date" in capsys.readouterr().err
 
 
 def test_status_marks_a_breached_stop(db, capsys):
@@ -436,3 +502,101 @@ def test_an_alert_with_no_session_date_does_not_take_the_scorecard_down(
     out = capsys.readouterr().out
     # It graded the one real alert and said what it could not grade.
     assert "SKIPPED  2 alert(s) carry no usable session date" in out
+
+
+# ------------------------------------------------- zones as a reusable rule
+
+
+def test_the_zone_rule_has_one_implementation():
+    """backtest.py reconstructs historical zones through the same function
+    propose_zones.py writes them with. A second copy would let the instrument
+    that justifies the zone rule score a different rule -- which is exactly what
+    backtest.py once did with the RSI thresholds, scoring an abandoned pair
+    while labelling it live."""
+    closes = [10.0 + (i % 9) * 0.3 for i in range(120)]
+    z = pz.zone_from_closes(closes)
+    assert z and z["entry_high"] > 0
+    rec = {"symbol": "T", "bars": [{"adjclose": c} for c in closes]}
+    assert pz.propose(rec)["entry_high"] == z["entry_high"]
+    assert pz.propose(rec)["invalidation_price"] == z["invalidation_price"]
+
+
+def test_zone_from_closes_refuses_too_short_a_window():
+    assert pz.zone_from_closes([10.0] * 10) is None
+
+
+def test_apply_adds_a_key_the_block_never_had(tmp_path):
+    """--apply could only rewrite keys already present, so a ticker added by
+    hand without an invalidation_price line never got one -- and it reported
+    success. Same shape as the bug that left invalidation_price unreachable for
+    every name: nothing looked broken, the field simply was not there."""
+    wl = tmp_path / "watchlist.toml"
+    wl.write_text(
+        "[settings]\nmax_position_pct = 28\n\n"
+        '[[ticker]]\nsymbol = "AAA"\ntier = "A"\n'          # no zone keys at all
+        'thesis = "added by hand"\n\n'
+        '[[ticker]]\nsymbol = "BBB"\ntier = "B"\n'
+        "entry_low = 0\nentry_high = 0\ninvalidation_price = 0\n")
+    zones = {
+        "AAA": {"symbol": "AAA", "entry_low": 7.8, "entry_high": 10.0,
+                "invalidation_price": 6.5},
+        "BBB": {"symbol": "BBB", "entry_low": 1.5, "entry_high": 2.0,
+                "invalidation_price": 1.2},
+    }
+    pz.apply_to_watchlist(wl, zones)
+    import tomllib
+    cfg = tomllib.loads(wl.read_text())
+    got = {t["symbol"]: t for t in cfg["ticker"]}
+    assert got["AAA"]["invalidation_price"] == 6.5, "the missing key must be inserted"
+    assert got["AAA"]["entry_high"] == 10.0
+    assert got["BBB"]["entry_high"] == 2.0, "and the existing ones still rewritten"
+    # The insert must land inside AAA's own block, not leak into BBB's.
+    assert got["BBB"]["invalidation_price"] == 1.2
+    assert cfg["settings"]["max_position_pct"] == 28, "[settings] untouched"
+
+
+# ------------------------------------------------- the measurement harness
+
+
+def test_the_benchmark_is_not_scored_as_a_candidate():
+    """XBI and IBB live in the same bars table as the watchlist. Scoring them
+    diluted the "every day, every name" baseline every edge is measured against,
+    and let the rules fire on the very thing they are supposed to beat.
+    score_alerts.backfill already excluded them; backtest.py did not."""
+    import backtest
+    assert backtest.BENCHMARK in backtest.NOT_CANDIDATES
+    assert "IBB" in backtest.NOT_CANDIDATES
+
+
+def test_excess_return_is_aligned_on_dates_not_index_offsets():
+    """The name misses a session the ETF traded. Advancing both by `h`
+    positions through their own bar lists then compares two different calendar
+    windows -- the misalignment signals.relative_strength() already exists to
+    avoid, absent from the module that grades the alerts."""
+    import backtest
+    # Ticker has no 2026-03-02 bar; the benchmark does.
+    days = [f"2026-03-{d:02d}" for d in range(1, 12) if d != 2]
+    series = [(d, 100.0 + i, 1_000_000) for i, d in enumerate(days)]
+    bench = {f"2026-03-{d:02d}": 100.0 for d in range(1, 12)}
+    bench["2026-03-02"] = 999.0          # the skipped day, wildly off
+    rows = backtest.evaluate(series, [2], bench, min_history=2)
+    # Every excess must be computed between the ticker's own bar dates, so the
+    # 999.0 on the day it did not trade can never enter the comparison.
+    for _d, _fwd, exc in rows:
+        assert 2 in exc
+        assert abs(exc[2]) < 50, "the benchmark bar from the skipped session leaked in"
+
+
+def test_a_ticker_day_carries_the_zone_it_would_have_had_that_evening():
+    """Reconstructed from prior closes only -- no lookahead -- so the zone rules
+    score what the desk would actually have seen."""
+    import backtest
+    rising = [10.0 + i * 0.1 for i in range(200)]
+    series = [(f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}", c, 1_000_000)
+              for i, c in enumerate(rising)]
+    rows = backtest.evaluate(series, [5], {}, min_history=100)
+    assert rows
+    d, _fwd, _exc = rows[0]
+    assert "in_zone" in d and "zone_stale_down" in d
+    # A steadily rising name sits above its own zone, never 25% below it.
+    assert d["zone_stale_down"] is False
