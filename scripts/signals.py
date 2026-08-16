@@ -175,18 +175,33 @@ def _days_between(a: str, b: str) -> int:
         return -1
 
 
-def _days_ago(d: str) -> int:
+def _days_ago(d: str, asof: date) -> int:
+    """Age of `d` measured from the session being analysed, not from wall clock.
+
+    `asof` is required rather than defaulted to today, in every function that
+    measures an age. A default would be silent when wrong: each of these numbers
+    gates a veto window, and there is no output that says which clock produced
+    it. Getting a TypeError at the call site is the cheaper failure.
+
+    Only the filing date is parsed inside the guard, and the subtraction happens
+    outside it. An unreadable *filing* date is a real condition with a safe
+    answer -- treat it as ancient, so it cannot hold a veto open on a date
+    nobody can read. An unreadable *asof* is a programming error, and catching
+    it here would age every filing to 10**6 days and silently drop every veto in
+    the run: a fail-open on the one layer that must never fail open.
+    """
     try:
-        return (date.today() - datetime.strptime(d, "%Y-%m-%d").date()).days
+        filed = datetime.strptime(d, "%Y-%m-%d").date()
     except (ValueError, TypeError):
         return 10**6
+    return (asof - filed).days
 
 
-def evaluate_filings(filings: list[dict]) -> tuple[list[dict], list[dict]]:
+def evaluate_filings(filings: list[dict], asof: date) -> tuple[list[dict], list[dict]]:
     """Split recent filings into hard vetoes and soft flags."""
     hard, soft = [], []
     for f in filings or []:
-        age = _days_ago(f.get("filed", ""))
+        age = _days_ago(f.get("filed", ""), asof)
         form = (f.get("form") or "").upper()
         items = [c.strip() for c in (f.get("items") or "").split(",") if c.strip()]
 
@@ -343,7 +358,7 @@ def relative_strength(bars: list[dict], bench_bars: list[dict], horizons=(5, 20,
     return out
 
 
-def load_catalysts(path: Path) -> dict:
+def load_catalysts(path: Path, asof: date) -> dict:
     """symbol -> catalysts sorted by date. Missing file is fine, not an error."""
     if not path.exists():
         return {}
@@ -353,7 +368,7 @@ def load_catalysts(path: Path) -> dict:
         print(f"[signals] WARNING: could not read {path}: {e}", file=sys.stderr)
         return {}
     out: dict = {}
-    today = date.today().isoformat()
+    today = asof.isoformat()
     for c in raw:
         sym = (c.get("symbol") or "").upper()
         d = c.get("date") or ""
@@ -367,7 +382,7 @@ def load_catalysts(path: Path) -> dict:
     return out
 
 
-def resolved_catalysts(path: Path, window_days: int = 21) -> dict:
+def resolved_catalysts(path: Path, asof: date, window_days: int = 21) -> dict:
     """Catalysts whose date has just passed -- the trigger to re-underwrite.
 
     Without this the desk silently keeps carrying a thesis whose binary has
@@ -379,8 +394,8 @@ def resolved_catalysts(path: Path, window_days: int = 21) -> dict:
         raw = tomllib.loads(path.read_text()).get("catalyst", [])
     except (tomllib.TOMLDecodeError, OSError):
         return {}
-    today = date.today().isoformat()
-    cutoff = (date.today() - timedelta(days=window_days)).isoformat()
+    today = asof.isoformat()
+    cutoff = (asof - timedelta(days=window_days)).isoformat()
     out: dict = {}
     for c in raw:
         sym, d = (c.get("symbol") or "").upper(), c.get("date") or ""
@@ -458,6 +473,23 @@ def load_last_alerts(db: Path) -> dict:
     except sqlite3.Error:
         return {}
     return {t: {"date": d, "close": c} for t, d, c in rows if d}
+
+
+def _parse_session_date(local_date: str | None) -> date:
+    """The snapshot's own date, or today with a warning saying so.
+
+    A snapshot written by any current fetch carries `local_date`. One that does
+    not is either hand-made or predates the field, and falling back silently
+    would reintroduce exactly the drift this parameter exists to remove -- so
+    the fallback is loud.
+    """
+    try:
+        return datetime.strptime(local_date or "", "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        print(f"[signals] WARNING: snapshot has no usable local_date "
+              f"({local_date!r}); measuring filing ages and catalyst windows "
+              f"from today instead", file=sys.stderr)
+        return date.today()
 
 
 def market_regime(bench_bars: list[dict]):
@@ -812,8 +844,8 @@ def dilution(fin: dict):
     }
 
 
-def next_catalyst(trials: list[dict]):
-    today = date.today().isoformat()
+def next_catalyst(trials: list[dict], asof: date):
+    today = asof.isoformat()
     upcoming = [
         t for t in trials or []
         if t.get("primary_completion") and t["primary_completion"] >= today[:7]
@@ -826,7 +858,8 @@ def next_catalyst(trials: list[dict]):
 # --------------------------------------------------------------------- tiers
 
 
-def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dict) -> None:
+def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dict,
+                     asof: date) -> None:
     """Turn the balance sheet and recent price action into vetoes and flags.
 
     Mutates `hard` and `soft` in place. Extracted from analyse() because it is
@@ -883,7 +916,7 @@ def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dic
             }
             soft.append({
                 "form": "superseded financials", "filed": n["filed"],
-                "days_ago": _days_ago(n["filed"]),
+                "days_ago": _days_ago(n["filed"], asof),
                 "reason": (
                     f"runway uses a {rw['cash_as_of']} balance sheet, but {n['form']} "
                     f"filed {n['filed']} reports a later period -- read it for current "
@@ -917,7 +950,7 @@ def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dic
             # on its own.
             soft.append({
                 "form": "short runway, superseded", "filed": sup.get("filed"),
-                "days_ago": _days_ago(sup.get("filed") or ""),
+                "days_ago": _days_ago(sup.get("filed") or "", asof),
                 "reason": (
                     f"the {rw['cash_as_of']} balance sheet shows only {rw['quarters']} quarters "
                     f"of liquidity (${rw['liquidity_usd']:,.0f}), but {sup['form']} filed "
@@ -929,7 +962,7 @@ def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dic
         else:
             hard.append({
                 "form": "cash runway", "filed": rw["cash_as_of"],
-                "days_ago": _days_ago(rw["cash_as_of"] or ""),
+                "days_ago": _days_ago(rw["cash_as_of"] or "", asof),
                 "reason": (
                     f"only {rw['quarters']} quarters of liquidity "
                     f"(${rw['liquidity_usd']:,.0f} as of {rw['cash_as_of']}) at current burn "
@@ -996,7 +1029,23 @@ def technical_metrics(bars: list[dict], closes: list[float], vols: list[float]) 
 
 def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
             catalysts: dict | None = None, regime: dict | None = None,
-            resolved: dict | None = None, last_alerts: dict | None = None) -> dict:
+            resolved: dict | None = None, last_alerts: dict | None = None,
+            *, asof: date | None = None) -> dict:
+    """Turn one ticker's facts into flags and a tier.
+
+    `asof` is the date the snapshot describes, and every age and window is
+    measured from it rather than from the wall clock. main() takes it from the
+    snapshot's own `local_date`, because this stage is analysing a session, not
+    a moment: re-running signals.py against an existing snapshot -- which
+    CLAUDE.md documents as the way to make a watchlist edit take effect without
+    waiting for a fetch -- otherwise dated every veto window from the day you
+    happened to re-run it.
+
+    It defaults to today only so an ad-hoc caller need not construct one, and
+    that default is what makes this function's determinism conditional: pass it
+    to get the same answer twice.
+    """
+    asof = asof or date.today()
     # bars and closes must stay index-aligned: crash_scan maps a closes index
     # back to bars[i]["date"], so filtering one list and not the other would
     # pin a collapse to the wrong session.
@@ -1043,14 +1092,14 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
     out["links"] = chart_links(rec["symbol"], rec.get("cik"))
     out["links_md"] = links_markdown(rec["symbol"], out["links"])
 
-    hard, soft = evaluate_filings(rec.get("filings"))
+    hard, soft = evaluate_filings(rec.get("filings"), asof)
     out["hard_vetoes"], out["soft_flags"] = hard, soft
     out["runway"] = runway(rec.get("financials"))
     out["dilution"] = dilution(rec.get("financials"))
-    out["next_catalyst"] = next_catalyst(rec.get("trials"))
+    out["next_catalyst"] = next_catalyst(rec.get("trials"), asof)
     out["new_filings_since_last_run"] = rec.get("new_filings_since_last_run") or []
 
-    financial_vetoes(out, rec, hard, soft, settings)
+    financial_vetoes(out, rec, hard, soft, settings, asof)
     rw = out["runway"]
     min_rw = float(settings.get("min_runway_quarters_for_act", 3))
 
@@ -1173,7 +1222,7 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
     # Gating on the derived clock alone meant a sourced PDUFA three weeks out did
     # not satisfy a test that a soft trial estimate did -- the trustworthy
     # calendar was the one being ignored.
-    horizon = (date.today() + timedelta(days=90)).isoformat()
+    horizon = (asof + timedelta(days=90)).isoformat()
     catalyst_soon = bool(
         (out["next_catalyst"]
          and out["next_catalyst"].get("primary_completion", "9999") <= horizon)
@@ -1331,6 +1380,14 @@ def main() -> int:
     cfg = tomllib.loads(Path(args.watchlist).read_text())
     settings = cfg.get("settings", {})
 
+    # Every age and window below is measured from the session the snapshot
+    # describes, not from the wall clock. The two differ whenever signals.py
+    # runs on a different day from the fetch -- re-running it to pick up a
+    # watchlist edit, pointing --snapshot at an archived file, or a run that
+    # straddles midnight -- and the drift is invisible, because nothing in the
+    # output records which clock produced a `days_ago`.
+    asof = _parse_session_date(snap.get("local_date"))
+
     # The watchlist is authoritative for anything a human edits. The snapshot
     # only carries a copy from whenever it was last fetched, so reading zones
     # from it would mean an edited entry zone did nothing until the next fetch --
@@ -1349,15 +1406,16 @@ def main() -> int:
     if not bench_bars:
         print(f"[signals] WARNING: no {BENCHMARK} benchmark in snapshot -- "
               f"relative strength unavailable", file=sys.stderr)
-    catalysts = load_catalysts(ROOT / "catalysts.toml")
+    catalysts = load_catalysts(ROOT / "catalysts.toml", asof)
     regime = market_regime(bench_bars)
     if regime:
         print(f"[signals] {BENCHMARK} regime: {regime['label']} "
               f"({regime['pct_vs_sma200']:+.1f}% vs 200DMA, {regime['chg_60d_pct']:+.1f}% over 60d)",
               file=sys.stderr)
-    resolved = resolved_catalysts(ROOT / "catalysts.toml")
+    resolved = resolved_catalysts(ROOT / "catalysts.toml", asof)
     last_alerts = load_last_alerts(DATA / "history.sqlite")
-    rows = [analyse(rec, settings, bench_bars, catalysts, regime, resolved, last_alerts)
+    rows = [analyse(rec, settings, bench_bars, catalysts, regime, resolved, last_alerts,
+                    asof=asof)
             for rec in snap["tickers"].values()]
     order = {"ACT": 0, "SETUP": 1, "WATCH": 2, "NONE": 3, "NO_DATA": 4}
     rows.sort(key=lambda r: (order.get(r["tier"], 9), r["symbol"]))
