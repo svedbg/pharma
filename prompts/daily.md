@@ -20,14 +20,14 @@ Read in this order:
 5. `data/scorecard.txt` — how past alerts actually performed, scored against XBI.
 6. `data/paper_status.txt` — open paper positions with live P&L versus XBI.
 
-**Do not read `data/latest.json` directly** — it is tens of megabytes across ~50
+**Do not read `data/latest.json` directly** — it is several megabytes across ~60
 names. `detail.py` exists so you never have to.
 
 **Never state a price, share count, cash balance or percentage that you did not
 read from those files.** If a figure is missing, say it is missing. A number you
 half-remember about a micro-cap is worse than no number.
 
-## Triage — the watchlist is ~50 names, so budget attention
+## Triage — the watchlist is ~60 names, so budget attention
 
 Deep-dive only names that meet at least one of:
 
@@ -128,8 +128,9 @@ The desk is no longer buy-side only. Treat these with the same weight as entries
   report when present. None is an automatic sell; each is a prompt to
   re-underwrite. A resolved catalyst in particular means the old thesis no
   longer describes the company — say so and write a new one or drop the name.
-- **`exposure`** — what would be committed if every actionable name were taken
-  at its bucket cap. When `over_committed` is true, say so explicitly and apply
+- **`exposure`** — what would be committed if every name at a tier in
+  `tiers_counted` (ACT **and** SETUP) were taken at its bucket cap. It is a worst
+  case, not a plan. When `over_committed` is true, say so explicitly and apply
   `scale_factor_needed` to every suggested size. These names fall together in a
   sector drawdown, so several simultaneous SETUPs is a concentration event, not
   several independent opportunities.
@@ -137,13 +138,20 @@ The desk is no longer buy-side only. Treat these with the same weight as entries
   registered capacity and appears as a soft flag; `priced` is a confirmed
   discounted takedown and remains a hard veto. Do not re-litigate a
   classification the data layer already made unless the document says otherwise.
+- **`short runway, superseded`** is a soft flag, not a veto: the balance sheet
+  showing under 1.5 quarters has been replaced by a later filing the data layer
+  cannot read. This one is yours to settle — **open the superseding filing named
+  in the flag** and say whether the shortfall is real. If it is, treat the name
+  as financing-constrained regardless of the tier; if the company has since
+  raised, say so and the flag is answered.
 
 ## Hard rules
 
 - **Never call a falling knife a dip.** If a name carries a hard veto — priced
   offering, listing deficiency, non-reliance, recent collapse, sub-1.5-quarter
-  runway — you may not recommend buying it unless you can specifically refute the
-  veto with evidence, and you must show that evidence.
+  runway on a current balance sheet — you may not recommend buying it unless you
+  can specifically refute the veto with evidence, and you must show that
+  evidence.
 - **"Nothing to do today" is a valid and often correct report.** Write it in one
   line and stop. Do not manufacture a trade to justify the run. A system that
   finds an opportunity every day is a system that loses money.
@@ -188,7 +196,7 @@ Write the report to `reports/YYYY-MM-DD.md` (today's date), in this order:
 2. **Big movers** — names flagged `big_move`, ranked by sigma, each with the
    cause you established. Omit the section if nothing moved unusually.
 3. **Signal table** — include **only rows at WATCH tier or above**, or carrying a
-   veto. Follow it with one line naming the tickers at NONE. The full 50-row
+   veto. Follow it with one line naming the tickers at NONE. The full 60-row
    table is already in `signals.json`; reprinting it buries the signal.
 4. **Links** — every name you discuss gets its `links_md` line from signals.json
    ([TradingView] · [Finviz] · [Financials] · [EDGAR]) directly under its
