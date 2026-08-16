@@ -396,6 +396,12 @@ plus the `.md` attached. Constraints, each learned the hard way:
   by character count fails. `build_email_html` renders, measures, and re-renders
   smaller until it fits, falling back to a body-less summary if it cannot.
 - No external CSS, fonts or images — most clients block them.
+- **One summary, stamped once per channel.** `build_alert_text` returns what
+  happened and nothing else — no date, no product name — and `ntfy_title` and
+  `email_subject` each add their own. It previously returned a string that had
+  to serve as both a standalone push title and an email subject's suffix, so the
+  subject's own prefix duplicated it and a quiet day went out as
+  `[biotech desk] 2026-08-15 - Biotech desk 2026-08-15`.
 
 ## Chart links
 
