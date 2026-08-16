@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drill into one ticker without loading the whole snapshot.
 
-With ~50 names on the watchlist, data/latest.json runs to tens of megabytes --
+With ~60 names on the watchlist, data/latest.json runs to several megabytes --
 far too large to read during analysis. The daily run therefore reads the compact
 signals file, then calls this for the handful of names that actually matter:
 

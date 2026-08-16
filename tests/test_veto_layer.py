@@ -15,6 +15,7 @@ from signals import (
     conviction,
     evaluate_filings,
     exit_signals,
+    financial_vetoes,
     float_metrics,
     move_profile,
     runway,
@@ -93,6 +94,48 @@ def test_cash_flow_positive_company_has_no_runway_figure():
 def test_stale_balance_sheet_is_flagged_not_trusted():
     rw = runway(_fin(10_000_000, 0, -10_000_000, age=400))
     assert rw["stale"] is True
+
+
+# -------------------------------------------------- runway as a hard veto
+
+
+def _veto_run(filings, cash=5_000_000, burn=-10_000_000, as_of="2026-03-31"):
+    """Run financial_vetoes over one short-runway name and return (hard, soft)."""
+    out = {"recent_events": [], "runway": runway(_fin(cash, 0, burn, as_of=as_of, age=40))}
+    hard, soft = [], []
+    financial_vetoes(out, {"filings": filings}, hard, soft, {})
+    return hard, soft, out["runway"]
+
+
+def test_short_runway_is_a_hard_veto_when_the_balance_sheet_is_current():
+    hard, _soft, rw = _veto_run(filings=[])
+    assert rw["quarters"] < 1.5
+    assert any(h["form"] == "cash runway" for h in hard)
+
+
+def test_a_superseded_short_runway_does_not_fire_the_hard_veto():
+    """The same figure cannot be too old to clear a name and fresh enough to
+    condemn it. runway_ok already refuses superseded data, so letting it veto
+    trusted it in the direction that hurts: OTLK carried a 0.59-quarter hard veto
+    off a balance sheet its own later 8-K had replaced. It stays visible as a
+    soft flag -- absence of current data is ignorance, not distress."""
+    later = [{"form": "10-Q", "filed": "2026-08-10", "report_date": "2026-06-30",
+              "items": "", "url": "u"}]
+    hard, soft, rw = _veto_run(filings=later)
+    assert rw["quarters"] < 1.5, "test setup: the runway must still be short"
+    assert rw["superseded_by"]["form"] == "10-Q"
+    assert not any(h["form"] == "cash runway" for h in hard)
+    flag = next(f for f in soft if f["form"] == "short runway, superseded")
+    # The number must survive the downgrade -- this is a demotion, not a deletion.
+    assert "0.5" in flag["reason"] or "0.59" in flag["reason"]
+
+
+def test_conviction_still_counts_a_superseded_balance_sheet_against_the_name():
+    """The demotion above must not make the shortfall invisible to the checklist."""
+    out = {"runway": {"quarters": 0.6, "stale": False, "superseded_by": {"form": "10-Q"}},
+           "relative_strength": {}, "short": {}, "tradability": {}, "technicals": {},
+           "insiders": {}}
+    assert any("superseded" in m for m in conviction(out, [], [], False)["against"])
 
 
 # ------------------------------------------------------------------- float

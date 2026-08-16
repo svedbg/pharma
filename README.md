@@ -102,8 +102,9 @@ documentation cannot drift apart.
 ./run_daily.sh --no-llm     # data + signals only: fast, free, no LLM calls
 ```
 
-That populates `data/` and prints the signal table — about four minutes for 60
-names. Then set entry zones, derived from each name's own trading range:
+That populates `data/` and prints the signal table — two to four minutes for 60
+names, the spread depending on how many of them trigger the full XBRL tag sweep.
+Then set entry zones, derived from each name's own trading range:
 
 ```bash
 python3 scripts/propose_zones.py            # dry run — review the proposals
@@ -181,7 +182,17 @@ python3 scripts/backtest.py                  # score the rules against a baselin
 python3 scripts/score_alerts.py              # grade real alerts against XBI
 python3 scripts/heartbeat.py --status        # is the desk still running?
 python3 scripts/notify.py --failure "test"   # test the alert channels
+make site                                    # browsable archive of past reports
+make check-units                             # are the installed timers current?
 ```
+
+### The report archive
+
+Reports accumulate one markdown file per weekday, which is fine for grep and
+awful for reading. `make site` renders them into `site/` with an index, prev/next
+navigation and per-day stats, then opens it. Local only and gitignored: the
+reports carry entry zones, invalidation levels and broker routing, so nothing is
+uploaded anywhere.
 
 ### Monthly screen
 
@@ -242,10 +253,11 @@ past a 3.11 floor.
 watchlist.toml     your names, buckets, entry zones, invalidation levels (gitignored)
 STRATEGY.local.md  your objective, risk posture, brokers (gitignored)
 catalysts.toml     dated binaries (PDUFA, AdCom, readouts) with sources
-scripts/           fetch, signals, helpers, notification, scoring
+scripts/           fetch, signals, helpers, notification, scoring, archive
 prompts/daily.md   the standing instruction for the analysis pass
 systemd/ launchd/  timer units — Linux and macOS
-data/ logs/ reports/ state/    generated and personal — all gitignored
+docs/              project briefings; `make brief` rebuilds the PDF
+data/ logs/ reports/ site/ state/    generated and personal — all gitignored
 ```
 
 `CLAUDE.md` documents the architecture, the veto rules, the measured thresholds,

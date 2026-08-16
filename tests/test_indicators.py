@@ -19,6 +19,7 @@ from signals import (
     rsi,
     sma,
     stdev,
+    technical_metrics,
 )
 
 
@@ -126,6 +127,44 @@ def test_crash_scan_only_looks_back_the_requested_window():
     bars = _bars(prices)
     closes = [b["adjclose"] for b in bars]
     assert crash_scan(bars, closes, filings=[], lookback=5) == []
+
+
+# ------------------------------------------------------------ volume ratio
+
+
+def _tech(volumes):
+    """technical_metrics over a flat series carrying the given volumes."""
+    prices = [10.0 + (i % 5) * 0.1 for i in range(len(volumes))]
+    bars = [{"date": f"2026-01-{i + 1:02d}", "adjclose": p, "close": p,
+             "open": p, "high": p * 1.01, "low": p * 0.99, "volume": v}
+            for i, (p, v) in enumerate(zip(prices, volumes, strict=True))]
+    return technical_metrics(bars, prices, [b["volume"] for b in bars])
+
+
+def test_a_session_with_no_volume_is_not_reported_as_todays_volume():
+    """The volume list used to be compacted independently of the bars, so a
+    newest bar carrying no volume left the previous session's figure sitting in
+    vols[-1] and being read as today's. ACT turns on exactly that ratio through
+    capitulation_volume, so the wrong session could confirm a signal."""
+    t = _tech([1_000_000] * 39 + [9_000_000] + [None])
+    assert t["volume_last"] is None
+    assert t["volume_vs_20d_avg"] is None, "a missing volume is unknown, not yesterday's"
+
+
+def test_the_20d_average_divides_by_the_sessions_that_reported():
+    """Dividing a partial window by a fixed 20 understates the average and
+    inflates every ratio derived from it -- the wrong direction for a threshold
+    that gates ACT. On live data this read CAPR's ratio as 6.64x against 6.35x."""
+    ten_missing = [None] * 10 + [1_000_000] * 10
+    t = _tech([1_000_000] * 20 + ten_missing[:-1] + [2_000_000])
+    # Nine reported sessions of 1M plus today's 2M: mean 1.1M, so 2M is ~1.82x.
+    assert t["volume_vs_20d_avg"] == pytest.approx(1.82, abs=0.01)
+
+
+def test_a_mostly_empty_volume_window_reports_nothing():
+    # Fewer than half the window reporting is too thin to call anything unusual.
+    t = _tech([1_000_000] * 25 + [None] * 14 + [3_000_000])
+    assert t["volume_vs_20d_avg"] is None
 
 
 def test_indicators_never_return_nan():

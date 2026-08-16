@@ -119,6 +119,12 @@ def cmd_close(c, a) -> int:
     px = a.price
     if not px:
         _, px = price_on_or_before(c, a.ticker.upper(), closed)
+    if not px:
+        # Mirrors cmd_open: a missing price is a thing to say, not a TypeError
+        # three lines later inside the return calculation.
+        print(f"no price for {a.ticker.upper()} on or before {closed}; pass --price",
+              file=sys.stderr)
+        return 1
     c.execute("UPDATE paper_trades SET closed=?, exit_price=?, exit_note=? WHERE id=?",
               (closed, px, a.note, tid))
     c.commit()

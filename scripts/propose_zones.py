@@ -50,7 +50,6 @@ COLLAPSE_LOOKBACK = 120
 MIN_WINDOW_BARS = 25
 YEAR_BARS = 252
 HIGH_PCTILE = 25.0
-LOW_PCTILE = 8.0
 SCALE_IN_DROP = 0.22   # entry_low sits this far under entry_high, as a reference only
 
 
@@ -143,10 +142,23 @@ def propose(rec: dict) -> dict:
 
 
 def apply_to_watchlist(path: Path, zones: dict) -> int:
-    """Rewrite entry_low/entry_high in place, preserving comments and layout."""
+    """Rewrite entry_low/entry_high in place, preserving comments and layout.
+
+    This edits text rather than reserialising the TOML, because the file is a
+    hand-maintained trading plan whose comments and grouping matter more than
+    the writer's convenience. That means tracking which section each line
+    belongs to by hand -- see the reset below.
+    """
     lines = path.read_text().splitlines()
     current, changed = None, 0
     for i, line in enumerate(lines):
+        # Any section header ends the previous ticker's scope. Without this the
+        # last ticker in the file stayed "current" through everything after it,
+        # so a key named entry_low/entry_high/invalidation_price in a later
+        # section -- [settings] sits at the top today, but nothing enforces that
+        # -- would be silently rewritten with a ticker's zone.
+        if re.match(r"\s*\[", line):
+            current = None
         m = re.match(r'\s*symbol\s*=\s*"([^"]+)"', line)
         if m:
             current = m.group(1).upper()

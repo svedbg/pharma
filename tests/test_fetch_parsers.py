@@ -183,6 +183,62 @@ def test_ambiguous_document_is_left_unknown():
     assert _classify("This prospectus supplement relates to certain securities.") == "unknown"
 
 
+# ------------------------------------------------- investment tag discovery
+
+
+def _facts(tags: dict) -> dict:
+    """A companyfacts document carrying the given {tag: [rows]}."""
+    return {"facts": {"us-gaap": {t: {"units": {"USD": rows}} for t, rows in tags.items()}}}
+
+
+def test_a_failed_sweep_is_not_reported_as_a_completed_one(monkeypatch):
+    """"The sweep found no securities" and "the sweep never ran" are opposite
+    facts, and a bare None conflated them. The caller turns the first into
+    cash_only_verified, which is printed inside a hard veto as "confirmed by a
+    full XBRL tag sweep" -- a sentence a timed-out request must not be able to
+    buy."""
+    def boom(url):
+        raise fetch.FetchError("HTTP 503")
+
+    monkeypatch.setattr(fetch, "sec_get", boom)
+    ran, best = fetch.discover_investments("0000000001", "2026-06-30")
+    assert ran is False and best is None
+
+
+def test_a_completed_sweep_finding_nothing_says_so(monkeypatch):
+    monkeypatch.setattr(fetch, "sec_get", lambda url: _facts({}))
+    ran, best = fetch.discover_investments("0000000001", "2026-06-30")
+    assert ran is True and best is None
+
+
+def test_the_sweep_finds_an_uncurated_investment_tag(monkeypatch):
+    """EWTX reported $388.9M under MarketableSecurities, absent from the curated
+    list, and was read as holding $72M of cash."""
+    monkeypatch.setattr(fetch, "sec_get", lambda url: _facts({
+        "MarketableSecurities": [{"end": "2026-06-30", "val": 388_900_000, "form": "10-Q"}],
+        # A duration fact that matches by name; it carries a start, so it is not
+        # a balance and must be ignored.
+        "PaymentsToAcquireMarketableSecurities": [
+            {"start": "2026-01-01", "end": "2026-06-30", "val": 999_000_000, "form": "10-Q"}],
+    }))
+    ran, best = fetch.discover_investments("0000000001", "2026-06-30")
+    assert ran is True
+    assert best["tag"] == "MarketableSecurities"
+    assert best["value_usd"] == 388_900_000
+    assert best["combined"] is False
+
+
+def test_a_combined_cash_and_investments_tag_is_marked_as_such(monkeypatch):
+    """A combined line already contains the cash; adding it to separately
+    fetched cash double-counted SION by $63M and would suppress a real veto."""
+    monkeypatch.setattr(fetch, "sec_get", lambda url: _facts({
+        "CashCashEquivalentsAndShortTermInvestments": [
+            {"end": "2026-06-30", "val": 200_000_000, "form": "10-Q"}],
+    }))
+    _ran, best = fetch.discover_investments("0000000001", "2026-06-30")
+    assert best["combined"] is True
+
+
 # --------------------------------------------------------- misc invariants
 
 

@@ -30,8 +30,34 @@ mkdir -p "$ROOT/data" "$ROOT/logs" "$ROOT/reports"
 exec > >(tee -a "$LOG") 2>&1
 echo "=== run $(date +%Y-%m-%dT%H:%M:%S%z) ==="
 
+usage() {
+    cat <<'EOF'
+usage: run_daily.sh [--no-llm]
+
+  --no-llm    fetch + signals only. Skips the analysis pass, the archive build
+              and notification. Fast, free, no API usage.
+  -h, --help  this message.
+EOF
+}
+
+# Every argument is examined, and an unrecognised one refuses to run. Testing
+# only "$1" against the exact string meant `./run_daily.sh --nollm`, or the flag
+# in any position but the first, silently performed a *full* run -- the
+# expensive direction to be wrong in, and one that leaves nothing behind saying
+# the argument was misread.
+#
+# Not routed through fail(): whoever passed the argument is either watching this
+# terminal, or is a scheduler, which records the non-zero exit and whose missing
+# report the heartbeat picks up within two weekdays. A typo should not buzz the
+# phone; a broken unit still gets caught.
 NO_LLM=0
-[[ "${1:-}" == "--no-llm" ]] && NO_LLM=1
+for arg in "$@"; do
+    case "$arg" in
+        --no-llm)   NO_LLM=1 ;;
+        -h|--help)  usage; exit 0 ;;
+        *)          echo "unknown argument: $arg" >&2; usage >&2; exit 2 ;;
+    esac
+done
 
 busy() {
     # Benign: exit 0 so the scheduler does not record a skipped overlap as a failure.
@@ -298,10 +324,20 @@ Run python scripts with: $PY (e.g. \`$PY scripts/detail.py TICKER\`)."
 ALLOWED_TOOLS="Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Bash(python3:*)"
 [[ "$PY" != "python3" ]] && ALLOWED_TOOLS+=",Bash($PY:*)"
 
+# 9>&- closes the flock descriptor for this child and everything it starts. An
+# open file descriptor is inherited across fork and exec, so the lock is held by
+# any process still holding fd 9 -- not by this script. The analysis pass is the
+# one stage that starts a process tree of its own (tool subprocesses, MCP
+# servers); if a single grandchild outlived the run, the lock would be held by it
+# forever and every later start would exit 0 as "already in progress". Silently,
+# nightly, until someone noticed the reports had stopped -- which is precisely
+# the failure the lock exists to avoid, arriving through the lock itself.
+# Harmless where fd 9 was never opened: the launchd path locks with a symlink.
 run_with_timeout 1800 claude -p "$PROMPT" \
     --permission-mode acceptEdits \
     --allowedTools "$ALLOWED_TOOLS" \
     --add-dir "$ROOT" \
+    9>&- \
     || echo "WARNING: claude exited $? -- checking for a report anyway"
 
 if [[ ! -f "$REPORT" ]]; then

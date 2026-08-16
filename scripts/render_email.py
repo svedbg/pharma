@@ -32,37 +32,104 @@ MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
 SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 
 
-def _inline(text: str) -> str:
+def _styler(inline: bool):
+    """Build the attribute writer for one rendering target.
+
+    Two consumers, two opposite requirements. A mail client strips <style>
+    blocks, so every element has to carry its own CSS. A browser does not, and
+    publish.py ships a real stylesheet with a `prefers-color-scheme` dark
+    palette -- which inline styles then beat on every element, because inline
+    always wins. The archive was therefore rendered in near-black #1a1d21 body
+    text on a #0f1216 dark background: the stylesheet was fully written, fully
+    correct, and fully overridden.
+
+    So the same converter emits inline CSS for mail and semantic classes for the
+    site, rather than the site bolting a stylesheet onto email markup and losing
+    every specificity fight.
+    """
+    def attr(css: str, cls: str = "") -> str:
+        if inline:
+            return f' style="{css}"' if css else ""
+        return f' class="{cls}"' if cls else ""
+    return attr
+
+
+def _link(m: re.Match, sty) -> str:
+    """Render one markdown link with the URL safe to sit inside an attribute.
+
+    Escaping the surrounding text is not enough on its own: `html.escape(...,
+    quote=False)` leaves the quote character alone, and the URL is interpolated
+    straight into `href="..."`, so a link target containing a quote closed the
+    attribute and opened one of its own -- `[x](https://h/a"onmouseover="...)`
+    rendered as a live event handler. Inert in a mail client, but publish.py
+    reuses this converter for site/, which is opened in a real browser, and the
+    report is written from fetched web content rather than trusted input.
+
+    Only the quote is handled here, not a second full escape: the text arrived
+    already escaped with quote=False, so `&` is `&amp;` and re-escaping would
+    double it into `&amp;amp;` in every URL that carries a query string.
+    """
+    url = m.group(2).replace('"', "&quot;")
+    a = sty(f"color:{ACCENT};text-decoration:none")
+    return f'<a href="{url}"{a}>{m.group(1)}</a>'
+
+
+def _inline(text: str, sty) -> str:
     """Inline markdown -> HTML. Escapes first, so report text cannot inject markup."""
     t = html.escape(text, quote=False)
-    t = re.sub(r"`([^`]+)`",
-               rf'<code style="font-family:{MONO};font-size:12px;background:#f1f5f9;'
-               r'padding:1px 4px;border-radius:3px">\1</code>', t)
-    t = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)",
-               rf'<a href="\2" style="color:{ACCENT};text-decoration:none">\1</a>', t)
-    t = re.sub(r"\*\*([^*]+)\*\*", r'<strong style="font-weight:650">\1</strong>', t)
+    code = sty(f"font-family:{MONO};font-size:12px;background:#f1f5f9;"
+               "padding:1px 4px;border-radius:3px")
+    t = re.sub(r"`([^`]+)`", rf"<code{code}>\1</code>", t)
+    t = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", lambda m: _link(m, sty), t)
+    strong = sty("font-weight:650")
+    t = re.sub(r"\*\*([^*]+)\*\*", rf"<strong{strong}>\1</strong>", t)
     t = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<em>\1</em>", t)
     return t
 
 
-def _cell_style(text: str, header: bool) -> str:
+def _cell_kind(text: str) -> str:
+    """What a table cell means: a gain, a loss, or a tier. '' when it is neither.
+
+    Shared by both targets so the site and the email agree about which cells are
+    significant, and only differ in how they say so.
+    """
+    stripped = re.sub(r"[*`]", "", text).strip()
+    if re.match(r"^[+-]?\d+\.?\d*%$|^[+-]\d+\.?\d*pp$", stripped):
+        return "neg" if stripped.startswith("-") else "pos"
+    if "ACT" in stripped:
+        return "act"
+    if "SETUP" in stripped:
+        return "setup"
+    return ""
+
+
+_KIND_CSS = {
+    "pos": f"color:{GOOD};",
+    "neg": f"color:{BAD};",
+    "act": f"color:{GOOD};font-weight:700;",
+    "setup": f"color:{WARN};font-weight:650;",
+}
+
+
+def _cell_attr(text: str, header: bool, sty) -> str:
     base = (f"padding:6px 9px;border-bottom:1px solid {LINE};"
             f"font-size:12px;white-space:nowrap;")
     if header:
-        return base + f"background:#f8fafc;font-weight:650;text-align:left;color:{MUTED};"
-    colour = ""
-    stripped = re.sub(r"[*`]", "", text).strip()
-    if re.match(r"^[+-]?\d+\.?\d*%$|^[+-]\d+\.?\d*pp$", stripped):
-        colour = f"color:{BAD};" if stripped.startswith("-") else f"color:{GOOD};"
-    elif "ACT" in stripped:
-        colour = f"color:{GOOD};font-weight:700;"
-    elif "SETUP" in stripped:
-        colour = f"color:{WARN};font-weight:650;"
-    return base + colour
+        return sty(base + f"background:#f8fafc;font-weight:650;text-align:left;color:{MUTED};")
+    kind = _cell_kind(text)
+    return sty(base + _KIND_CSS.get(kind, ""), kind)
 
 
-def md_to_html(md: str) -> str:
-    """Convert the report's markdown subset to email-safe HTML."""
+def md_to_html(md: str, *, inline_styles: bool = True) -> str:
+    """Convert the report's markdown subset to HTML.
+
+    `inline_styles=True` (the default) targets a mail client: every element
+    carries its own CSS, because <style> blocks are stripped. `False` targets
+    publish.py's local archive, which has a real stylesheet and a dark palette,
+    and emits semantic classes instead -- see _styler() for why that is not the
+    same document with different decoration.
+    """
+    sty = _styler(inline_styles)
     out: list[str] = []
     lines = md.splitlines()
     i, in_code, list_type = 0, False, None
@@ -81,9 +148,10 @@ def md_to_html(md: str) -> str:
             if in_code:
                 out.append("</pre>")
             else:
-                out.append(f'<pre style="font-family:{MONO};font-size:12px;background:#f8fafc;'
-                           f'border:1px solid {LINE};border-radius:6px;padding:10px;'
-                           f'overflow-x:auto;white-space:pre">')
+                out.append("<pre" + sty(
+                    f"font-family:{MONO};font-size:12px;background:#f8fafc;"
+                    f"border:1px solid {LINE};border-radius:6px;padding:10px;"
+                    f"overflow-x:auto;white-space:pre") + ">")
             in_code = not in_code
             i += 1
             continue
@@ -102,15 +170,24 @@ def md_to_html(md: str) -> str:
             while i < len(lines) and lines[i].lstrip().startswith("|"):
                 rows.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
                 i += 1
-            out.append('<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;'
-                       f'border:1px solid {LINE};border-radius:6px;margin:12px 0">')
-            out.append('<table role="presentation" cellspacing="0" cellpadding="0" '
-                       'style="border-collapse:collapse;width:100%">')
+            # The wrapper is emitted here rather than bolted on afterwards.
+            # publish.py used to add a second scroll container around this one
+            # with a string replace, so every table in the archive sat inside
+            # two nested overflow boxes with the mail client's light-mode border
+            # baked into the outer one.
+            out.append("<div" + sty(
+                "overflow-x:auto;-webkit-overflow-scrolling:touch;"
+                f"border:1px solid {LINE};border-radius:6px;margin:12px 0",
+                "scroll") + ">")
+            out.append('<table role="presentation" cellspacing="0" cellpadding="0"'
+                       + sty("border-collapse:collapse;width:100%") + ">")
             out.append("<tr>" + "".join(
-                f'<th style="{_cell_style(c, True)}">{_inline(c)}</th>' for c in header) + "</tr>")
+                f"<th{_cell_attr(c, True, sty)}>{_inline(c, sty)}</th>"
+                for c in header) + "</tr>")
             for r in rows:
                 out.append("<tr>" + "".join(
-                    f'<td style="{_cell_style(c, False)}">{_inline(c)}</td>' for c in r) + "</tr>")
+                    f"<td{_cell_attr(c, False, sty)}>{_inline(c, sty)}</td>"
+                    for c in r) + "</tr>")
             out.append("</table></div>")
             continue
 
@@ -120,9 +197,11 @@ def md_to_html(md: str) -> str:
             i += 1
             continue
 
+        li_css = f"font-size:14px;line-height:1.5;margin:3px 0;color:{INK}"
+
         if re.match(r"^(-{3,}|\*{3,})$", stripped):
             close_list()
-            out.append(f'<hr style="border:0;border-top:1px solid {LINE};margin:18px 0">')
+            out.append("<hr" + sty(f"border:0;border-top:1px solid {LINE};margin:18px 0") + ">")
         elif stripped.startswith("#"):
             close_list()
             level = len(stripped) - len(stripped.lstrip("#"))
@@ -130,32 +209,34 @@ def md_to_html(md: str) -> str:
             sizes = {1: 20, 2: 17, 3: 15, 4: 14}
             size = sizes.get(level, 13)
             top = 20 if level <= 2 else 16
-            out.append(f'<h{min(level,4)} style="font-size:{size}px;line-height:1.3;margin:{top}px 0 6px;'
-                       f'color:{INK};font-weight:700">{_inline(text)}</h{min(level,4)}>')
+            tag = f"h{min(level, 4)}"
+            out.append(f"<{tag}" + sty(f"font-size:{size}px;line-height:1.3;margin:{top}px 0 6px;"
+                                       f"color:{INK};font-weight:700")
+                       + f">{_inline(text, sty)}</{tag}>")
         elif stripped.startswith(">"):
             close_list()
-            out.append(f'<blockquote style="margin:10px 0;padding:8px 12px;border-left:3px solid {LINE};'
-                       f'color:{MUTED};font-size:14px">{_inline(stripped.lstrip("> "))}</blockquote>')
+            out.append("<blockquote" + sty(
+                f"margin:10px 0;padding:8px 12px;border-left:3px solid {LINE};"
+                f"color:{MUTED};font-size:14px")
+                + f">{_inline(stripped.lstrip('> '), sty)}</blockquote>")
         elif re.match(r"^[-*]\s+", stripped):
             if list_type != "ul":
                 close_list()
-                out.append('<ul style="margin:8px 0;padding-left:20px">')
+                out.append("<ul" + sty("margin:8px 0;padding-left:20px") + ">")
                 list_type = "ul"
-            item = _inline(re.sub(r"^[-*]\s+", "", stripped))
-            out.append(f'<li style="font-size:14px;line-height:1.5;margin:3px 0;color:{INK}">'
-                       f'{item}</li>')
+            item = _inline(re.sub(r"^[-*]\s+", "", stripped), sty)
+            out.append("<li" + sty(li_css) + f">{item}</li>")
         elif re.match(r"^\d+\.\s+", stripped):
             if list_type != "ol":
                 close_list()
-                out.append('<ol style="margin:8px 0;padding-left:22px">')
+                out.append("<ol" + sty("margin:8px 0;padding-left:22px") + ">")
                 list_type = "ol"
-            item = _inline(re.sub(r"^\d+\.\s+", "", stripped))
-            out.append(f'<li style="font-size:14px;line-height:1.5;margin:3px 0;color:{INK}">'
-                       f'{item}</li>')
+            item = _inline(re.sub(r"^\d+\.\s+", "", stripped), sty)
+            out.append("<li" + sty(li_css) + f">{item}</li>")
         else:
             close_list()
-            out.append(f'<p style="font-size:14px;line-height:1.55;margin:8px 0;color:{INK}">'
-                       f'{_inline(stripped)}</p>')
+            out.append("<p" + sty("font-size:14px;line-height:1.55;margin:8px 0;"
+                                  f"color:{INK}") + f">{_inline(stripped, sty)}</p>")
         i += 1
 
     close_list()

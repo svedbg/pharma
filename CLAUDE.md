@@ -18,11 +18,24 @@ Facts and judgement are deliberately separated:
 ```
 scripts/fetch.py         -> data/latest.json      deterministic; prices, filings, XBRL, trials
 scripts/signals.py       -> data/signals.json     fixed arithmetic; indicators, tiers, vetoes
+                         -> data/summaries/*.json one small record per day, for the archive index
 scripts/propose_zones.py -> watchlist.toml        entry zones from each name's own range
 scripts/detail.py                                 per-ticker drill-down for the analysis pass
 prompts/daily.md         -> reports/YYYY-MM-DD.md the analysis (judgement lives here)
 scripts/notify.py                                 ntfy push + email
+scripts/render_email.py                           markdown -> mobile-readable HTML (used by notify and publish)
+scripts/publish.py       -> site/                 local browsable archive of past reports (`make site`)
 run_daily.sh                                      orchestration, invoked by the scheduler (systemd timer / launchd job)
+```
+
+Measurement and validation, none of it on the daily path except the scorecard:
+
+```
+scripts/backtest.py                               replay the stored bars through the rules
+scripts/score_alerts.py  -> data/scorecard.txt    grade the alerts actually raised, against XBI
+scripts/paper.py                                  paper-trade log, scored against XBI
+scripts/screen.py        -> candidates TOML       monthly look outside the watchlist (`make screen`)
+scripts/heartbeat.py                              alert when reports stop appearing
 ```
 
 An LLM must never be the source of a price, a share count or a cash balance.
@@ -45,8 +58,10 @@ The triage rules in `prompts/daily.md` cap deep-dives at 12 per run.
 
 SEC requires a descriptive User-Agent with contact details and <10 req/s. Fetches
 run 6 threads wide behind shared `RateLimiter` instances — per-call sleeps would
-not bound the aggregate rate once requests are concurrent. A full 63-name run
-takes roughly 2 minutes.
+not bound the aggregate rate once requests are concurrent. A full run over ~60
+names takes two to four minutes: roughly two for the fetch itself, plus up to
+two more when several names trigger the multi-megabyte `companyfacts` sweep
+described in trap 6.
 
 ### XBRL traps that produced real, wrong answers here
 
@@ -83,7 +98,12 @@ Each of these shipped a bad number before being fixed. Do not "simplify" them aw
    — adding it double-counted SION by $63M. The sweep runs only for suspicious
    names (companyfacts is multi-megabyte) and costs ~2 minutes per full run.
    When it finds nothing, `cash_only_verified` is set and a short-runway veto
-   on that name is trustworthy *because* it was checked.
+   on that name is trustworthy *because* it was checked. `discover_investments`
+   therefore returns `(ran, best)` rather than a bare result: "the sweep found
+   no securities" and "the sweep never completed" are opposite facts, and only
+   the first may set `cash_only_verified` — which is printed inside the veto as
+   "confirmed by a full XBRL tag sweep". A timed-out request must not buy that
+   sentence.
 7. **Foreign filers have no us-gaap XBRL.** Australian/Swiss/French issuers
    (RADX, ABVX, LEGN) return no runway at all. Report that as unknown, never as
    healthy.
@@ -103,10 +123,21 @@ blocks the SETUP/ACT tiers when any of these are live:
 - `NT 10-Q` / `NT 10-K` late filing within 45 days
 - any single-session move ≤ **−25%** in the last 10 sessions, with the likely
   causal filing attached
-- liquidity below **1.5 quarters** of burn, when not stale
+- liquidity below **1.5 quarters** of burn, when the balance sheet is neither
+  stale nor superseded
 
 Soft flags (shelf registrations, officer departures, charter amendments, new
 debt, stale or superseded financials) annotate but do not block.
+
+**The runway veto and `runway_ok` must agree about which balance sheets they
+trust.** They did not: ACT already refused a `superseded_by` runway as
+unreliable, while the veto read the same figure as proof of distress — too old
+to clear a name, fresh enough to condemn it. OTLK carried a 0.59-quarter hard
+veto off a balance sheet its own later 8-K had replaced. A short runway on
+superseded data is now a soft flag (`short runway, superseded`) carrying the
+number and the superseding filing, and `conviction()` still counts it against
+the name. It simply no longer blocks on its own. Trap 5's rule generalises:
+absence of *current* data is ignorance, not distress.
 
 **A veto may only be overridden in the report with specific cited evidence.**
 This has already worked in practice: a COGT 424B5 was correctly refuted as a
@@ -119,11 +150,20 @@ $400M ATM programme, and a PRAX item 4.01 as a clean auditor change.
 - `ACT` — SETUP **and** price ≤ `entry_high` **and** (runway ≥ 3 quarters, not
   stale and not superseded, **or** a catalyst within 90 days)
 
+The catalyst half of that test reads **both** clocks: the next active trial's
+primary-completion date from ClinicalTrials.gov, and any dated entry in
+`catalysts.toml`. It used to consult only the first, so a sourced PDUFA three
+weeks out did not satisfy a test that a soft sponsor estimate did — the
+trustworthy calendar was the one that could not open the gate. This is the one
+place `catalysts.toml` participates in a tier; everywhere else it warns only.
+
 ### Thresholds are measured, not chosen
 
-`scripts/backtest.py` replays the stored history (29,077 ticker-days, no
-lookahead) and scores each rule's forward return against an all-days baseline.
-**Re-run it before changing any threshold.** What it found:
+`scripts/backtest.py` replays the stored history (~29,000 ticker-days and
+growing, no lookahead) and scores each rule's forward return against an all-days
+baseline.
+**Re-run it before changing any threshold.** What it found (run of 2026-08-14;
+the history grows daily, so re-run rather than quoting these):
 
 | Rule | Fires | Median edge @20d | @60d |
 |---|---|---|---|
@@ -132,6 +172,14 @@ lookahead) and scores each rule's forward return against an all-days baseline.
 | bottom decile of 1y range (the old WATCH) | 19.25% | +0.49pp | **−2.68pp** |
 | RSI<25 | 1.46% | +2.38pp | **−9.59pp** |
 | RSI<35 & %B<0.15 & volume>1.5× | 1.92% | +2.63pp | **+1.72pp** |
+
+`backtest.py` builds the live rule from `SETUP_RSI` / `SETUP_PCTB` /
+`CAPITULATION_VOL` imported from `signals.py`, never from numbers retyped into
+it. It once hardcoded the old pair and labelled them "live SETUP" while calling
+the real rule "(looser)" — the instrument that justifies the thresholds was
+scoring a threshold the desk had already abandoned. The last two rows above are
+now labelled "live SETUP" and "live SETUP + volume (the ACT bar)"; the retired
+pair is kept as "superseded SETUP" for comparison.
 
 Three consequences, all encoded above:
 
@@ -151,13 +199,18 @@ thresholds, not proof of edge.
 ### The finding that matters most
 
 `scripts/score_alerts.py` grades alerts against **XBI**, not against an
-all-days baseline. That distinction changed the conclusion:
+all-days baseline. That distinction changed the conclusion (run of 2026-08-14;
+`data/scorecard.txt` holds the current one, refreshed every run):
 
 | | +20d vs XBI | +60d vs XBI |
 |---|---|---|
 | All oversold alerts | −0.28% med | −2.28% med, 46.2% win |
 | **With** capitulation volume | −1.25% med / +3.97% mean | **+0.25% med / +7.08% mean** |
 | **Without** capitulation volume | −0.28% med | **−2.68% med, 44.0% win** |
+
+These move as history accrues — the without-volume 60-day figure has already
+drifted to −2.79% — so read the table for its *direction*, which has been stable,
+and quote `data/scorecard.txt` for a number.
 
 **The oversold trigger on its own does not beat simply owning XBI.** The earlier
 backtest's "edge" was measured against the average ticker-day in this universe,
@@ -231,6 +284,18 @@ High-severity flags push to ntfy, deduplicated on their own `exit_key` so a
 standing veto does not buzz nightly. Exits lead the notification ahead of new
 setups: a thesis breaking outranks an idea appearing.
 
+**Every field a human edits in `watchlist.toml` must be listed in
+`signals.WATCHLIST_FIELDS`**, which is the overlay `main()` applies on top of the
+snapshot so a hand edit takes effect without waiting for the next fetch.
+`invalidation_price` was missing from it, and from the record `fetch.py` builds,
+so `invalidation_breached` was unreachable for every name on the list — 57 of 59
+had a stop set and none of them could fire. Nothing looked broken: the tier
+logic was untouched, the flag simply never appeared, and the unit test on
+`exit_signals()` passed throughout because it built its record by hand. That is
+why `test_invalidation_price_reaches_analyse_through_the_watchlist_overlay`
+drives `main()` end to end instead. Adding a field to the watchlist means adding
+it there too.
+
 ## Exposure
 
 `signals.json.exposure` sums what every actionable name would request at its
@@ -238,6 +303,12 @@ bucket cap against the investable ceiling (100% less the configured cash
 reserve). Several full-size names firing at once can exceed it easily, and
 `scale_factor_needed` says by how much. Nothing else computes this, and these
 names trigger together in a drawdown.
+
+It counts **SETUP alongside ACT**, which `tiers_counted` publishes so the report
+cannot mistake it for a committed figure. That is deliberate: this is the worst
+case, not a buy list. SETUP means "research this", and the concentration
+question is exactly what happens if the research says yes to all of them at
+once.
 
 ## Heartbeat
 
@@ -251,8 +322,9 @@ notify.py, run_daily.sh's own failure handler dies with it.
 
 XBI versus its 200-day average, in `signals.json` under `regime`. In a
 `downtrend` the ACT tier additionally requires a `strong` conviction score —
-signals stay visible, the bar to act rises. Currently: **uptrend**, +19.6% vs
-200DMA.
+signals stay visible, the bar to act rises. Read the current label and
+`pct_vs_sma200` from `signals.json`; a figure pinned in this file is stale the
+next evening.
 
 ## Insider transactions (Form 4)
 
@@ -287,6 +359,8 @@ actually thins out.
 plus the `.md` attached. Constraints, each learned the hard way:
 
 - Styles **inlined on every element** — Gmail/Outlook strip `<style>` blocks.
+  This is the `inline_styles=True` default of `md_to_html`; the local archive
+  passes `False` and is themed by a real stylesheet instead.
 - Tables in an `overflow-x` container, else the page scrolls sideways on a phone.
 - **Size is measured, not estimated.** Gmail clips past ~102KB; a wide markdown
   table expands ~11× under inline styles while prose expands ~3×, so budgeting
@@ -315,11 +389,26 @@ be recomputed as prices move. Method:
   Otherwise the trailing year is used.
 - **Too soon** — under 25 sessions in the window means no zone is written and ACT
   stays disabled for that name.
-- `entry_high` = 25th percentile of the window; `entry_low` = 8th percentile,
-  clamped to a band no narrower than 8% and no wider than 45%.
+- `entry_high` = the **higher** of the window's 25th percentile and a realistic
+  pullback level, the latter being the 50-day average capped 5% below spot. A
+  pure distribution percentile is useless for a name in a strong uptrend: it
+  returns the price before the re-rating, which the stock never revisits if the
+  thesis is working, and SLS at $12.36 was handed a "buy zone" of $1.91. Taking
+  the higher of the two means the zone tracks the current regime without ever
+  amounting to chasing.
+- `entry_low` = 22% under `entry_high`, a **scale-in reference and not a gate**.
+  A price below it is cheaper, not disqualifying — gating on a floor would
+  reject a name making new lows while oversold and unvetoed, which is precisely
+  the setup this system exists to find. Deciding whether a name is broken is the
+  veto layer's job.
+- `invalidation_price` = 5% below the anchor window's own low. If the name trades
+  under the worst level of the regime the zone was built from, the setup that
+  justified the zone no longer exists.
 
 These are mechanical starting points, not valuations. Override any of them by
-hand in `watchlist.toml`; re-run with `--apply` to refresh the rest.
+hand in `watchlist.toml`; re-run with `--apply` to refresh the rest. A name whose
+window is too short keeps whatever zone it already has rather than having it
+zeroed.
 
 **Zones go stale, and stale zones fail closed.** A zone describes the regime it
 was built from; once price is `ZONE_STALE_DRIFT_PCT` (25%) away, `zone_stale` is
@@ -350,15 +439,65 @@ biotech-shaped SEC registrant (~550, matched by company-name fragments since the
 company list carries no sector field), then the normal pipeline on the shortlist
 only. Skips anything under $0.50 or below $500k median daily dollar volume.
 
+## Paper trading
+
+`scripts/paper.py` records intended trades against `data/history.sqlite` and
+grades them **over the identical holding period against XBI** — a +9% trade
+while the sector rose 12% is a losing decision, and absolute P&L says the
+opposite. Nothing here is validated forward, so this is what eventually answers
+whether the desk beats owning the ETF, at the cost of patience rather than
+capital. `paper.py report` states that verdict in words and refuses to let a
+sample under 20 trades read as a conclusion. `run_daily.sh` writes
+`paper.py status` to `data/paper_status.txt`, which the daily prompt covers
+*before* new ideas.
+
+## The local archive
+
+`scripts/publish.py` (`make site`) renders `reports/*.md` into `site/` with an
+index, prev/next navigation and per-day stats read from `data/summaries/*.json`.
+It reuses `md_to_html()` from `render_email.py` rather than carrying a second
+markdown converter, calling it with `inline_styles=False`.
+
+**That flag is not decoration, it is the difference between two documents.** A
+mail client strips `<style>` blocks, so the email target puts CSS on every
+element. A browser does not — and an inline style beats a stylesheet on every
+element, so bolting the site's stylesheet onto email markup meant the archive
+rendered near-black `#1a1d21` body text on its own `#0f1216` dark background.
+The palette was fully written, fully correct and fully overridden. The site
+target therefore emits semantic classes (`.scroll`, `td.pos/.neg/.act/.setup`)
+and no inline CSS at all, with `_cell_kind()` shared so both targets agree about
+which cells are significant and differ only in how they say so.
+
+**Deliberately local only.** The reports carry entry zones, invalidation levels
+and broker routing — the same material `watchlist.toml` is gitignored to protect
+— so `site/` is gitignored and nothing is uploaded. One consequence: because the
+converter is shared, anything escaping into HTML lands in a real browser here,
+not just in a sandboxed mail client. That is why link URLs are quote-escaped.
+
+`data/summaries/<date>.json` is written by `signals.py` **only on a live run**,
+which is the same `--state` test that gates the alert log. A screening pass
+borrows the whole module, and before that gate it silently overwrote the real
+day's summary and corrupted the archive index.
+
+## Briefing documents
+
+`docs/` holds two hand-written HTML briefings and the PDF built from one of them
+(`make brief` → the committed `docs/the-91-percent-question.pdf`; `make briefing`
+→ a gitignored internal PDF). Both need headless Chrome. They describe the
+project rather than driving it — nothing in the pipeline reads them.
+
 ## Conventions
 
 - Stdlib only in `scripts/` — no pip dependencies to rot in a cron job.
 - Config in TOML, parsed with stdlib `tomllib`.
-- Secrets in `~/.config/pharma/notify.env`, never in the repo.
+- Secrets in `~/.config/pharma/pharma.env`, never in the repo. The older
+  `notify.env` is still read so an existing install keeps working, but
+  `pharma.env` wins and is the one to write to.
 - `data/history.sqlite` accumulates bars and filings so day-over-day deltas and
   "new since last run" work even when a provider has an outage.
-- Screening a candidate list must pass `--state` to `signals.py` so it does not
-  consume the live watchlist's alert state.
+- Screening a candidate list must pass `--state` to `signals.py`. That flag is
+  what marks a run as *not* live, and it gates every shared artefact: the alert
+  log `score_alerts.py` grades, and the per-day summary the archive indexes.
 - Adding a ticker means one `[[ticker]]` block; CIK and trial sponsor resolve
   automatically from SEC's company list.
 
