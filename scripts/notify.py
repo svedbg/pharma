@@ -111,9 +111,13 @@ def send_email(cfg: dict, subject: str, body: str, html_body: str | None = None,
 def build_alert_text(sig: dict) -> tuple[str, str, str]:
     alerts = sig.get("notify") or []
     exits = sig.get("notify_exits") or []
-    date = sig.get("session_date", "")
+    # A run whose snapshot carried no usable date has no session_date at all.
+    # Appended unconditionally that leaves a trailing " - " on the phone, which
+    # reads as a truncated message rather than a dated one.
+    date = sig.get("session_date") or ""
+    stamp = f" - {date}" if date else ""
     if not alerts and not exits:
-        return (f"Biotech desk {date}", "No new setups. Report written.", "default")
+        return (f"Biotech desk {date}".rstrip(), "No new setups. Report written.", "default")
 
     lines = []
     # Exits lead: a thesis breaking is more urgent than a new idea appearing.
@@ -128,7 +132,7 @@ def build_alert_text(sig: dict) -> tuple[str, str, str]:
         bits.append(f"{len(exits)} EXIT")
     if alerts:
         bits.append(f"{len(alerts)} new setup{'s' if len(alerts) > 1 else ''}")
-    return f"{' + '.join(bits)} - {date}", "\n".join(lines), priority
+    return f"{' + '.join(bits)}{stamp}", "\n".join(lines), priority
 
 
 def main() -> int:
@@ -174,8 +178,9 @@ def main() -> int:
         except Exception as e:
             print(f"[notify] HTML render failed, sending plain text: {e}", file=sys.stderr)
 
+        subject_stamp = f" {sig['session_date']}" if sig.get("session_date") else ""
         ok = send_email(
-            cfg, f"[biotech desk] {sig.get('session_date')} - {title}",
+            cfg, f"[biotech desk]{subject_stamp} - {title}",
             report_md, html_body=html_body, attachment=report_path,
         )
         print(f"[notify] email sent={ok} (html={bool(html_body)}, "

@@ -153,7 +153,20 @@ since the overlay exists so hand edits need not wait for a fetch), pointing
 yesterday's snapshot this morning aged OTLK's two 424B5 vetoes from 1 and 3 days
 to 2 and 4, HUMA's listing deficiency from 15 to 16, and PRAX's auditor change
 from 44 to 45. None crossed a threshold that day; a filing sitting on one would
-have. A snapshot with no usable `local_date` falls back to today and says so.
+have.
+
+**Measuring and recording are separate decisions.** `main()` holds two values:
+`session`, the validated date the snapshot describes, and `asof`, what ages are
+measured from. They differ only when the snapshot cannot say. Measuring from
+today is then a reasonable degraded mode — the run still produces a report and
+the warning says what it did — but *recording* on that basis is not, so a run
+with no session writes neither an alert row nor an archive summary. Both are
+keyed by session date, and a key nobody can read back is worse than no row:
+`score_alerts.py` raises on a NULL and silently matches no bar for a malformed
+string, which loses the alert from the only number that says whether the desk
+works. `session_date` in the output is always the parsed value, so `2026-8-15`
+is normalised to `2026-08-15` rather than naming a summary file the archive
+looks for under the canonical spelling and never finds.
 
 **A veto may only be overridden in the report with specific cited evidence.**
 This has already worked in practice: a COGT 424B5 was correctly refuted as a

@@ -475,21 +475,26 @@ def load_last_alerts(db: Path) -> dict:
     return {t: {"date": d, "close": c} for t, d, c in rows if d}
 
 
-def _parse_session_date(local_date: str | None) -> date:
-    """The snapshot's own date, or today with a warning saying so.
+def _parse_session_date(local_date: str | None) -> date | None:
+    """The session the snapshot describes, or None when it does not say.
+
+    Returning None rather than falling back here keeps two different decisions
+    separate, and main() makes them separately. Measuring ages from today when
+    the snapshot's own date is unreadable is a reasonable degraded mode: the run
+    still produces a report and the warning says what it did. Writing into the
+    date-keyed shared artefacts on that basis is not -- a summary's filename and
+    an alert's primary key both have to name a real session, or what they record
+    cannot be read back.
 
     A snapshot written by any current fetch carries `local_date`. One that does
-    not is either hand-made or predates the field, and falling back silently
-    would reintroduce exactly the drift this parameter exists to remove -- so
-    the fallback is loud.
+    not is hand-made, truncated, or predates the field.
     """
+    if not local_date:
+        return None
     try:
-        return datetime.strptime(local_date or "", "%Y-%m-%d").date()
+        return datetime.strptime(local_date, "%Y-%m-%d").date()
     except (ValueError, TypeError):
-        print(f"[signals] WARNING: snapshot has no usable local_date "
-              f"({local_date!r}); measuring filing ages and catalyst windows "
-              f"from today instead", file=sys.stderr)
-        return date.today()
+        return None
 
 
 def market_regime(bench_bars: list[dict]):
@@ -1386,7 +1391,19 @@ def main() -> int:
     # watchlist edit, pointing --snapshot at an archived file, or a run that
     # straddles midnight -- and the drift is invisible, because nothing in the
     # output records which clock produced a `days_ago`.
-    asof = _parse_session_date(snap.get("local_date"))
+    #
+    # `session` is the authority for which day this is, and `asof` is what ages
+    # are measured from. They differ only when the snapshot cannot say: the
+    # analysis still runs off today's date, but nothing keyed by session date
+    # gets written, because a key nobody can read back is worse than no row.
+    session = _parse_session_date(snap.get("local_date"))
+    asof = session or date.today()
+    if session is None:
+        print(f"[signals] WARNING: snapshot has no usable local_date "
+              f"({snap.get('local_date')!r}). Measuring filing ages and catalyst "
+              f"windows from today, and skipping the alert log and the archive "
+              f"summary -- both are keyed by session date and this run has none.",
+              file=sys.stderr)
 
     # The watchlist is authoritative for anything a human edits. The snapshot
     # only carries a copy from whenever it was last fetched, so reading zones
@@ -1477,7 +1494,10 @@ def main() -> int:
         "regime": regime,
         "exposure": exposure,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "session_date": snap.get("local_date"),
+        # The validated session, never the raw field. A snapshot carrying an
+        # unreadable date used to put that string straight into the output,
+        # from where it reached a summary filename and an alert primary key.
+        "session_date": session.isoformat() if session else None,
         "data_status": snap.get("status"),
         "settings": settings,
         "signals": rows,
@@ -1502,7 +1522,11 @@ def main() -> int:
     # Record what was actually raised so score_alerts.py can grade it later.
     # Only real alerts are logged, not every day a name happens to sit at SETUP:
     # the question being answered is "did the alerts I sent work?"
-    if changes and live_run:
+    # Both writes below are keyed by session date, so both require one. An
+    # alert row with a NULL or malformed session_date is ungradeable --
+    # score_alerts.py raises on the NULL and silently matches no bar for the
+    # malformed one, which loses the alert either way.
+    if changes and live_run and session:
         try:
             con = sqlite3.connect(DATA / "history.sqlite")
             # Older databases predate the context column; add it on the fly.
@@ -1548,7 +1572,7 @@ def main() -> int:
     # A small per-day record so the local site can build an accurate index
     # without re-deriving anything from the prose. signals.json is overwritten
     # each run; these accumulate.
-    if out["session_date"] and live_run:
+    if session and live_run:
         summaries = DATA / "summaries"
         summaries.mkdir(parents=True, exist_ok=True)
         nxt = sorted(

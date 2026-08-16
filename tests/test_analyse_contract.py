@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
+import pytest
+
 import signals
 
 SETTINGS = {"max_position_pct": 28, "max_position_pct_lottery": 5,
@@ -263,3 +265,48 @@ def test_main_says_so_when_a_snapshot_has_no_session_date(monkeypatch, tmp_path,
                              "financials": {}, "trials": [], "bars": _bars(prices)}},
     })
     assert "no usable local_date" in capsys.readouterr().err
+
+
+def _snapshot(local_date, prices):
+    snap = {"status": "ok", "benchmarks": {},
+            "tickers": {"TEST": {"symbol": "TEST", "tier": "A", "filings": [],
+                                 "financials": {}, "trials": [], "bars": _bars(prices)}}}
+    if local_date is not None:
+        snap["local_date"] = local_date
+    return snap
+
+
+@pytest.mark.parametrize("local_date", ["not-a-date", "15/08/2026", "2026-08-32", ""])
+def test_an_unreadable_session_date_never_reaches_the_output(
+        monkeypatch, tmp_path, local_date):
+    """A date the code cannot parse must not be passed along as if it could.
+
+    `session_date` was taken straight from the snapshot while `asof` was the
+    validated value, so an unreadable-but-truthy date flowed into signals.json,
+    into a summary filename, and into the alerts table's primary key. From there
+    it is unreadable in both directions: score_alerts.py compares it against bar
+    dates, where a malformed string sorts above every ISO date and matches
+    nothing, so the alert silently vanishes from the only number that says
+    whether the desk works.
+    """
+    result = _run_main(monkeypatch, tmp_path,
+                       _snapshot(local_date, [10.0 + (i % 7) * 0.2 for i in range(60)]))
+    assert result["session_date"] is None
+    assert not (tmp_path / "summaries").exists(), "no session, no date-keyed file"
+
+
+def test_a_readable_session_date_is_passed_through_unchanged(monkeypatch, tmp_path):
+    """The guard above must not disturb the ordinary case."""
+    result = _run_main(monkeypatch, tmp_path,
+                       _snapshot("2026-08-15", [10.0 + (i % 7) * 0.2 for i in range(60)]))
+    assert result["session_date"] == "2026-08-15"
+
+
+def test_a_valid_but_unpadded_session_date_is_normalised(monkeypatch, tmp_path):
+    """strptime accepts '2026-8-15', so it is a real date rather than a broken
+    one -- but passing the raw field through meant it named a summary file that
+    the archive, which looks these up by canonical YYYY-MM-DD, could never find.
+    Deriving the output from the parsed value normalises it."""
+    result = _run_main(monkeypatch, tmp_path,
+                       _snapshot("2026-8-15", [10.0 + (i % 7) * 0.2 for i in range(60)]))
+    assert result["session_date"] == "2026-08-15"

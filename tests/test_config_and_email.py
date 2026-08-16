@@ -248,3 +248,14 @@ def test_placeholder_addresses_are_refused(address):
 ])
 def test_real_addresses_are_accepted(address):
     assert localconfig._is_placeholder(address) is False
+
+
+def test_a_run_with_no_session_date_still_renders_html():
+    """`sig.get("session_date", "")` returns None when the key is present and
+    null, and html.escape(None) raises. notify.py catches that and falls back to
+    plain text, so the HTML email vanished silently on exactly the run that had
+    already gone wrong enough to lose its session date."""
+    sig = {"session_date": None, "signals": [], "notify": []}
+    html = build_email_html("# Report\n\nNothing to do today.", sig)
+    assert "Nothing to do today" in html
+    assert "None" not in html

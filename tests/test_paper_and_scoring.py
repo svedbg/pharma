@@ -264,3 +264,49 @@ def test_heartbeat_finds_the_newest_dated_report(tmp_path, monkeypatch):
     last, path = heartbeat.latest_report()
     assert last == date(2026, 8, 14)
     assert path.name == "2026-08-14.md"
+
+
+# ------------------------------------------------------- alert grading
+
+
+def test_an_alert_with_no_session_date_does_not_take_the_scorecard_down(
+        db, capsys, monkeypatch):
+    """signals.py used to write the snapshot's raw local_date into the alerts
+    table, so a snapshot that carried none left NULL in the primary key. The
+    scorer locates an alert by comparing bar dates against it, and `d >= None`
+    raises -- taking the whole scorecard with it, and run_daily.sh swallows that
+    failure as non-fatal, so the desk quietly stops grading itself.
+
+    signals.py no longer writes such a row. Rows already in a database still
+    have to be survivable.
+    """
+    import score_alerts
+
+    con = sqlite3.connect(db)
+    con.executescript("""
+        CREATE TABLE IF NOT EXISTS alerts (
+            session_date TEXT, ticker TEXT, tier TEXT, previous_tier TEXT,
+            close REAL, rsi REAL, pctb REAL, capitulation INTEGER,
+            vetoes INTEGER, excess_20d REAL, bucket TEXT, source TEXT,
+            reason TEXT, context TEXT,
+            PRIMARY KEY (session_date, ticker, source));
+    """)
+    rows = [
+        (None, "XYZ", "SETUP", "NONE", 10.0, 30.0, 0.1, 0, 0, None, "A", "live", "", None),
+        ("not-a-date", "XYZ", "SETUP", "NONE", 10.0, 30.0, 0.1, 0, 0, None, "A", "backfill", "", None),
+        ("2026-01-02", "XYZ", "SETUP", "NONE", 10.0, 30.0, 0.1, 0, 0, None, "A", "live", "", None),
+    ]
+    con.executemany("INSERT INTO alerts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    con.commit()
+    con.close()
+
+    assert score_alerts.usable_session("2026-01-02") is True
+    assert score_alerts.usable_session(None) is False
+    assert score_alerts.usable_session("not-a-date") is False
+
+    monkeypatch.setattr(score_alerts, "DB", db)
+    monkeypatch.setattr("sys.argv", ["score_alerts.py"])
+    assert score_alerts.main() == 0
+    out = capsys.readouterr().out
+    # It graded the one real alert and said what it could not grade.
+    assert "SKIPPED  2 alert(s) carry no usable session date" in out
