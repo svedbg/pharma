@@ -230,6 +230,30 @@ def test_zone_uses_only_post_collapse_bars():
     assert out["entry_high"] < 10, "zone must ignore the pre-collapse regime"
 
 
+def test_the_pullback_leg_averages_the_window_not_the_pre_break_prices():
+    """Both legs of entry_high must read the anchor window and nothing outside it.
+
+    The percentile leg always did; the pullback leg averaged closes[-50:], which
+    reaches back through the break whenever the post-collapse window is shorter
+    than 50 sessions. The excluded prices then came back in through the other
+    half of the same max(). Here the contaminated average is ~23 against a
+    post-break regime near 6.5, so min() clamps it to the 5%-below-spot cap and
+    the zone becomes "5% under wherever it happens to trade" -- chasing, which
+    is the one thing the cap exists to prevent.
+    """
+    prices = [50.0] * 40 + [5.0] + [5.0 + i * 0.1 for i in range(1, 31)]
+    out = pz.propose({"symbol": "X", "bars": _bars(prices)})
+    assert "post-collapse" in out["note"]
+
+    window = prices[40:]
+    window_avg = sum(window[-50:]) / len(window[-50:])
+    last = prices[-1]
+    # The cap is not what decided this zone; the window's own average is.
+    assert window_avg < last * 0.95
+    assert out["entry_high"] == pz.round_price(window_avg)
+    assert out["entry_high"] < last * 0.95
+
+
 def test_no_zone_when_the_collapse_is_too_recent():
     prices = [50.0] * 40 + [5.0, 5.1, 5.2]
     out = pz.propose({"symbol": "X", "bars": _bars(prices)})
@@ -458,6 +482,51 @@ def test_notify_records_what_each_channel_did(tmp_path, monkeypatch):
     assert rec["ok"] is False
 
 
+def test_the_failure_notice_records_whether_it_was_delivered(tmp_path, monkeypatch):
+    """The one send that had no evidence of its own.
+
+    --failure fires precisely when something has already gone wrong, and nothing
+    downstream of it would ever notice that the notice itself never arrived. It
+    used to send and return without touching the delivery record, so a run that
+    failed AND could not say so looked, to the heartbeat, exactly like a run
+    that had not happened yet.
+    """
+    import json
+
+    import heartbeat
+    import notify
+    monkeypatch.setattr(notify, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(notify, "load_config",
+                        lambda: {"NTFY_TOPIC": "t", "SMTP_HOST": "h", "EMAIL_TO": "a@b.org"})
+    monkeypatch.setattr(notify, "send_ntfy", lambda *a, **k: True)
+    monkeypatch.setattr(notify, "send_email", lambda *a, **k: False)
+    monkeypatch.setattr(notify.sys, "argv", ["notify.py", "--failure", "fetch.py died"])
+
+    assert notify.main() == 0
+    rec = json.loads((tmp_path / "last_delivery.json").read_text())
+    assert rec["channels"] == {"ntfy": True, "email": False}
+    fault = heartbeat.delivery_fault()
+    assert fault and "email" in fault
+
+
+def test_a_desk_with_no_config_at_all_records_that_it_has_nowhere_to_send(
+        tmp_path, monkeypatch):
+    """delivery_fault()'s "nowhere to send" branch reads the record, and a
+    missing record is correctly not a fault -- so returning early on an empty
+    config made that branch unreachable in the one case it most obviously
+    describes. The fault has to be written down to be noticed."""
+    import heartbeat
+    import notify
+    monkeypatch.setattr(notify, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(notify, "load_config", dict)
+    monkeypatch.setattr(notify.sys, "argv", ["notify.py"])
+
+    assert notify.main() == 0
+    assert "no delivery channel configured" in (heartbeat.delivery_fault() or "")
+
+
 # ------------------------------------------------------- alert grading
 
 
@@ -568,6 +637,40 @@ def test_the_benchmark_is_not_scored_as_a_candidate():
     assert "IBB" in backtest.NOT_CANDIDATES
 
 
+def test_every_module_excludes_exactly_the_benchmarks_that_get_fetched():
+    """The exclusion list was written three times, spelled three ways:
+    backtest.NOT_CANDIDATES, an inline (BENCHMARK, "IBB") in score_alerts, and
+    fetch.BENCHMARKS.
+
+    Adding a third benchmark would have updated one of them and silently left
+    the ETF in the universe of the others -- scored as a candidate by the very
+    instrument that measures whether the rules beat it. There is one definition
+    now, and stage 2 deliberately does not import stage 1, so this is what
+    keeps the two ends in step: adding a benchmark to fetch fails here until it
+    is added to signals too.
+    """
+    import backtest
+    import fetch
+    import score_alerts
+    import signals
+
+    assert set(signals.NOT_CANDIDATES) == set(fetch.BENCHMARKS), (
+        "fetch.BENCHMARKS and signals.NOT_CANDIDATES have drifted -- a benchmark "
+        "is being stored in the bars table and scored as a watchlist candidate")
+    assert backtest.NOT_CANDIDATES is signals.NOT_CANDIDATES
+    assert score_alerts.NOT_CANDIDATES is signals.NOT_CANDIDATES
+
+
+def test_paper_grades_against_the_same_benchmark_as_everything_else():
+    """paper.py retyped BENCHMARK = "XBI" instead of importing it, so it would
+    have kept grading against XBI on the day the desk moved -- silently, since
+    the label in its own output is built from that same name, leaving the report
+    agreeing with itself and wrong."""
+    import paper
+    import signals
+    assert paper.BENCHMARK == signals.BENCHMARK
+
+
 def test_excess_return_is_aligned_on_dates_not_index_offsets():
     """The name misses a session the ETF traded. Advancing both by `h`
     positions through their own bar lists then compares two different calendar
@@ -600,3 +703,43 @@ def test_a_ticker_day_carries_the_zone_it_would_have_had_that_evening():
     assert "in_zone" in d and "zone_stale_down" in d
     # A steadily rising name sits above its own zone, never 25% below it.
     assert d["zone_stale_down"] is False
+
+
+# ------------------------------------------------------------- monthly screen
+
+
+def test_a_capped_screen_samples_the_whole_alphabet(monkeypatch):
+    """The cap must not be decided by the alphabet.
+
+    build_universe sorts for determinism and used to truncate with out[:limit],
+    so at the old default of 500 against a real universe of 591 every name from
+    SPTX onward was invisible -- and invisible every month, since the same 91
+    were cut each run. A blind spot fixed by spelling is the last thing that
+    belongs in the one tool whose job is looking outside the watchlist.
+    """
+    import screen
+
+    fake = {f"{chr(65 + i // 26)}{chr(65 + i % 26)}X": {"cik": "1", "title": f"{i} Therapeutics"}
+            for i in range(260)}
+    monkeypatch.setattr(screen.fetch, "load_cik_map", lambda: fake)
+
+    universe, total = screen.build_universe(set(), 50)
+    assert total == 260
+    assert len(universe) == 50
+    symbols = [s for s, _ in universe]
+    assert symbols == sorted(symbols), "ordering stays deterministic"
+    assert symbols[0].startswith("A"), "the sample still starts at the beginning"
+    # The point of the fix: the tail of the alphabet is reachable.
+    assert symbols[-1] > "J", f"sample stops at {symbols[-1]} -- the cap is still a prefix"
+    assert len(set(symbols)) == 50, "no duplicates from the stride arithmetic"
+
+
+def test_an_uncapped_screen_covers_everything(monkeypatch):
+    """The default is now no cap, so nothing is dropped without being asked for."""
+    import screen
+
+    fake = {f"{chr(65 + i // 26)}{chr(65 + i % 26)}Y": {"cik": "1", "title": f"{i} Pharma"}
+            for i in range(120)}
+    monkeypatch.setattr(screen.fetch, "load_cik_map", lambda: fake)
+    universe, total = screen.build_universe(set(), 0)
+    assert len(universe) == total == 120

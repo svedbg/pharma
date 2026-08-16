@@ -46,6 +46,18 @@ several megabytes. Read `data/signals.json` (compact, all names) and then use
 `python3 scripts/detail.py TICKER` for the few names that warrant a close look.
 The triage rules in `prompts/daily.md` cap deep-dives at 12 per run.
 
+`detail.py` is the only view of a name the analysis pass gets, so it has to
+carry what a decision uses: the entry zone and where price sits in it, the
+`invalidation_price` an exit is measured against, the conviction checklist on
+both sides, and the exit flags. It printed none of those — `fetch.py` carries
+`invalidation_price` into the snapshot with a comment saying it was added *so
+detail.py could show it*, and detail.py still did not. A drill-down missing the
+two numbers ACT and the exit flags turn on is a buy-side-only view of a name
+that may already have broken its own thesis. Every stage of that chain looked
+fine on its own while the field never arrived, which is why the test drives
+`signals.main()` and then `detail.main()` end to end rather than checking either
+in isolation.
+
 ## Data sources (free, keyless)
 
 | What | Source | Notes |
@@ -62,6 +74,30 @@ not bound the aggregate rate once requests are concurrent. A full run over ~60
 names takes two to four minutes: roughly two for the fetch itself, plus up to
 two more when several names trigger the multi-megabyte `companyfacts` sweep
 described in trap 6.
+
+**Every response is decoded through `get_json()`, never `json.loads(http_get())`.**
+Every caller in `fetch.py` guards `FetchError` and nothing else, so a bare
+decode had a hole straight through all of it: a provider that answers HTTP 200
+with an HTML body — a captive portal, a Cloudflare interstitial, a maintenance
+page — raises `JSONDecodeError`, which is not a `FetchError` and was caught by
+none of them. The blast radius was out of all proportion to the cause. In
+`build_record` the only thing left to catch it is the blanket `except` around
+`fut.result()`, so one malformed trials or short-interest response **discarded
+the whole ticker, bars included** — and `fetch_bars` could not fail over, so a
+Nasdaq error page killed the record instead of falling through to Yahoo, which
+is the entire reason two providers are wired up. A body that is not JSON is
+what "this source did not answer" looks like, so it is reported as that, with
+the first 120 bytes attached to name the impostor.
+
+**A stale CIK map beats no run.** `load_cik_map` is the first request the run
+makes, and its failure ended the run before a single price was fetched. CIKs
+move at the pace of corporate actions, not of trading days: a map a fortnight
+old resolves every name except one renamed since, and a rename already presents
+as `no CIK in SEC ticker map`, which the record carries as an error and which
+this file already tells you to re-check by hand. So a fetch failure now falls
+back to the cached copy at any age, saying how old it is. With no cached copy
+it still fails loudly — the fallback is for a stale map, not for no map, and an
+empty one would resolve nothing for every name while looking like a quiet day.
 
 ### XBRL traps that produced real, wrong answers here
 
@@ -130,11 +166,21 @@ blocks the SETUP/ACT tiers when any of these are live:
 - `NT 10-Q` / `NT 10-K` late filing within 45 days
 - any single-session move ≤ **−25%** in the last 10 sessions, with the likely
   causal filing attached
-- liquidity below **1.5 quarters** of burn, when the balance sheet is neither
-  stale nor superseded
+- liquidity below `runway_veto_quarters` (default **1.5**) of burn, when the
+  balance sheet is neither stale nor superseded
 
 Soft flags (shelf registrations, officer departures, charter amendments, new
 debt, stale or superseded financials) annotate but do not block.
+
+**Both runway thresholds live in `watchlist.toml [settings]`, and they have to
+stay ordered.** The veto bar was a bare `1.5` inside `financial_vetoes()` while
+its counterpart `min_runway_quarters_for_act` — the bar for *clearing* a name —
+was configurable: the looser rule was the one you could see and tune, and the
+one that blocks a name outright was neither. Set the veto above the ACT bar and
+the band between them inverts, so a name in it is simultaneously proof of
+distress and proof of a sound balance sheet — the same contradiction the
+superseded-runway fix below exists to remove. `main()` warns when they are the
+wrong way round.
 
 **The runway veto and `runway_ok` must agree about which balance sheets they
 trust.** They did not: ACT already refused a `superseded_by` runway as
@@ -152,6 +198,15 @@ threads it through `_days_ago`, `evaluate_filings`, `financial_vetoes`,
 `load_catalysts`, `resolved_catalysts`, `next_catalyst` and `analyse`; those
 functions require it rather than defaulting, because a default is silent when
 wrong and nothing in the output records which clock produced a `days_ago`.
+
+`analyse` was the exception, and it is the function every signal flows through.
+It defaulted to today "so an ad-hoc caller need not construct one", with its own
+docstring conceding that the default was what made the function's determinism
+conditional — which is a plain statement that the convenience cost the property.
+An ad-hoc caller did not get a slightly inconvenient answer; it got a different
+one on Tuesday than on Monday, with nothing in the output to say so. It now
+requires `asof` like the rest, and the tests name their session rather than
+inheriting the day they happen to run on.
 
 The two clocks diverge whenever `signals.py` runs on a different day from the
 fetch — re-running it to pick up a watchlist edit (which this file recommends,
@@ -219,7 +274,14 @@ $400M ATM programme, and a PRAX item 4.01 as a clean auditor change.
 That is the whole of it. The last two conditions used to live only in the
 sections that derived them — "The finding that matters most" and "Market regime"
 — so this list, which is where a reader looks for the definition, described a
-looser tier than the code has fired since. **The financing half accepts a
+looser tier than the code has fired since. They are now **pinned by tests as
+well as by prose**: a documented gate with no test is a gate that can go quiet
+without anything failing, and the regime half in particular had neither a test
+of its own nor one of `market_regime()`, on the condition that decides whether
+the desk's only actionable tier fires at all. Both directions are asserted — a
+downtrend holds a moderate name at SETUP, and a strong one still reaches ACT —
+because a gate that merely blocked would make the tier unreachable for months
+at a time and look identical to a quiet market. **The financing half accepts a
 cash-generative company.** `runway()` returns quarters of liquidity at the
 current burn, and a company that funds itself from operations has no such
 number; folding that into `None` made `runway_ok` read the strongest balance
@@ -267,11 +329,21 @@ scoring a threshold the desk had already abandoned. The retired pair is kept as
 through `propose_zones.zone_from_closes()` for the same reason: one
 implementation, so the instrument cannot score a paraphrase of the rule.
 
-The benchmarks are **excluded from the universe** (`NOT_CANDIDATES`). XBI and
-IBB sit in the same `bars` table as the watchlist, and scoring them diluted the
-baseline every edge here is measured against while letting the rules fire on the
-very thing they are supposed to beat. `score_alerts.backfill` always excluded
-them; this file did not.
+The benchmarks are **excluded from the universe** (`signals.NOT_CANDIDATES`).
+XBI and IBB sit in the same `bars` table as the watchlist, and scoring them
+diluted the baseline every edge here is measured against while letting the rules
+fire on the very thing they are supposed to beat. `score_alerts.backfill` always
+excluded them; this file did not.
+
+That list was then written three times, spelled three ways: `NOT_CANDIDATES` in
+`backtest.py`, an inline `(BENCHMARK, "IBB")` in `score_alerts.py`, and
+`BENCHMARKS` in `fetch.py`. Adding a third benchmark would have updated one of
+them and silently left the ETF in the universe of the others — scored as a
+candidate by the very instrument that measures whether the rules beat it. There
+is one definition now, in `signals.py`, and `paper.py` imports `BENCHMARK`
+instead of retyping `"XBI"`. Stage 2 deliberately does not import stage 1, so a
+test pins `signals.NOT_CANDIDATES` to `fetch.BENCHMARKS` instead: **adding a
+benchmark to the fetch fails the suite until it is added to both.**
 
 #### Does a stale zone deserve to open ACT?
 
@@ -455,6 +527,12 @@ case, not a buy list. SETUP means "research this", and the concentration
 question is exactly what happens if the research says yes to all of them at
 once.
 
+"Nothing else computes this" was also true of its test coverage until recently.
+Both branches are now driven through `main()`: over-committed, where
+`scale_factor_needed` is the fraction to multiply every size by, and within the
+ceiling, where it is `1.0` rather than absent — the report multiplies by it
+unconditionally, so an omitted value would size every position at zero.
+
 ## Heartbeat
 
 `pharma-heartbeat.timer` / `com.pharma.heartbeat` (Mon-Fri) alerts if no report
@@ -490,6 +568,19 @@ A missing file is not a fault either — it means notify.py has not run since th
 was added. The alarm still goes out over the same channels it is reporting on,
 which is why the heartbeat also exits non-zero: when the fault *is* delivery,
 the scheduler's journal may be the only record that survives.
+
+**Every path out of `notify.main()` writes the record, including the two that
+send nothing worth celebrating.** Because a missing file is deliberately not a
+fault, any path that returns without writing one is a path whose outcome cannot
+be observed — and both of them were exactly the paths where something had
+already gone wrong:
+
+- `--failure`, the notice sent when the run itself died, recorded nothing. It is
+  the one send with nothing downstream of it to notice that it never arrived.
+- An empty config returned before writing anything, which made the "nowhere to
+  send" branch above unreachable in the case it most obviously describes: a
+  machine with no configuration at all. The fault has to be written down to be
+  noticed.
 
 ## Market regime
 
@@ -569,12 +660,27 @@ be recomputed as prices move. Method:
 - **Too soon** — under 25 sessions in the window means no zone is written and ACT
   stays disabled for that name.
 - `entry_high` = the **higher** of the window's 25th percentile and a realistic
-  pullback level, the latter being the 50-day average capped 5% below spot. A
-  pure distribution percentile is useless for a name in a strong uptrend: it
-  returns the price before the re-rating, which the stock never revisits if the
-  thesis is working, and SLS at $12.36 was handed a "buy zone" of $1.91. Taking
-  the higher of the two means the zone tracks the current regime without ever
-  amounting to chasing.
+  pullback level, the latter being the average of the window's last 50 sessions
+  capped 5% below spot. A pure distribution percentile is useless for a name in
+  a strong uptrend: it returns the price before the re-rating, which the stock
+  never revisits if the thesis is working, and SLS at $12.36 was handed a "buy
+  zone" of $1.91. Taking the higher of the two means the zone tracks the current
+  regime without ever amounting to chasing.
+
+  **Both legs read the anchor window and nothing outside it.** The pullback leg
+  averaged `closes[-50:]`, which reaches back through the break for any name
+  whose post-collapse window is shorter than 50 sessions — so the prices the
+  window exists to exclude came back in through the other half of the same
+  `max()`, and the zone rose on exactly the freshest collapses. The 5%-below-spot
+  cap hid most of it, which is why it survived: `min()` only lets the average
+  through when the name is already trading above it, and when the contamination
+  is large the cap fires and the zone silently becomes "5% under wherever this
+  happens to trade" — the one outcome the cap exists to prevent. The window is
+  never shorter than 25 sessions, so the average always has something to
+  describe. Re-running the backtest afterwards moved nothing: the two zone rows
+  below are unchanged to the last decimal, because the trailing-1y branch makes
+  `window[-50:]` and `closes[-50:]` the same list and only a 25-to-49-session
+  post-collapse window can differ.
 - `entry_low` = 22% under `entry_high`, a **scale-in reference and not a gate**.
   A price below it is cheaper, not disqualifying — gating on a floor would
   reject a name making new lows while oversold and unvetoed, which is precisely
@@ -638,9 +744,21 @@ What the buckets *mean*, and the reasoning behind the ceilings, is in
 
 `scripts/screen.py` widens the aperture beyond the watchlist. Two stages because
 the universe is too large to fetch fully: a cheap prices-only pass over every
-biotech-shaped SEC registrant (~550, matched by company-name fragments since the
-company list carries no sector field), then the normal pipeline on the shortlist
-only. Skips anything under $0.50 or below $500k median daily dollar volume.
+biotech-shaped SEC registrant (~590 today, matched by company-name fragments
+since the company list carries no sector field), then the normal pipeline on the
+shortlist only. Skips anything under $0.50 or below $500k median daily dollar
+volume.
+
+**`--limit` defaults to off, and when set it samples rather than truncates.**
+`build_universe` sorts for determinism and then took `out[:limit]`, so the cap
+was decided by the alphabet: at the old default of 500 against a real universe
+of 591, every name from `SPTX` onward was invisible — and invisible *every*
+month, since the same 91 were cut on every run. The documented `--limit 400`
+hid 191. A blind spot fixed by spelling is the last thing that belongs in the
+one tool whose whole job is looking outside the watchlist. A cap now takes an
+evenly spaced stride across the full list and prints how many names it skipped,
+because a cap nobody is told about reads as "we looked at everything, and this
+is what there was".
 
 ## Paper trading
 

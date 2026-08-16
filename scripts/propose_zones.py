@@ -16,10 +16,13 @@ you can disagree with it precisely, and re-run it whenever your view changes:
                   for that name until there is one.
 
   entry_high      The higher of (a) the 25th percentile of the window and (b) a
-                  realistic pullback level -- the 50-day average, capped 5% below
-                  spot. Percentiles alone are useless for a name in a strong
-                  uptrend: they return the price before it re-rated, which it
-                  will never revisit if the thesis is working.
+                  realistic pullback level -- the average of the window's last
+                  50 sessions, capped 5% below spot. Percentiles alone are
+                  useless for a name in a strong uptrend: they return the price
+                  before it re-rated, which it will never revisit if the thesis
+                  is working. Both legs read the anchor window and nothing
+                  outside it, so a post-collapse zone cannot be lifted by prices
+                  from before the break.
 
   entry_low       A scale-in reference 22% under entry_high. It is NOT a gate --
                   a price below it is cheaper, not disqualifying. Deciding
@@ -114,11 +117,23 @@ def zone_from_closes(closes: list[float]) -> dict | None:
     # SLS at $12.36 would get a "buy zone" of $1.91, the price before it
     # re-rated, which it will never revisit if the thesis is working. So the
     # zone is the higher of the distribution level and a realistic pullback --
-    # the 50-day average, capped at 5% below spot so we never define a zone that
-    # amounts to chasing.
+    # the trailing average, capped at 5% below spot so we never define a zone
+    # that amounts to chasing.
+    #
+    # Averaged over the ANCHOR WINDOW, not over `closes`. Taking closes[-50:]
+    # reached back through the break for any name whose post-collapse window is
+    # shorter than 50 sessions, which is the whole reason the window exists:
+    # pre-break prices describe a company that no longer trades. The percentile
+    # leg respected that and the pullback leg quietly did not, so the excluded
+    # prices came back in through the other half of the same max(). The cap hid
+    # most of it -- min() with last*0.95 only lets the average through when the
+    # name is already above it -- and it went wrong in the one direction that
+    # matters, raising the zone on the freshest collapses, which is exactly the
+    # falling-knife case. The window is never shorter than MIN_WINDOW_BARS, so
+    # this always averages at least 25 sessions.
     last = closes[-1]
-    sma50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else None
-    pullback = min(sma50, last * 0.95) if sma50 else last * 0.95
+    tail = window[-50:]
+    pullback = min(sum(tail) / len(tail), last * 0.95)
     hi = max(dist, pullback)
     return {
         "entry_high": round_price(hi),
@@ -129,7 +144,7 @@ def zone_from_closes(closes: list[float]) -> dict | None:
         # that justified the zone no longer exists. Mechanical and overridable.
         "invalidation_price": round_price(min(window) * 0.95),
         "window_note": note,
-        "anchor": "distribution" if dist >= pullback else "pullback to SMA50",
+        "anchor": "distribution" if dist >= pullback else "pullback to the window average",
         "window_bars": len(window),
     }
 

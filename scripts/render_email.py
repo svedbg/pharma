@@ -288,8 +288,11 @@ def _pill(label: str, value, colour: str) -> str:
 
 # Gmail clips a message body past roughly 102KB and hides the rest behind a
 # "View entire message" link -- which on a phone is exactly where the reader
-# gives up. Markdown expands to ~4x its size once inlined styles are added, so
-# the source is trimmed well before that.
+# gives up. This is only the first guess at a size: expansion under inline
+# styles is nothing like uniform -- a wide markdown table grows ~11x once every
+# cell carries its own CSS, while prose grows ~3x -- which is why
+# build_email_html() below measures the rendered bytes and re-renders rather
+# than trusting any character budget, this one included.
 MAX_MD_CHARS = 12_000
 
 

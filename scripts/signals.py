@@ -74,10 +74,31 @@ SETUP_RSI, SETUP_PCTB = 35.0, 0.15
 WATCH_RSI, WATCH_PCTB = 40.0, 0.25
 CAPITULATION_VOL = 1.5
 RSI_TRAP = 22.0
+# Quarters of liquidity below which a dilutive raise is near-certain, and the
+# name takes a hard veto. Named because it was a bare 1.5 buried inside
+# financial_vetoes() while its counterpart -- min_runway_quarters_for_act, the
+# bar for *clearing* a name -- was configurable in watchlist.toml [settings].
+# The looser of the two rules was the one you could see and tune; the one that
+# blocks outright was neither. Overridable the same way, so the pair can be
+# moved together and stay ordered.
+RUNWAY_VETO_QUARTERS = 1.5
 # Edge decays to nothing by 60 sessions: this is a bounce signal, not a hold.
 SIGNAL_HORIZON_SESSIONS = 20
 # Equal-weighted small/mid-cap biotech -- the honest comparison for this list.
 BENCHMARK = "XBI"
+# Every ETF fetch.py stores in the bars table. They are not candidates and must
+# not be scored as if they were: an ETF's ticker-days dilute the "every day,
+# every name" baseline that every edge is measured against, and the rules can
+# fire on the very thing they are supposed to beat.
+#
+# One definition because there were three, all spelled differently:
+# backtest.NOT_CANDIDATES, an inline (BENCHMARK, "IBB") in score_alerts, and
+# fetch.BENCHMARKS. Adding a third benchmark would have updated one of them and
+# silently left the ETF in the universe of the others. Stage 2 does not import
+# stage 1 -- the separation is deliberate -- so a test pins this list to
+# fetch.BENCHMARKS instead, and adding a benchmark there fails the suite until
+# it is added here too.
+NOT_CANDIDATES = (BENCHMARK, "IBB")
 # Price this far from its entry zone means the zone predates the current regime.
 ZONE_STALE_DRIFT_PCT = 25.0
 
@@ -705,7 +726,7 @@ def move_profile(bars: list[dict], bench_bars: list[dict]):
     return out
 
 
-def tradability(bars: list[dict], settings: dict):
+def tradability(bars: list[dict]):
     """Can a real position actually be built and exited here?
 
     A perfect signal in a stock trading $80k a day is not actionable at a 28%
@@ -734,7 +755,10 @@ def conviction(out: dict, hard: list, catalyst_soon: bool) -> dict:
     It took a `soft` list it never read. The soft flags that count against a
     name -- a stale or superseded balance sheet -- are read from `out["runway"]`
     instead, so nothing was lost, but a parameter nobody uses invites the next
-    reader to add a flag to the list and expect it to score.
+    reader to add a flag to the list and expect it to score. Three more of them
+    survived that clean-up: `settings` in tradability() and financial_vetoes(),
+    and `price` in insider_signal(). Two are now gone; the third is real,
+    because financial_vetoes() reads the runway veto threshold from it.
 
     This is a transparent checklist, NOT a validated model -- the components are
     listed so any one of them can be disputed. Its value is that it refuses to
@@ -795,7 +819,7 @@ def conviction(out: dict, hard: list, catalyst_soon: bool) -> dict:
     return {"score": score, "label": label, "supporting": plus, "against": minus}
 
 
-def insider_signal(ins: dict, price: float | None):
+def insider_signal(ins: dict):
     """Summarise Form 4 activity into something decision-shaped.
 
     Only open-market purchases (code P) reached here -- grants and option
@@ -944,6 +968,7 @@ def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dic
     corresponds to a case that once produced a wrong answer, and it needs to be
     readable on its own.
     """
+    veto_below = float(settings.get("runway_veto_quarters", RUNWAY_VETO_QUARTERS))
     # Financing pressure is its own veto: a company inside one quarter of cash
     # will raise, and it will raise at a discount to wherever the price is.
     for ev in out["recent_events"]:
@@ -1015,7 +1040,7 @@ def financial_vetoes(out: dict, rec: dict, hard: list, soft: list, settings: dic
             "reason": f"balance sheet is {rw.get('age_days')} days old -- runway estimate unreliable, verify before sizing",
             "url": None,
         })
-    elif rw and rw["quarters"] is not None and rw["quarters"] < 1.5:
+    elif rw and rw["quarters"] is not None and rw["quarters"] < veto_below:
         sup = rw.get("superseded_by")
         if sup:
             # The same figure cannot be too old to clear a name and fresh enough
@@ -1107,7 +1132,7 @@ def technical_metrics(bars: list[dict], closes: list[float], vols: list[float]) 
 def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
             catalysts: dict | None = None, regime: dict | None = None,
             resolved: dict | None = None, last_alerts: dict | None = None,
-            *, asof: date | None = None) -> dict:
+            *, asof: date) -> dict:
     """Turn one ticker's facts into flags and a tier.
 
     `asof` is the date the snapshot describes, and every age and window is
@@ -1118,11 +1143,17 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
     waiting for a fetch -- otherwise dated every veto window from the day you
     happened to re-run it.
 
-    It defaults to today only so an ad-hoc caller need not construct one, and
-    that default is what makes this function's determinism conditional: pass it
-    to get the same answer twice.
+    Required, like every other function here that measures an age. It used to
+    default to today "so an ad-hoc caller need not construct one", with the
+    docstring conceding that the default was what made this function's
+    determinism conditional -- which is a plain statement that the convenience
+    cost the property. This is the function every signal flows through, and the
+    whole argument for threading `asof` is that a default is silent when wrong:
+    nothing in the output records which clock produced a `days_ago`, so an
+    ad-hoc caller does not get a slightly inconvenient answer, it gets a
+    different one on Tuesday than on Monday with nothing to say so. Constructing
+    a date is the cheaper half of that trade.
     """
-    asof = asof or date.today()
     # bars and closes must stay index-aligned: crash_scan maps a closes index
     # back to bars[i]["date"], so filtering one list and not the other would
     # pin a collapse to the wrong session.
@@ -1160,12 +1191,12 @@ def analyse(rec: dict, settings: dict, bench_bars: list | None = None,
     out["event_move"] = bool(chg1 is not None and abs(chg1) >= 15.0)
     out["recent_events"] = crash_scan(bars, closes, rec.get("filings"))
     out["relative_strength"] = relative_strength(bars, bench_bars or [])
-    out["insiders"] = insider_signal(rec.get("insiders"), last)
+    out["insiders"] = insider_signal(rec.get("insiders"))
     out["short"] = short_signal(rec.get("short_interest") or [], rec.get("short_volume") or [])
     out["move"] = move_profile(bars, bench_bars or [])
     out["float"] = float_metrics(rec.get("financials") or {}, bars, rec.get("short_interest") or [])
     out["catalysts"] = (catalysts or {}).get(rec["symbol"], [])[:3]
-    out["tradability"] = tradability(bars, settings)
+    out["tradability"] = tradability(bars)
     out["links"] = chart_links(rec["symbol"], rec.get("cik"))
     out["links_md"] = links_markdown(rec["symbol"], out["links"])
 
@@ -1496,6 +1527,21 @@ def main() -> int:
     snap = localconfig.require_data(Path(args.snapshot))
     cfg = tomllib.loads(Path(args.watchlist).read_text())
     settings = cfg.get("settings", {})
+
+    # The two runway thresholds have to stay ordered. Above the ACT bar a name
+    # is cleared to act on; below the veto bar it is blocked outright; between
+    # them it is merely unremarkable. Set the veto higher than the ACT bar and
+    # the band inverts: a name in it is simultaneously proof of distress and
+    # proof of a sound balance sheet, which is exactly the contradiction the
+    # superseded-runway fix exists to prevent -- one figure too weak to clear a
+    # name and strong enough to clear it at the same time.
+    veto_q = float(settings.get("runway_veto_quarters", RUNWAY_VETO_QUARTERS))
+    act_q = float(settings.get("min_runway_quarters_for_act", 3))
+    if veto_q > act_q:
+        print(f"[signals] WARNING: runway_veto_quarters ({veto_q}) is above "
+              f"min_runway_quarters_for_act ({act_q}), so a name between them is "
+              f"both vetoed and cleared. Fix watchlist.toml [settings].",
+              file=sys.stderr)
 
     # Every age and window below is measured from the session the snapshot
     # describes, not from the wall clock. The two differ whenever signals.py

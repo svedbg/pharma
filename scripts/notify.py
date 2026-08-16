@@ -225,11 +225,30 @@ def main() -> int:
         # message a new user sees named the wrong path.
         print(f"[notify] no config at {localconfig.CONFIG_FILES[0]}; nothing sent",
               file=sys.stderr)
+        # Recorded, not just printed. heartbeat.delivery_fault() reports "no
+        # delivery channel configured" from this file, and returning here
+        # without writing it made that branch unreachable in the one case it
+        # most obviously describes: a machine with no config at all. A missing
+        # record is correctly not a fault, so the fault has to be written down.
+        record_delivery("", {"ntfy": None, "email": None}, {"ntfy": False, "email": False})
         return 0
 
+    configured = configured_channels(cfg)
+
     if args.failure:
+        # Recorded like any other send. Delivery is the one stage with no
+        # evidence of its own, and this was the send with none at all -- the
+        # notification that goes out precisely when something has already gone
+        # wrong, on a path where nothing afterwards would notice it never
+        # arrived. Keyed to no session because a failed run has none.
+        channels: dict[str, bool | None] = {"ntfy": None, "email": None}
         ok_push = send_ntfy(cfg, "Biotech desk FAILED", args.failure, priority="high", tags="warning")
+        if configured["ntfy"]:
+            channels["ntfy"] = ok_push
         ok_mail = send_email(cfg, "[biotech desk] run failed", args.failure)
+        if configured["email"]:
+            channels["email"] = ok_mail
+        record_delivery("", channels, configured)
         print(f"[notify] ntfy sent={ok_push} email sent={ok_mail}", file=sys.stderr)
         return 0
 
@@ -240,7 +259,6 @@ def main() -> int:
 
     # None until a channel is actually attempted *and* configured, so "quiet
     # day, email only" stays distinguishable from "ntfy is broken".
-    configured = configured_channels(cfg)
     channels: dict[str, bool | None] = {"ntfy": None, "email": None}
 
     if has_alerts or cfg.get("NTFY_ALWAYS", "0") == "1":

@@ -177,9 +177,37 @@ def http_get(url: str, ua: str = BROWSER_UA, tries: int = 3, timeout: int = 30) 
     raise FetchError(f"{last} for {url}")
 
 
+def get_json(url: str, ua: str = BROWSER_UA, **kw) -> dict:
+    """GET and decode, raising FetchError for a body that is not JSON.
+
+    Every caller here guards against FetchError and nothing else, so a bare
+    `json.loads(http_get(...))` had a hole straight through all of it: a
+    provider that answers HTTP 200 with an HTML error page -- a captive portal,
+    a Cloudflare interstitial, a maintenance notice -- raises JSONDecodeError,
+    which is not a FetchError and is caught by none of them.
+
+    The consequence was out of all proportion to the cause. In build_record the
+    only thing left to catch it is the blanket `except` around fut.result(), so
+    ONE malformed trials or short-interest response discarded the whole ticker,
+    including price bars that had already been fetched successfully. And
+    fetch_bars could not fall back: a Nasdaq error page killed the record
+    instead of failing over to Yahoo, which is the entire reason two providers
+    are wired up. A decode failure is exactly what "this source did not answer"
+    looks like, so it is reported as that.
+    """
+    body = http_get(url, ua=ua, **kw)
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as e:
+        # The first bytes identify the impostor -- a portal login page, an
+        # HTML error, an empty body -- without dumping a megabyte into the log.
+        head = body[:120].decode("utf-8", "replace").replace("\n", " ").strip()
+        raise FetchError(f"non-JSON response from {url}: {e} -- starts {head!r}") from e
+
+
 def sec_get(url: str) -> dict:
     SEC_LIMITER.wait()
-    return json.loads(http_get(url, ua=sec_ua()))
+    return get_json(url, ua=sec_ua())
 
 
 # --------------------------------------------------------------------------- db
@@ -259,7 +287,7 @@ def fetch_bars_nasdaq(symbol: str, lookback_days: int, asset_class: str = "stock
         f"?assetclass={asset_class}&fromdate={start}&todate={end}&limit=9999"
     )
     PRICE_LIMITER.wait()
-    payload = json.loads(http_get(url))
+    payload = get_json(url)
     if (payload.get("status") or {}).get("rCode") != 200:
         raise FetchError(f"nasdaq rCode {(payload.get('status') or {}).get('rCode')}")
 
@@ -318,7 +346,7 @@ def fetch_bars_yahoo(symbol: str, lookback_days: int) -> tuple[list[dict], dict]
         )
         try:
             PRICE_LIMITER.wait()
-            payload = json.loads(http_get(url))
+            payload = get_json(url)
         except FetchError as e:
             last_err = str(e)
             continue
@@ -398,14 +426,56 @@ def load_cik_map(force: bool = False) -> dict[str, dict]:
     makes a 50-name watchlist practical -- nobody is hand-entering sponsors.
     """
     cache = DATA / "cik_map.json"
-    if cache.exists() and not force:
-        age = time.time() - cache.stat().st_mtime
-        if age < 7 * 86400:
-            cached = json.loads(cache.read_text())
-            if cached and isinstance(next(iter(cached.values())), dict):
-                return cached  # ignore the older ticker->str format
 
-    raw = json.loads(http_get("https://www.sec.gov/files/company_tickers.json", ua=sec_ua()))
+    def cached_map() -> dict | None:
+        """The map on disk, at any age, or None if it is unusable.
+
+        A corrupt cache is a file we wrote ourselves, so it is repairable by
+        refetching -- but it used to raise JSONDecodeError out of the first
+        statement of the run, before a single price had been requested.
+        """
+        if not cache.exists():
+            return None
+        try:
+            cached = json.loads(cache.read_text())
+        except (json.JSONDecodeError, OSError):
+            return None
+        # Shape-checked, not just parsed. A file that is valid JSON but not a
+        # mapping makes `.values()` raise AttributeError, which no caller
+        # guards -- and this function is now the fallback for a failed fetch,
+        # so raising here would take the run down by the very path added to
+        # keep it alive.
+        if not isinstance(cached, dict) or not cached:
+            return None
+        if isinstance(next(iter(cached.values())), dict):
+            return cached  # ignore the older ticker->str format
+        return None
+
+    if not force:
+        age = time.time() - cache.stat().st_mtime if cache.exists() else None
+        if age is not None and age < 7 * 86400 and (fresh := cached_map()):
+            return fresh
+
+    try:
+        raw = get_json("https://www.sec.gov/files/company_tickers.json", ua=sec_ua())
+    except FetchError as e:
+        # This is the first request the run makes, and until now its failure
+        # ended the run before a single price was fetched. But CIKs move at the
+        # pace of corporate actions, not of trading days: a map a fortnight old
+        # resolves every name on the watchlist except one that was renamed in
+        # the meantime -- and a rename already presents as "no CIK in SEC ticker
+        # map", which the record carries as an error and CLAUDE.md tells the
+        # reader to re-check by hand. Running on a stale map costs one stale
+        # company title; refusing to run costs the whole day.
+        stale = cached_map()
+        if stale is None:
+            raise
+        days = (time.time() - cache.stat().st_mtime) / 86400
+        print(f"[fetch] WARNING: SEC ticker map unavailable ({e}); falling back to the "
+              f"cached copy, {days:.0f} day(s) old. A ticker renamed since then will "
+              f"report 'no CIK in SEC ticker map'.", file=sys.stderr)
+        return stale
+
     mapping = {
         row["ticker"].upper(): {"cik": str(row["cik_str"]).zfill(10), "title": row["title"]}
         for row in raw.values()
@@ -847,7 +917,7 @@ def fetch_short_interest(symbol: str) -> list[dict]:
            f"/short-interest?assetclass=stocks")
     try:
         PRICE_LIMITER.wait()
-        payload = json.loads(http_get(url))
+        payload = get_json(url)
     except FetchError:
         return []
     rows = ((payload.get("data") or {}).get("shortInterestTable") or {}).get("rows") or []
@@ -920,7 +990,7 @@ def fetch_trials(sponsor: str) -> list[dict]:
     )
     try:
         TRIALS_LIMITER.wait()
-        data = json.loads(http_get(f"https://clinicaltrials.gov/api/v2/studies?{params}"))
+        data = get_json(f"https://clinicaltrials.gov/api/v2/studies?{params}")
     except FetchError:
         return []
 

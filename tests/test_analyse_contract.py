@@ -18,6 +18,11 @@ import signals
 
 SETTINGS = {"max_position_pct": 28, "max_position_pct_lottery": 5,
             "min_cash_reserve_pct": 15, "min_runway_quarters_for_act": 3}
+# _bars() lays its fixtures out from 2026-01-01, so this sits just past the
+# last of them. analyse() requires a session rather than defaulting to today:
+# a test whose answer depends on the day it runs is a flake waiting for a
+# threshold to drift underneath it.
+SESSION = date(2026, 6, 1)
 
 
 def _bars(prices, vol=1_000_000):
@@ -36,7 +41,7 @@ def _rec(prices, **kw):
 
 
 def test_returns_no_data_without_enough_history():
-    out = signals.analyse(_rec([10.0] * 5), SETTINGS)
+    out = signals.analyse(_rec([10.0] * 5), SETTINGS, asof=SESSION)
     assert out["tier"] == "NO_DATA"
     assert "insufficient" in out["reasons"][0]
 
@@ -44,7 +49,7 @@ def test_returns_no_data_without_enough_history():
 def test_output_carries_the_keys_the_report_depends_on():
     """The report and the email renderer index these directly; a rename here
     silently empties sections downstream."""
-    out = signals.analyse(_rec([10.0 + (i % 9) * 0.3 for i in range(120)]), SETTINGS)
+    out = signals.analyse(_rec([10.0 + (i % 9) * 0.3 for i in range(120)]), SETTINGS, asof=SESSION)
     for key in ("symbol", "bucket", "tier", "reasons", "price", "technicals",
                 "max_position_pct", "hard_vetoes", "soft_flags", "recent_events",
                 "conviction", "exit_flags", "links", "links_md", "tradability"):
@@ -56,9 +61,9 @@ def test_output_carries_the_keys_the_report_depends_on():
 
 
 def test_lottery_bucket_gets_the_smaller_ceiling():
-    out = signals.analyse(_rec([10.0] * 40 + [10.5] * 40, tier="lottery"), SETTINGS)
+    out = signals.analyse(_rec([10.0] * 40 + [10.5] * 40, tier="lottery"), SETTINGS, asof=SESSION)
     assert out["max_position_pct"] == 5
-    assert signals.analyse(_rec([10.0] * 80, tier="A"), SETTINGS)["max_position_pct"] == 28
+    assert signals.analyse(_rec([10.0] * 80, tier="A"), SETTINGS, asof=SESSION)["max_position_pct"] == 28
 
 
 def test_a_hard_veto_blocks_setup():
@@ -66,8 +71,8 @@ def test_a_hard_veto_blocks_setup():
     falling = [100 - i * 1.5 for i in range(60)]
     veto = [{"form": "424B5", "filed": "2026-01-01", "items": "",
              "offering_type": "priced", "url": "u"}]
-    clean = signals.analyse(_rec(falling), SETTINGS)
-    vetoed = signals.analyse(_rec(falling, filings=veto), SETTINGS)
+    clean = signals.analyse(_rec(falling), SETTINGS, asof=SESSION)
+    vetoed = signals.analyse(_rec(falling, filings=veto), SETTINGS, asof=SESSION)
     assert vetoed["tier"] != "ACT"
     assert len(vetoed["hard_vetoes"]) >= len(clean["hard_vetoes"])
 
@@ -76,7 +81,7 @@ def test_act_requires_a_declared_zone():
     """Without entry_high the ACT tier is structurally unreachable, and the
     reasons must say so rather than failing silently."""
     falling = [100 - i * 1.5 for i in range(60)]
-    out = signals.analyse(_rec(falling), SETTINGS)
+    out = signals.analyse(_rec(falling), SETTINGS, asof=SESSION)
     assert out["tier"] != "ACT"
     if out["tier"] == "SETUP":
         assert any("no entry zone" in r for r in out["reasons"])
@@ -84,7 +89,7 @@ def test_act_requires_a_declared_zone():
 
 def test_stale_zone_is_flagged_as_a_soft_flag():
     prices = [10.0] * 60 + [20.0] * 20          # price far above its zone
-    out = signals.analyse(_rec(prices, entry_high=10.0, entry_low=8.0), SETTINGS)
+    out = signals.analyse(_rec(prices, entry_high=10.0, entry_low=8.0), SETTINGS, asof=SESSION)
     assert out["zone_stale"] is True
     flag = next(f for f in out["soft_flags"] if f["form"] == "stale entry zone")
     # Above the zone, in_zone is False and ACT genuinely cannot fire.
@@ -118,8 +123,100 @@ def test_a_zone_stale_to_the_downside_does_not_claim_to_block_act():
     assert "ACT can still fire" in flag["reason"]
 
 
+def _act_ready(entry_high_ratio=0.70):
+    """A record that reaches ACT: oversold, in zone, funded, volume-confirmed.
+
+    Shared by the regime tests below so the only thing varying between them is
+    the regime and the conviction score.
+    """
+    prices = [100.0 * (0.985**i) for i in range(90)]
+    bars = _bars(prices)
+    bars[-1]["volume"] = 4_000_000                # capitulation
+    rec = _rec(prices, entry_high=round(prices[-1] / entry_high_ratio, 4), entry_low=1.0)
+    rec["bars"] = bars
+    rec["financials"] = {"liquidity": {"total_usd": 9e8, "as_of": "2026-03-31",
+                                       "age_days": 20},
+                         "burn": {"quarterly_usd": -3e7}}
+    rec["insiders"] = {"distinct_buyers": 3, "buy_value_usd": 900_000,
+                       "sell_value_usd": 0, "net_value_usd": 900_000,
+                       "lookback_days": 120, "buys": []}
+    return rec
+
+
+def test_a_falling_sector_raises_the_bar_to_act_rather_than_blocking():
+    """One of the two conditions CLAUDE.md's tier list did not describe.
+
+    In a downtrend the same setup is a worse bet, so ACT demands a `strong`
+    conviction score -- the signal stays visible at SETUP rather than
+    disappearing. Nothing tested this, on a gate that decides whether the desk's
+    only actionable tier fires at all.
+    """
+    rec = _act_ready()
+    moderate = signals.analyse(rec, SETTINGS, regime={"label": "downtrend"},
+                               asof=date(2026, 4, 1))
+    assert moderate["conviction"]["label"] != "strong", "test setup"
+    assert moderate["tier"] == "SETUP", "a downtrend must hold this back from ACT"
+    assert any("falling sector" in r for r in moderate["reasons"]), moderate["reasons"]
+
+    # The identical name in a rising sector is actionable, so the regime is what
+    # made the difference and not some other half of the ACT condition.
+    for label in ("uptrend", "mixed"):
+        out = signals.analyse(_act_ready(), SETTINGS, regime={"label": label},
+                              asof=date(2026, 4, 1))
+        assert out["tier"] == "ACT", label
+
+
+def test_a_strong_conviction_still_reaches_act_in_a_downtrend():
+    """The bar rises, it does not close. A downtrend that blocked ACT outright
+    would make the whole tier unreachable for months at a time."""
+    cats = {"TEST": [{"date": "2026-05-15", "days_until": 44, "kind": "PDUFA",
+                      "description": "decision"}]}
+    out = signals.analyse(_act_ready(), SETTINGS, catalysts=cats,
+                          regime={"label": "downtrend"}, asof=date(2026, 4, 1))
+    assert out["conviction"]["label"] == "strong", out["conviction"]
+    assert out["tier"] == "ACT"
+
+
+def test_market_regime_reads_the_benchmark_against_its_own_200_day_average():
+    """`regime` gates ACT and had no test at all.
+
+    A downtrend is simply "below the 200-day"; an uptrend additionally requires
+    that average to be *rising*, so a dead-cat bounce back above a still-falling
+    line reads as mixed rather than as a recovery.
+    """
+    rising = [{"adjclose": 100.0 + i * 0.2} for i in range(260)]
+    assert signals.market_regime(rising)["label"] == "uptrend"
+
+    falling = [{"adjclose": 200.0 - i * 0.2} for i in range(260)]
+    down = signals.market_regime(falling)
+    assert down["label"] == "downtrend"
+    assert down["pct_vs_sma200"] < 0
+    assert down["benchmark"] == signals.BENCHMARK
+
+    # Above a 200-day average that is still falling: not yet an uptrend.
+    bounce = [{"adjclose": 200.0 - i * 0.2} for i in range(250)]
+    bounce += [{"adjclose": 200.0} for _ in range(10)]
+    assert signals.market_regime(bounce)["label"] == "mixed"
+
+    # Too little history is unknown, never a label to act on.
+    assert signals.market_regime([{"adjclose": 100.0}] * 50) is None
+
+
+def test_analyse_refuses_to_guess_which_session_it_is_analysing():
+    """Every other function here that measures an age requires `asof`; this one
+    defaulted to today, and it is the function every signal flows through.
+
+    Its own docstring conceded the default "is what makes this function's
+    determinism conditional". Nothing in the output records which clock produced
+    a `days_ago`, so an ad-hoc caller did not get a slightly inconvenient
+    answer -- it got a different one on Tuesday than on Monday, silently.
+    """
+    with pytest.raises(TypeError):
+        signals.analyse(_rec([10.0] * 80), SETTINGS)
+
+
 def test_conviction_is_always_present_and_labelled():
-    out = signals.analyse(_rec([10.0 + (i % 5) * 0.2 for i in range(120)]), SETTINGS)
+    out = signals.analyse(_rec([10.0 + (i % 5) * 0.2 for i in range(120)]), SETTINGS, asof=SESSION)
     assert out["conviction"]["label"] in ("strong", "moderate", "weak", "avoid")
     assert isinstance(out["conviction"]["supporting"], list)
     assert isinstance(out["conviction"]["against"], list)
@@ -128,8 +225,8 @@ def test_conviction_is_always_present_and_labelled():
 def test_deterministic_for_the_same_input():
     """Stage 2 must be pure arithmetic: identical input, identical output."""
     rec = _rec([10.0 + (i % 11) * 0.4 for i in range(150)])
-    a = json.dumps(signals.analyse(rec, SETTINGS), sort_keys=True, default=str)
-    b = json.dumps(signals.analyse(rec, SETTINGS), sort_keys=True, default=str)
+    a = json.dumps(signals.analyse(rec, SETTINGS, asof=SESSION), sort_keys=True, default=str)
+    b = json.dumps(signals.analyse(rec, SETTINGS, asof=SESSION), sort_keys=True, default=str)
     assert a == b
 
 
@@ -475,3 +572,139 @@ def test_a_valid_but_unpadded_session_date_is_normalised(monkeypatch, tmp_path):
     result = _run_main(monkeypatch, tmp_path,
                        _snapshot("2026-8-15", [10.0 + (i % 7) * 0.2 for i in range(60)]))
     assert result["session_date"] == "2026-08-15"
+
+
+# ------------------------------------------------------- the drill-down view
+
+
+def test_the_drill_down_shows_the_levels_a_decision_uses(monkeypatch, tmp_path, capsys):
+    """detail.py is what the analysis pass reads for a name it looks at closely.
+
+    It printed neither entry zone, nor invalidation level, nor exit flags, nor
+    conviction -- the two numbers ACT and the exit flags actually turn on, and
+    the two summaries of why. fetch.py carries invalidation_price into the
+    snapshot with a comment saying it was added so this file could show it, and
+    this file still did not. Driven end to end rather than unit-tested, for the
+    same reason the overlay test above is: every stage of that chain looked fine
+    on its own while the field never arrived.
+    """
+    import detail
+
+    prices = [10.0 - i * 0.05 for i in range(60)]
+    last = prices[-1]
+    snapshot = {
+        "local_date": "2026-08-15", "status": "ok", "benchmarks": {},
+        "tickers": {"TEST": {"symbol": "TEST", "tier": "A", "company": "Test Bio",
+                             "filings": [], "financials": {}, "trials": [],
+                             "entry_low": 5.0, "entry_high": 9.0,
+                             "invalidation_price": last + 1.0,
+                             "invalidation": "thesis dead below here",
+                             "bars": _bars(prices)}},
+    }
+    (tmp_path / "latest.json").write_text(json.dumps(snapshot))
+
+    monkeypatch.setattr(signals, "ROOT", tmp_path)
+    monkeypatch.setattr(signals, "DATA", tmp_path)
+    monkeypatch.setattr(signals, "STATE", tmp_path)
+    watchlist = tmp_path / "watchlist.toml"
+    watchlist.write_text('[settings]\n\n[[ticker]]\nsymbol = "TEST"\n')
+    monkeypatch.setattr("sys.argv", [
+        "signals.py", "--snapshot", str(tmp_path / "latest.json"),
+        "--watchlist", str(watchlist), "--out", str(tmp_path / "signals.json"),
+        "--state", str(tmp_path / "candidate_alerts.json"),
+    ])
+    assert signals.main() == 0
+    capsys.readouterr()
+
+    monkeypatch.setattr(detail, "DATA", tmp_path)
+    monkeypatch.setattr("sys.argv", ["detail.py", "TEST"])
+    assert detail.main() == 0
+    out = capsys.readouterr().out
+
+    assert "zone $5.0 - $9.0" in out
+    assert "IN ZONE" in out
+    assert f"invalidation ${last + 1.0}" in out
+    assert "conviction:" in out
+    assert "EXIT (high) invalidation_breached" in out
+    # The truncated copy analyse() appends to `reasons` must not print alongside
+    # the full one.
+    assert out.count("invalidation_breached") == 1
+
+
+# ------------------------------------------------------------------ exposure
+
+
+def test_exposure_adds_up_what_every_actionable_name_would_ask_for(
+        monkeypatch, tmp_path):
+    """Nothing else computes this, and nothing tested it.
+
+    Several correlated names fire together in a drawdown -- that is the normal
+    case, not the edge case -- and each sized at its bucket cap can commit more
+    than the whole book. SETUP is counted alongside ACT deliberately: this is
+    the worst case, not a buy list, and `tiers_counted` publishes that so the
+    report cannot mistake it for a committed figure.
+    """
+    prices = [100.0 * (0.985**i) for i in range(90)]
+    monkeypatch.setattr(signals, "ROOT", tmp_path)
+    monkeypatch.setattr(signals, "DATA", tmp_path)
+    monkeypatch.setattr(signals, "STATE", tmp_path)
+
+    names = ["AAA", "BBB", "CCC", "DDD"]
+    snapshot = {
+        "local_date": "2026-04-01", "status": "ok", "benchmarks": {},
+        "tickers": {n: {"symbol": n, "tier": "A", "filings": [], "financials": {},
+                        "trials": [], "bars": _bars(prices)} for n in names},
+    }
+    (tmp_path / "snap.json").write_text(json.dumps(snapshot))
+    watchlist = tmp_path / "watchlist.toml"
+    watchlist.write_text(
+        "[settings]\nmax_position_pct = 28\nmin_cash_reserve_pct = 15\n\n"
+        + "".join(f'[[ticker]]\nsymbol = "{n}"\ntier = "A"\n\n' for n in names))
+    out_path = tmp_path / "signals.json"
+    monkeypatch.setattr("sys.argv", [
+        "signals.py", "--snapshot", str(tmp_path / "snap.json"),
+        "--watchlist", str(watchlist), "--out", str(out_path),
+        "--state", str(tmp_path / "candidate_alerts.json"),
+    ])
+    assert signals.main() == 0
+
+    result = json.loads(out_path.read_text())
+    exp = result["exposure"]
+    assert exp["tiers_counted"] == ["ACT", "SETUP"], \
+        "the report has to be able to tell this is a worst case, not a buy list"
+    assert exp["actionable_names"] == 4
+    assert sorted(exp["symbols"]) == names
+    assert exp["requested_pct_if_all_taken"] == pytest.approx(112.0)
+    assert exp["max_investable_pct"] == pytest.approx(85.0)   # 100 less the reserve
+    assert exp["over_committed"] is True
+    assert exp["scale_factor_needed"] == pytest.approx(0.76, abs=0.01)
+
+
+def test_exposure_within_the_ceiling_needs_no_scaling(monkeypatch, tmp_path):
+    """scale_factor_needed is 1.0, not a fraction, when nothing is over-committed
+    -- the report multiplies by it unconditionally."""
+    prices = [100.0 * (0.985**i) for i in range(90)]
+    monkeypatch.setattr(signals, "ROOT", tmp_path)
+    monkeypatch.setattr(signals, "DATA", tmp_path)
+    monkeypatch.setattr(signals, "STATE", tmp_path)
+
+    snapshot = {
+        "local_date": "2026-04-01", "status": "ok", "benchmarks": {},
+        "tickers": {"AAA": {"symbol": "AAA", "tier": "A", "filings": [],
+                            "financials": {}, "trials": [], "bars": _bars(prices)}},
+    }
+    (tmp_path / "snap.json").write_text(json.dumps(snapshot))
+    watchlist = tmp_path / "watchlist.toml"
+    watchlist.write_text("[settings]\nmax_position_pct = 28\nmin_cash_reserve_pct = 15\n\n"
+                         '[[ticker]]\nsymbol = "AAA"\ntier = "A"\n')
+    out_path = tmp_path / "signals.json"
+    monkeypatch.setattr("sys.argv", [
+        "signals.py", "--snapshot", str(tmp_path / "snap.json"),
+        "--watchlist", str(watchlist), "--out", str(out_path),
+        "--state", str(tmp_path / "candidate_alerts.json"),
+    ])
+    assert signals.main() == 0
+
+    exp = json.loads(out_path.read_text())["exposure"]
+    assert exp["over_committed"] is False
+    assert exp["scale_factor_needed"] == 1.0

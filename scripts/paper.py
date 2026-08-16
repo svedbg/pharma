@@ -28,8 +28,15 @@ from datetime import date, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
+
+# Imported, not retyped. This module scores every trade against the benchmark,
+# and a second literal here would keep grading against XBI on the day the desk
+# moved to something else -- silently, since the label in the output is built
+# from this name too, so the report would agree with itself and be wrong.
+from signals import BENCHMARK
+
 DB = ROOT / "data" / "history.sqlite"
-BENCHMARK = "XBI"
 # Below this, `report` prints the numbers but refuses to draw the conclusion.
 # Not a statistical threshold, a humility one: at single-digit trade counts the
 # median moves on any one result.

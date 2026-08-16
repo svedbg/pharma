@@ -23,8 +23,8 @@ The output is deliberately a *shortlist to research*, not a buy list. It applies
 the same technical thresholds as the desk, which are known not to be an edge on
 their own -- what they are good at is narrowing 700 names to a dozen.
 
-    python3 scripts/screen.py                 # screen, print the shortlist
-    python3 scripts/screen.py --limit 400     # cap the universe (default 500)
+    python3 scripts/screen.py                 # screen every candidate, print the shortlist
+    python3 scripts/screen.py --limit 400     # evenly spaced sample, for a faster pass
     python3 scripts/screen.py --out candidates_screen.toml
 """
 
@@ -68,7 +68,18 @@ MIN_DOLLAR_VOLUME = 500_000       # below this nothing is tradeable at size
 MIN_PRICE = 0.50                  # sub-50c is usually a compliance problem
 
 
-def build_universe(watched: set[str], limit: int) -> list[tuple[str, str]]:
+def build_universe(watched: set[str], limit: int) -> tuple[list[tuple[str, str]], int]:
+    """Biotech-shaped registrants not already watched, plus the full count.
+
+    A cap is applied by taking an evenly spaced stride, never `out[:limit]`.
+    The list is sorted for determinism, and truncating a sorted list means the
+    cap is decided by the alphabet: at the old default of 500 against a real
+    universe of 591, every name from SPTX onward was invisible to the screen --
+    permanently, since the same 91 were cut every month. The documented
+    `--limit 400` hid 191. A screen whose entire purpose is widening the
+    aperture is the wrong place for a blind spot nobody is told about, so the
+    cap now defaults to off and says what it dropped when it is used.
+    """
     cik_map = fetch.load_cik_map()
     out = []
     for ticker, info in cik_map.items():
@@ -81,7 +92,12 @@ def build_universe(watched: set[str], limit: int) -> list[tuple[str, str]]:
             continue
         out.append((ticker, info["title"]))
     out.sort()
-    return out[:limit]
+    total = len(out)
+    if limit and limit < total:
+        # Round-half-down indices across the whole range: no segment of the
+        # alphabet is systematically excluded.
+        out = [out[(i * total) // limit] for i in range(limit)]
+    return out, total
 
 
 def score(symbol: str, name: str) -> dict | None:
@@ -103,7 +119,7 @@ def score(symbol: str, name: str) -> dict | None:
     if r is None or pctb is None or last < MIN_PRICE:
         return None
 
-    tr = tradability(bars, {}) or {}
+    tr = tradability(bars) or {}
     if (tr.get("median_dollar_volume_20d") or 0) < MIN_DOLLAR_VOLUME:
         return None
 
@@ -129,7 +145,8 @@ def score(symbol: str, name: str) -> dict | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Screen for candidates outside the watchlist")
-    ap.add_argument("--limit", type=int, default=500, help="max universe size")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="cap the universe to an evenly spaced sample (default: no cap)")
     ap.add_argument("--top", type=int, default=15, help="how many to shortlist")
     ap.add_argument("--watchlist", default=str(ROOT / "watchlist.toml"))
     ap.add_argument("--out", default=None, help="write the shortlist as a TOML candidate file")
@@ -140,9 +157,15 @@ def main() -> int:
     if wl.exists():
         watched = {t["symbol"].upper() for t in tomllib.loads(wl.read_text()).get("ticker", [])}
 
-    universe = build_universe(watched, args.limit)
+    universe, total = build_universe(watched, args.limit)
     print(f"universe: {len(universe)} biotech-shaped registrants not already watched",
           file=sys.stderr)
+    if len(universe) < total:
+        # Never silently: a cap that is not stated reads as "we looked at
+        # everything and this is what there was".
+        print(f"  capped by --limit {args.limit}: an evenly spaced sample of {total}, "
+              f"so {total - len(universe)} name(s) are NOT screened this run. "
+              f"Drop --limit to cover all of them.", file=sys.stderr)
     print("(prices only -- one request each; this is the slow part)", file=sys.stderr)
 
     rows, failed = [], 0
