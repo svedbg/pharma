@@ -274,7 +274,14 @@ $400M ATM programme, and a PRAX item 4.01 as a clean auditor change.
 That is the whole of it. The last two conditions used to live only in the
 sections that derived them — "The finding that matters most" and "Market regime"
 — so this list, which is where a reader looks for the definition, described a
-looser tier than the code has fired since. **The financing half accepts a
+looser tier than the code has fired since. They are now **pinned by tests as
+well as by prose**: a documented gate with no test is a gate that can go quiet
+without anything failing, and the regime half in particular had neither a test
+of its own nor one of `market_regime()`, on the condition that decides whether
+the desk's only actionable tier fires at all. Both directions are asserted — a
+downtrend holds a moderate name at SETUP, and a strong one still reaches ACT —
+because a gate that merely blocked would make the tier unreachable for months
+at a time and look identical to a quiet market. **The financing half accepts a
 cash-generative company.** `runway()` returns quarters of liquidity at the
 current burn, and a company that funds itself from operations has no such
 number; folding that into `None` made `runway_ok` read the strongest balance
@@ -519,6 +526,12 @@ cannot mistake it for a committed figure. That is deliberate: this is the worst
 case, not a buy list. SETUP means "research this", and the concentration
 question is exactly what happens if the research says yes to all of them at
 once.
+
+"Nothing else computes this" was also true of its test coverage until recently.
+Both branches are now driven through `main()`: over-committed, where
+`scale_factor_needed` is the fraction to multiply every size by, and within the
+ceiling, where it is `1.0` rather than absent — the report multiplies by it
+unconditionally, so an omitted value would size every position at zero.
 
 ## Heartbeat
 

@@ -13,6 +13,7 @@ import pytest
 
 from signals import (
     RUNWAY_VETO_QUARTERS,
+    SIGNAL_HORIZON_SESSIONS,
     conviction,
     evaluate_filings,
     exit_signals,
@@ -20,8 +21,10 @@ from signals import (
     float_metrics,
     load_catalysts,
     move_profile,
+    relative_strength,
     resolved_catalysts,
     runway,
+    short_signal,
     tradability,
 )
 
@@ -429,6 +432,135 @@ def test_resolved_catalyst_prompts_a_re_underwrite():
                          resolved=[{"date": "2026-08-01", "kind": "PDUFA",
                                     "description": "action date", "days_ago": 3}])
     assert any(f["kind"] == "catalyst_resolved" and f["severity"] == "high" for f in flags)
+
+
+def test_a_live_veto_on_a_held_name_is_its_own_exit_flag():
+    """The buy side already refuses to enter on a veto. This is the other half:
+    if the name is *held*, a veto appearing means the reason for holding has
+    changed, which is a prompt to re-underwrite rather than an automatic sell --
+    hence medium, not high."""
+    hard = [{"form": "8-K item 3.01", "filed": "2026-08-10", "days_ago": 5,
+             "reason": "listing rule deficiency / delisting notice"}]
+    flags = exit_signals({}, {}, last=10.0, hard=hard, resolved=[], last_alert=None)
+    flag = next(f for f in flags if f["kind"] == "veto_active")
+    assert flag["severity"] == "medium"
+    assert "listing rule" in flag["detail"]
+    assert not exit_signals({}, {}, last=10.0, hard=[], resolved=[], last_alert=None)
+
+
+def test_an_alert_past_its_measured_horizon_has_expired():
+    """The edge decays to nothing by 60 sessions, so a signal that has not worked
+    inside its own 20-session window is finished, not merely early. Without this
+    the desk carries a technical thesis indefinitely on the strength of an alert
+    nobody remembers raising."""
+    fresh = exit_signals({}, {}, last=10.0, hard=[], resolved=[],
+                         last_alert={"date": "2026-08-01", "sessions_ago": 5,
+                                     "close": 12.0, "return_pct": -16.7})
+    assert not any(f["kind"] == "horizon_elapsed" for f in fresh)
+
+    stale = exit_signals({}, {}, last=10.0, hard=[], resolved=[],
+                         last_alert={"date": "2026-06-01", "sessions_ago": 40,
+                                     "close": 12.0, "return_pct": -16.7})
+    flag = next(f for f in stale if f["kind"] == "horizon_elapsed")
+    assert flag["severity"] == "low"
+    # The move since the alert has to travel with it, or the flag says a thesis
+    # expired without saying whether it worked.
+    assert "-16.7%" in flag["detail"]
+    assert str(SIGNAL_HORIZON_SESSIONS) in flag["detail"]
+
+    # Exactly on the boundary counts as elapsed: the horizon is where the edge
+    # was measured to, not the first session past it.
+    at_bound = exit_signals({}, {}, last=10.0, hard=[], resolved=[],
+                            last_alert={"date": "2026-07-01", "close": 12.0,
+                                        "sessions_ago": SIGNAL_HORIZON_SESSIONS})
+    assert any(f["kind"] == "horizon_elapsed" for f in at_bound)
+
+
+# ------------------------------------------------------- relative strength
+
+
+def _rs_bars(stock, bench):
+    days = [f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}" for i in range(len(stock))]
+    return ([{"date": d, "adjclose": p} for d, p in zip(days, stock, strict=True)],
+            [{"date": d, "adjclose": p} for d, p in zip(days, bench, strict=True)])
+
+
+def test_a_name_falling_while_the_sector_holds_up_is_company_specific():
+    """Without this, one sector drawdown flags all 60+ names at once and reads as
+    60 signals when it is really one. `idiosyncratic` is the opposite case, and
+    it feeds conviction() as a mark against the name."""
+    # Stock -30% over the scored window; benchmark flat.
+    stock = [100.0 - i * 0.4 for i in range(80)]
+    bench = [100.0] * 80
+    bars, bench_bars = _rs_bars(stock, bench)
+    rs = relative_strength(bars, bench_bars)
+
+    assert rs["20d"]["excess_pct"] < -10
+    assert rs["idiosyncratic"] is True
+    assert rs["sector_wide"] is False
+
+
+def test_a_name_falling_with_its_sector_is_mostly_beta():
+    """Most of the move is the sector, so the name is not repudiating anything --
+    and conviction() counts that *for* it rather than against."""
+    stock = [100.0 - i * 0.4 for i in range(80)]
+    bench = [100.0 - i * 0.4 for i in range(80)]
+    bars, bench_bars = _rs_bars(stock, bench)
+    rs = relative_strength(bars, bench_bars)
+
+    assert rs["sector_wide"] is True
+    assert rs["idiosyncratic"] is False, "a sector-wide fall is not company-specific"
+
+
+def test_relative_strength_needs_a_full_window_before_it_says_anything():
+    """A partial window would compare whatever bars happen to exist, which is how
+    a name with a short history looks like the strongest performer on the list."""
+    stock = [100.0 - i for i in range(30)]
+    bars, bench_bars = _rs_bars(stock, [100.0] * 30)
+    assert relative_strength(bars, bench_bars) is None
+    assert relative_strength([], bench_bars) is None
+
+
+# ---------------------------------------------------------- short interest
+
+
+def test_short_thresholds_sit_where_the_distribution_thins_out():
+    """At the obvious 5 days-to-cover, `crowded_short` fired on 47 of 63 names.
+
+    Above 5 is simply normal for small-cap biotech, so a bar there discriminates
+    nothing and becomes wallpaper. These are 10 and 15 for that reason, and a
+    test is what stops them drifting back toward the obvious number.
+    """
+    def at(d2c):
+        return short_signal([{"settlement_date": "2026-08-15", "short_interest": 1e6,
+                              "days_to_cover": d2c}], [])
+
+    normal = at(6.0)
+    assert normal["crowded_short"] is False and normal["extreme_short"] is False
+
+    crowded = at(11.0)
+    assert crowded["crowded_short"] is True and crowded["extreme_short"] is False
+
+    extreme = at(16.0)
+    assert extreme["crowded_short"] is True and extreme["extreme_short"] is True
+
+
+def test_short_interest_change_and_daily_pressure_are_both_reported():
+    """Days-to-cover is the squeeze metric; daily short volume is the pressure
+    building behind it. They come from different sources and answer different
+    questions, so neither substitutes for the other."""
+    si = [{"settlement_date": "2026-07-31", "short_interest": 1_000_000,
+           "days_to_cover": 8.0},
+          {"settlement_date": "2026-08-15", "short_interest": 1_500_000,
+           "days_to_cover": 12.0}]
+    sv = [{"date": f"2026-08-{d:02d}", "short_pct": 60.0} for d in range(11, 16)]
+    out = short_signal(si, sv)
+
+    assert out["settlement_date"] == "2026-08-15", "the newest settlement, not the first"
+    assert out["short_interest_change_pct"] == pytest.approx(50.0)
+    assert out["short_volume_pct_5d"] == pytest.approx(60.0)
+    assert out["heavy_short_selling"] is True
+    assert short_signal([], []) is None
 
 
 # ---------------------------------------------------------------- conviction
