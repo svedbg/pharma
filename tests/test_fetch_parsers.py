@@ -294,7 +294,28 @@ def test_a_bad_price_response_falls_back_to_the_other_provider(monkeypatch):
     assert source == "yahoo" and bars
 
 
-def test_a_stale_cik_map_beats_no_run_at_all(monkeypatch, tmp_path):
+@pytest.fixture
+def cik_cache(monkeypatch, tmp_path):
+    """Point load_cik_map at a throwaway cache, with the SEC identity stubbed.
+
+    `sec_ua()` is evaluated as an *argument* to get_json, so it runs before the
+    call it is passed to. On a machine with no SEC_CONTACT_EMAIL that raises
+    SystemExit first and these tests never reach the cache logic they are about
+    -- which is why they passed locally and failed in CI, where no contact
+    address is configured. That ordering is correct in production: without a
+    contact address the SEC fetches cannot happen at all, so dying with the
+    instructions beats limping on. It just is not what is under test here.
+    """
+    monkeypatch.setattr(fetch, "sec_ua", lambda: "pharma-desk/test (ci@example.org)")
+    monkeypatch.setattr(fetch, "DATA", tmp_path)
+    return tmp_path / "cik_map.json"
+
+
+def _offline(*_a, **_k):
+    raise fetch.FetchError("HTTP 503")
+
+
+def test_a_stale_cik_map_beats_no_run_at_all(monkeypatch, cik_cache):
     """CIKs move at the pace of corporate actions, not of trading days.
 
     This is the first request the run makes, and its failure used to end the
@@ -302,39 +323,33 @@ def test_a_stale_cik_map_beats_no_run_at_all(monkeypatch, tmp_path):
     already presents as 'no CIK in SEC ticker map', which the record carries as
     an error -- a far smaller loss than the whole day.
     """
-    cache = tmp_path / "cik_map.json"
-    cache.write_text(json.dumps({"ARDX": {"cik": "0001437402", "title": "ARDELYX, INC."}}))
+    cik_cache.write_text(json.dumps({"ARDX": {"cik": "0001437402", "title": "ARDELYX, INC."}}))
     old = time.time() - 30 * 86400
-    os.utime(cache, (old, old))                       # older than the 7-day window
-    monkeypatch.setattr(fetch, "DATA", tmp_path)
-    monkeypatch.setattr(fetch, "get_json",
-                        lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("HTTP 503")))
+    os.utime(cik_cache, (old, old))                   # older than the 7-day window
+    monkeypatch.setattr(fetch, "get_json", _offline)
 
     got = fetch.load_cik_map()
     assert got["ARDX"]["cik"] == "0001437402"
 
 
 @pytest.mark.parametrize("junk", ['["not", "a", "map"]', '"a string"', "{}", "not json"])
-def test_an_unusable_cached_map_is_no_map_at_all(monkeypatch, tmp_path, junk):
+def test_an_unusable_cached_map_is_no_map_at_all(monkeypatch, cik_cache, junk):
     """Shape-checked, not merely parsed. A file that is valid JSON but not a
     mapping makes .values() raise AttributeError, which no caller guards -- and
     this is the fallback for a failed fetch, so raising would take the run down
     by the very path that exists to keep it alive."""
-    (tmp_path / "cik_map.json").write_text(junk)
-    monkeypatch.setattr(fetch, "DATA", tmp_path)
-    monkeypatch.setattr(fetch, "get_json",
-                        lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("HTTP 503")))
+    cik_cache.write_text(junk)
+    monkeypatch.setattr(fetch, "get_json", _offline)
     with pytest.raises(fetch.FetchError):
         fetch.load_cik_map()
 
 
-def test_no_cached_map_and_no_network_still_fails_loudly(monkeypatch, tmp_path):
+def test_no_cached_map_and_no_network_still_fails_loudly(monkeypatch, cik_cache):
     """The fallback is for a stale map, not for no map. Without one there is
     nothing to run on, and inventing a silent empty map would resolve no CIK
     for any name while looking like an ordinary quiet day."""
-    monkeypatch.setattr(fetch, "DATA", tmp_path)
-    monkeypatch.setattr(fetch, "get_json",
-                        lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("HTTP 503")))
+    assert not cik_cache.exists()
+    monkeypatch.setattr(fetch, "get_json", _offline)
     with pytest.raises(fetch.FetchError):
         fetch.load_cik_map()
 
