@@ -14,6 +14,8 @@ opposite signals.
 from __future__ import annotations
 
 import json
+import os
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -263,6 +265,64 @@ def test_http_errors_that_cannot_succeed_are_not_retried(monkeypatch):
     with pytest.raises(fetch.FetchError):
         fetch.http_get("https://example.org/x", tries=3)
     assert calls["n"] == 1, "404 must not be retried"
+
+
+def test_a_non_json_200_is_a_fetch_error_not_a_decode_error(monkeypatch):
+    """Every caller in this module guards FetchError and nothing else.
+
+    A captive portal or a provider error page answers 200 with HTML, so a bare
+    json.loads went straight past all of that guarding -- and in build_record
+    the only thing left to catch it discarded the entire ticker record,
+    including bars already fetched.
+    """
+    monkeypatch.setattr(fetch, "http_get",
+                        lambda url, ua=None, **kw: b"<html><body>Sign in to the network")
+    with pytest.raises(fetch.FetchError) as e:
+        fetch.get_json("https://example.org/x")
+    assert "non-JSON" in str(e.value)
+    assert "Sign in" in str(e.value), "say what answered instead, or it is undebuggable"
+
+
+def test_a_bad_price_response_falls_back_to_the_other_provider(monkeypatch):
+    """Two providers exist because neither is reliable alone. A Nasdaq error
+    page used to kill the record outright rather than failing over."""
+    monkeypatch.setattr(fetch, "fetch_bars_nasdaq",
+                        lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("non-JSON response")))
+    monkeypatch.setattr(fetch, "fetch_bars_yahoo",
+                        lambda *a, **k: ([{"date": "2026-08-14", "close": 1.0}], {"currency": "USD"}))
+    bars, _meta, source = fetch.fetch_bars("X", 400)
+    assert source == "yahoo" and bars
+
+
+def test_a_stale_cik_map_beats_no_run_at_all(monkeypatch, tmp_path):
+    """CIKs move at the pace of corporate actions, not of trading days.
+
+    This is the first request the run makes, and its failure used to end the
+    run before a single price was fetched. A rename that the stale map misses
+    already presents as 'no CIK in SEC ticker map', which the record carries as
+    an error -- a far smaller loss than the whole day.
+    """
+    cache = tmp_path / "cik_map.json"
+    cache.write_text(json.dumps({"ARDX": {"cik": "0001437402", "title": "ARDELYX, INC."}}))
+    old = time.time() - 30 * 86400
+    os.utime(cache, (old, old))                       # older than the 7-day window
+    monkeypatch.setattr(fetch, "DATA", tmp_path)
+    monkeypatch.setattr(fetch, "get_json",
+                        lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("HTTP 503")))
+
+    got = fetch.load_cik_map()
+    assert got["ARDX"]["cik"] == "0001437402"
+
+
+def test_no_cached_map_and_no_network_still_fails_loudly(monkeypatch, tmp_path):
+    """The fallback is for a stale map, not for no map. Without one there is
+    nothing to run on, and inventing a silent empty map would resolve no CIK
+    for any name while looking like an ordinary quiet day."""
+    monkeypatch.setattr(fetch, "DATA", tmp_path)
+    monkeypatch.setattr(fetch, "get_json",
+                        lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("HTTP 503")))
+    with pytest.raises(fetch.FetchError):
+        fetch.load_cik_map()
 
 
 # ------------------------------------------------------- the session date

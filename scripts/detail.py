@@ -69,9 +69,49 @@ def main() -> int:
               f"| vs SMA200 {t.get('pct_vs_sma200')}% | ATR {t.get('atr_pct_of_price')}% of price")
         print(f"vol vs 20d avg: {t.get('volume_vs_20d_avg')}x")
 
-        for _label, key in (("REASONS", "reasons"),):
-            for x in sig.get(key, []):
+        # The two levels the tier actually turns on, which this drill-down did
+        # not print. ACT requires price <= entry_high, and invalidation_price is
+        # what the highest-severity exit flag is measured against -- fetch.py
+        # carries the latter into the snapshot specifically so this file could
+        # show it, and it still did not. Reading a name closely without them
+        # means reading it without the two numbers a decision uses.
+        lo, hi = rec.get("entry_low") or 0, rec.get("entry_high") or 0
+        stop = rec.get("invalidation_price") or 0
+        if hi or stop:
+            zone = (f"zone ${lo} - ${hi}" if hi else "no entry zone declared -- ACT disabled")
+            where = ""
+            if hi and p.get("close") is not None:
+                where = ("  [IN ZONE]" if p["close"] <= hi
+                         else f"  [above zone by {(p['close'] / hi - 1) * 100:.0f}%]")
+            drift = sig.get("zone_drift_pct")
+            if sig.get("zone_stale"):
+                where += f"  [ZONE STALE: {drift:+.0f}% from it -- re-run propose_zones.py]"
+            print(f"\n{zone}{where}")
+            if stop:
+                gap = ((p["close"] / stop - 1) * 100) if p.get("close") else None
+                print(f"invalidation ${stop}"
+                      + (f" ({gap:+.0f}% away)" if gap is not None else ""))
+
+        conv = sig.get("conviction") or {}
+        if conv:
+            print(f"conviction: {conv.get('label')} ({conv.get('score'):+d})")
+            for s in conv.get("supporting", []):
+                print(f"  +  {s}")
+            for s in conv.get("against", []):
+                print(f"  -  {s}")
+
+        # analyse() appends each exit flag to `reasons` as well, truncated to
+        # 150 characters. Printing both put every exit on the screen twice, once
+        # cut off mid-sentence, so the reasons list drops them and the block
+        # below carries them in full.
+        for x in sig.get("reasons", []):
+            if not x.startswith("EXIT SIGNAL"):
                 print(f"  - {x}")
+
+        # The exit half of the desk. Omitting it made this a buy-side-only view
+        # of a name that may already have broken its own thesis.
+        for fl in sig.get("exit_flags", []):
+            print(f"  EXIT ({fl['severity']}) {fl['kind']}: {fl['detail']}")
         for h in sig.get("hard_vetoes", []):
             print(f"  HARD VETO  {h['form']} {h['filed']} ({h['days_ago']}d): {h['reason']}")
             if h.get("url"):

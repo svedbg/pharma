@@ -475,3 +475,60 @@ def test_a_valid_but_unpadded_session_date_is_normalised(monkeypatch, tmp_path):
     result = _run_main(monkeypatch, tmp_path,
                        _snapshot("2026-8-15", [10.0 + (i % 7) * 0.2 for i in range(60)]))
     assert result["session_date"] == "2026-08-15"
+
+
+# ------------------------------------------------------- the drill-down view
+
+
+def test_the_drill_down_shows_the_levels_a_decision_uses(monkeypatch, tmp_path, capsys):
+    """detail.py is what the analysis pass reads for a name it looks at closely.
+
+    It printed neither entry zone, nor invalidation level, nor exit flags, nor
+    conviction -- the two numbers ACT and the exit flags actually turn on, and
+    the two summaries of why. fetch.py carries invalidation_price into the
+    snapshot with a comment saying it was added so this file could show it, and
+    this file still did not. Driven end to end rather than unit-tested, for the
+    same reason the overlay test above is: every stage of that chain looked fine
+    on its own while the field never arrived.
+    """
+    import detail
+
+    prices = [10.0 - i * 0.05 for i in range(60)]
+    last = prices[-1]
+    snapshot = {
+        "local_date": "2026-08-15", "status": "ok", "benchmarks": {},
+        "tickers": {"TEST": {"symbol": "TEST", "tier": "A", "company": "Test Bio",
+                             "filings": [], "financials": {}, "trials": [],
+                             "entry_low": 5.0, "entry_high": 9.0,
+                             "invalidation_price": last + 1.0,
+                             "invalidation": "thesis dead below here",
+                             "bars": _bars(prices)}},
+    }
+    (tmp_path / "latest.json").write_text(json.dumps(snapshot))
+
+    monkeypatch.setattr(signals, "ROOT", tmp_path)
+    monkeypatch.setattr(signals, "DATA", tmp_path)
+    monkeypatch.setattr(signals, "STATE", tmp_path)
+    watchlist = tmp_path / "watchlist.toml"
+    watchlist.write_text('[settings]\n\n[[ticker]]\nsymbol = "TEST"\n')
+    monkeypatch.setattr("sys.argv", [
+        "signals.py", "--snapshot", str(tmp_path / "latest.json"),
+        "--watchlist", str(watchlist), "--out", str(tmp_path / "signals.json"),
+        "--state", str(tmp_path / "candidate_alerts.json"),
+    ])
+    assert signals.main() == 0
+    capsys.readouterr()
+
+    monkeypatch.setattr(detail, "DATA", tmp_path)
+    monkeypatch.setattr("sys.argv", ["detail.py", "TEST"])
+    assert detail.main() == 0
+    out = capsys.readouterr().out
+
+    assert "zone $5.0 - $9.0" in out
+    assert "IN ZONE" in out
+    assert f"invalidation ${last + 1.0}" in out
+    assert "conviction:" in out
+    assert "EXIT (high) invalidation_breached" in out
+    # The truncated copy analyse() appends to `reasons` must not print alongside
+    # the full one.
+    assert out.count("invalidation_breached") == 1

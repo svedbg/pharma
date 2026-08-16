@@ -46,6 +46,18 @@ several megabytes. Read `data/signals.json` (compact, all names) and then use
 `python3 scripts/detail.py TICKER` for the few names that warrant a close look.
 The triage rules in `prompts/daily.md` cap deep-dives at 12 per run.
 
+`detail.py` is the only view of a name the analysis pass gets, so it has to
+carry what a decision uses: the entry zone and where price sits in it, the
+`invalidation_price` an exit is measured against, the conviction checklist on
+both sides, and the exit flags. It printed none of those — `fetch.py` carries
+`invalidation_price` into the snapshot with a comment saying it was added *so
+detail.py could show it*, and detail.py still did not. A drill-down missing the
+two numbers ACT and the exit flags turn on is a buy-side-only view of a name
+that may already have broken its own thesis. Every stage of that chain looked
+fine on its own while the field never arrived, which is why the test drives
+`signals.main()` and then `detail.main()` end to end rather than checking either
+in isolation.
+
 ## Data sources (free, keyless)
 
 | What | Source | Notes |
@@ -62,6 +74,30 @@ not bound the aggregate rate once requests are concurrent. A full run over ~60
 names takes two to four minutes: roughly two for the fetch itself, plus up to
 two more when several names trigger the multi-megabyte `companyfacts` sweep
 described in trap 6.
+
+**Every response is decoded through `get_json()`, never `json.loads(http_get())`.**
+Every caller in `fetch.py` guards `FetchError` and nothing else, so a bare
+decode had a hole straight through all of it: a provider that answers HTTP 200
+with an HTML body — a captive portal, a Cloudflare interstitial, a maintenance
+page — raises `JSONDecodeError`, which is not a `FetchError` and was caught by
+none of them. The blast radius was out of all proportion to the cause. In
+`build_record` the only thing left to catch it is the blanket `except` around
+`fut.result()`, so one malformed trials or short-interest response **discarded
+the whole ticker, bars included** — and `fetch_bars` could not fail over, so a
+Nasdaq error page killed the record instead of falling through to Yahoo, which
+is the entire reason two providers are wired up. A body that is not JSON is
+what "this source did not answer" looks like, so it is reported as that, with
+the first 120 bytes attached to name the impostor.
+
+**A stale CIK map beats no run.** `load_cik_map` is the first request the run
+makes, and its failure ended the run before a single price was fetched. CIKs
+move at the pace of corporate actions, not of trading days: a map a fortnight
+old resolves every name except one renamed since, and a rename already presents
+as `no CIK in SEC ticker map`, which the record carries as an error and which
+this file already tells you to re-check by hand. So a fetch failure now falls
+back to the cached copy at any age, saying how old it is. With no cached copy
+it still fails loudly — the fallback is for a stale map, not for no map, and an
+empty one would resolve nothing for every name while looking like a quiet day.
 
 ### XBRL traps that produced real, wrong answers here
 
@@ -491,6 +527,19 @@ was added. The alarm still goes out over the same channels it is reporting on,
 which is why the heartbeat also exits non-zero: when the fault *is* delivery,
 the scheduler's journal may be the only record that survives.
 
+**Every path out of `notify.main()` writes the record, including the two that
+send nothing worth celebrating.** Because a missing file is deliberately not a
+fault, any path that returns without writing one is a path whose outcome cannot
+be observed — and both of them were exactly the paths where something had
+already gone wrong:
+
+- `--failure`, the notice sent when the run itself died, recorded nothing. It is
+  the one send with nothing downstream of it to notice that it never arrived.
+- An empty config returned before writing anything, which made the "nowhere to
+  send" branch above unreachable in the case it most obviously describes: a
+  machine with no configuration at all. The fault has to be written down to be
+  noticed.
+
 ## Market regime
 
 XBI versus its 200-day average, in `signals.json` under `regime`. In a
@@ -569,12 +618,27 @@ be recomputed as prices move. Method:
 - **Too soon** — under 25 sessions in the window means no zone is written and ACT
   stays disabled for that name.
 - `entry_high` = the **higher** of the window's 25th percentile and a realistic
-  pullback level, the latter being the 50-day average capped 5% below spot. A
-  pure distribution percentile is useless for a name in a strong uptrend: it
-  returns the price before the re-rating, which the stock never revisits if the
-  thesis is working, and SLS at $12.36 was handed a "buy zone" of $1.91. Taking
-  the higher of the two means the zone tracks the current regime without ever
-  amounting to chasing.
+  pullback level, the latter being the average of the window's last 50 sessions
+  capped 5% below spot. A pure distribution percentile is useless for a name in
+  a strong uptrend: it returns the price before the re-rating, which the stock
+  never revisits if the thesis is working, and SLS at $12.36 was handed a "buy
+  zone" of $1.91. Taking the higher of the two means the zone tracks the current
+  regime without ever amounting to chasing.
+
+  **Both legs read the anchor window and nothing outside it.** The pullback leg
+  averaged `closes[-50:]`, which reaches back through the break for any name
+  whose post-collapse window is shorter than 50 sessions — so the prices the
+  window exists to exclude came back in through the other half of the same
+  `max()`, and the zone rose on exactly the freshest collapses. The 5%-below-spot
+  cap hid most of it, which is why it survived: `min()` only lets the average
+  through when the name is already trading above it, and when the contamination
+  is large the cap fires and the zone silently becomes "5% under wherever this
+  happens to trade" — the one outcome the cap exists to prevent. The window is
+  never shorter than 25 sessions, so the average always has something to
+  describe. Re-running the backtest afterwards moved nothing: the two zone rows
+  below are unchanged to the last decimal, because the trailing-1y branch makes
+  `window[-50:]` and `closes[-50:]` the same list and only a 25-to-49-session
+  post-collapse window can differ.
 - `entry_low` = 22% under `entry_high`, a **scale-in reference and not a gate**.
   A price below it is cheaper, not disqualifying — gating on a floor would
   reject a name making new lows while oversold and unvetoed, which is precisely
@@ -638,9 +702,21 @@ What the buckets *mean*, and the reasoning behind the ceilings, is in
 
 `scripts/screen.py` widens the aperture beyond the watchlist. Two stages because
 the universe is too large to fetch fully: a cheap prices-only pass over every
-biotech-shaped SEC registrant (~550, matched by company-name fragments since the
-company list carries no sector field), then the normal pipeline on the shortlist
-only. Skips anything under $0.50 or below $500k median daily dollar volume.
+biotech-shaped SEC registrant (~590 today, matched by company-name fragments
+since the company list carries no sector field), then the normal pipeline on the
+shortlist only. Skips anything under $0.50 or below $500k median daily dollar
+volume.
+
+**`--limit` defaults to off, and when set it samples rather than truncates.**
+`build_universe` sorts for determinism and then took `out[:limit]`, so the cap
+was decided by the alphabet: at the old default of 500 against a real universe
+of 591, every name from `SPTX` onward was invisible — and invisible *every*
+month, since the same 91 were cut on every run. The documented `--limit 400`
+hid 191. A blind spot fixed by spelling is the last thing that belongs in the
+one tool whose whole job is looking outside the watchlist. A cap now takes an
+evenly spaced stride across the full list and prints how many names it skipped,
+because a cap nobody is told about reads as "we looked at everything, and this
+is what there was".
 
 ## Paper trading
 
