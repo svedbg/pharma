@@ -12,4 +12,13 @@ WorkingDirectory=%h/projects/pharma
 Environment=PATH=%h/.local/bin:%h/.pyenv/shims:%h/.pyenv/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/projects/pharma/run_daily.sh
 # Fetch + signals is minutes; the analysis pass over ~50 names can be much longer.
-TimeoutStartSec=3600
+#
+# This must stay ABOVE the sum of run_daily.sh's own per-stage timeouts, which
+# is what actually bounds the run: 127s network wait + 1800 fetch + 900 signals
+# + 600 scorecard + 300 paper + 1800 analysis + 600 archive + 300 notify = 107
+# minutes worst case. At 3600 systemd killed the unit 47 minutes before
+# run_daily.sh would have given up on its own -- and its SIGTERM arrives after
+# the failure handler, so the run died without the notification that exists to
+# report exactly that. The inner bounds do the work; this is the last resort
+# behind them, and a last resort that fires first is not one.
+TimeoutStartSec=7200

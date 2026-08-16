@@ -12,7 +12,7 @@
 #
 # The launchd equivalent of systemd/. Same two jobs, same schedule:
 #   com.pharma.desk       Mon-Fri 23:18  the daily run
-#   com.pharma.heartbeat  Mon-Fri 10:23  alerts if no report for two weekdays
+#   com.pharma.heartbeat  Mon-Fri 10:23  alerts if no report for three weekdays
 #
 # The plists are generated here with plistlib rather than kept as sed
 # templates: a project path containing &, |, <, > or a quote survives XML
@@ -59,17 +59,22 @@ esac
 MODE="${1:-install}"
 [[ "$MODE" == "--check" ]] && MODE=check
 
+# Uninstall runs before the platform guard, and deliberately. Removing things
+# is safe everywhere: launchctl bootout is already tolerated when it fails, and
+# the rm clears exactly the stray ~/Library/LaunchAgents an older version of
+# this script left behind on Linux before it learned to check the platform.
+# Behind the guard, the one command that could clean that up refused to.
+if [[ "$MODE" == "--uninstall" ]]; then
+    uninstall
+    exit 0
+fi
+
 # launchctl exists nowhere else; on Linux this otherwise created a stray
 # ~/Library/LaunchAgents and only then failed. --check touches no launchctl and
 # writes only to a temp directory, so it stays useful on either platform.
 if [[ "$MODE" != "check" && "$(uname -s)" != "Darwin" ]]; then
     echo "this installer is macOS-only -- on Linux use systemd/ (see systemd/README.md)" >&2
     exit 1
-fi
-
-if [[ "${1:-}" == "--uninstall" ]]; then
-    uninstall
-    exit 0
 fi
 
 if [[ "$MODE" == "check" ]]; then
@@ -93,8 +98,19 @@ fi
 
 CLAUDE_BIN="$(command -v claude || true)"
 if [[ -z "$CLAUDE_BIN" ]]; then
-    echo "claude not found on PATH -- install Claude Code, or drop the analysis" >&2
-    echo "pass and schedule './run_daily.sh --no-llm' instead" >&2
+    # The message has to match the mode. --check is a read-only diagnostic, and
+    # `make check-units` folds its exit status into a drift report -- so saying
+    # "install Claude Code" there answers a question nobody asked and dresses a
+    # missing binary up as a stale job. What --check can honestly report is that
+    # it cannot build the comparison at all.
+    if [[ "$MODE" == "check" ]]; then
+        echo "cannot check: claude is not on PATH, so the plist this checkout would" >&2
+        echo "write cannot be generated to compare against. The installed jobs may or" >&2
+        echo "may not be current; this says nothing either way." >&2
+    else
+        echo "claude not found on PATH -- install Claude Code, or drop the analysis" >&2
+        echo "pass and schedule './run_daily.sh --no-llm' instead" >&2
+    fi
     exit 1
 fi
 CLAUDE_DIR="$(cd "$(dirname "$CLAUDE_BIN")" && pwd)"

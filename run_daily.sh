@@ -51,7 +51,7 @@ EOF
 #
 # Not routed through fail(): whoever passed the argument is either watching this
 # terminal, or is a scheduler, which records the non-zero exit and whose missing
-# report the heartbeat picks up within two weekdays. A typo should not buzz the
+# report the heartbeat picks up within three weekdays. A typo should not buzz the
 # phone; a broken unit still gets caught.
 NO_LLM=0
 for arg in "$@"; do

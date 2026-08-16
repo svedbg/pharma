@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import sys
 from html.parser import HTMLParser
 from pathlib import Path
@@ -354,3 +355,65 @@ def test_a_run_with_no_session_date_leaves_no_dangling_separator():
     summary, _, _ = notify.build_alert_text(_sig(session_date=None, alerts=ONE_SETUP))
     assert notify.ntfy_title(summary, "") == "1 new setup"
     assert notify.email_subject(summary, "") == "[biotech desk] 1 new setup"
+
+
+# ------------------------------------------------------- scheduler units
+
+
+def _units():
+    return sorted((ROOT / "systemd").glob("pharma-*.service"))
+
+
+def test_no_unit_relies_on_a_bare_execstart_name():
+    """systemd resolves a bare ExecStart name against its OWN compiled-in search
+    path, NOT against the unit's `Environment=PATH`.
+
+    So `ExecStart=python3 ...` silently ignores the pyenv shim the units put
+    first on PATH and pins itself to the system interpreter -- and a name that
+    exists only on Environment=PATH does not launch at all (verified on systemd
+    255). `/usr/bin/env python3` is the form that honours it, because env itself
+    is absolute and then does the lookup with the inherited PATH.
+    """
+    assert _units(), "no unit files found"
+    for unit in _units():
+        for line in unit.read_text().splitlines():
+            if line.startswith("ExecStart="):
+                cmd = line.split("=", 1)[1].split()[0]
+                assert cmd.startswith(("/", "%h", "%")), (
+                    f"{unit.name}: ExecStart '{cmd}' is a bare name, which systemd "
+                    f"resolves against its own path and not Environment=PATH")
+
+
+def test_the_outer_timeout_outlives_the_run_it_is_bounding():
+    """TimeoutStartSec is the last resort behind run_daily.sh's own per-stage
+    timeouts, and a last resort that fires first is not one.
+
+    At 3600 against ~6400s of inner bounds, systemd's SIGTERM arrived 47 minutes
+    early and after the failure handler -- so a slow run died with no report and
+    no notification, looking exactly like the silence the desk emits on a quiet
+    day. This recomputes the inner sum from the script, so adding a stage
+    without raising the outer bound fails here rather than in production.
+    """
+    script = (ROOT / "run_daily.sh").read_text()
+    inner = sum(int(m) for m in re.findall(
+        r"^\s*(?:run_with_timeout|capture_if_ok \S+ \S+) (\d+)", script, re.M))
+    assert inner > 0, "found no stage timeouts to add up"
+
+    desk = (ROOT / "systemd" / "pharma-desk.service").read_text()
+    outer = int(re.search(r"^TimeoutStartSec=(\d+)", desk, re.M).group(1))
+    assert outer > inner, (
+        f"TimeoutStartSec={outer} is below the {inner}s of stage timeouts in "
+        f"run_daily.sh; systemd would kill the run before it could report")
+
+
+def test_both_schedulers_agree_on_the_schedule():
+    """The launchd job bakes its times into the plist and the systemd timer
+    keeps its own. Nothing enforces that they match, and a desk that runs at two
+    different times on two machines is a difference nobody would look for."""
+    installer = (ROOT / "launchd" / "install-launchd.sh").read_text()
+    for unit, hhmm in (("pharma-desk.timer", "23, 18"),
+                       ("pharma-heartbeat.timer", "10, 23")):
+        timer = (ROOT / "systemd" / unit).read_text()
+        h, m = re.search(r"^OnCalendar=Mon-Fri (\d+):(\d+)", timer, re.M).groups()
+        assert f"{int(h)}, {int(m)}" == hhmm, f"{unit} drifted from the launchd job"
+        assert hhmm in installer, f"launchd installer no longer schedules {hhmm}"

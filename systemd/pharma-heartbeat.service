@@ -7,5 +7,23 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=%h/projects/pharma
 Environment=PATH=%h/.local/bin:%h/.pyenv/shims:%h/.pyenv/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=%h/.pyenv/shims/python3 %h/projects/pharma/scripts/heartbeat.py
+# Resolved off the PATH above rather than hardcoded to the pyenv shim. An
+# absolute path to the shim is a dead ExecStart the moment pyenv is removed,
+# reinstalled, or has its version unset, and the unit then fails with
+# status=203/EXEC -- silently, because this is the unit whose entire job is to
+# notice when things have gone quiet. It would go quiet about the desk going
+# quiet, visible only to someone already reading the journal.
+#
+# It must go through `env`, which is absolute. A BARE name in ExecStart is
+# resolved against systemd's own compiled-in search path (/usr/bin, /usr/local/bin,
+# ...) and NOT against Environment= above, so `ExecStart=python3` would pin this
+# to the system interpreter and ignore pyenv entirely -- verified on systemd 255,
+# where a bare name present only on Environment=PATH fails to launch at all.
+# `/usr/bin/env python3` inherits the PATH set above, so the shim wins when
+# pyenv is there and the system python3 is the fallback when it is not.
+#
+# Falling back is safe here: heartbeat.py is stdlib-only and uses nothing newer
+# than 3.9, so it needs neither the tomllib nor the pyexpat run_daily.sh probes
+# for. It is the one entry point where "any python3" is genuinely enough.
+ExecStart=/usr/bin/env python3 %h/projects/pharma/scripts/heartbeat.py
 TimeoutStartSec=300

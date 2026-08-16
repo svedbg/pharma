@@ -11,7 +11,7 @@ launchd/install-launchd.sh --uninstall  # remove both jobs
   22:00–23:00 Europe/Sofia in every daylight-saving alignment, so the daily bar
   is settled.
 - **com.pharma.heartbeat** — Mon–Fri 10:23 local. Alerts if no report has
-  appeared for two weekdays. A separate job on purpose: if the desk run dies
+  appeared for three weekdays. A separate job on purpose: if the desk run dies
   before reaching `notify.py`, its own failure handler dies with it.
 
 ```bash

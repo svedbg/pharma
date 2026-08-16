@@ -769,6 +769,27 @@ that a cron or a hand run gets it too; the launchd desk job therefore does not
 wait separately, though the heartbeat — which never comes through this script —
 still does.
 
+Two traps in the units themselves, both now pinned by tests:
+
+- **`TimeoutStartSec` has to outlive the run it bounds.** `run_daily.sh` bounds
+  every stage itself, and those sum to ~107 minutes worst case. At the old
+  `TimeoutStartSec=3600` systemd's SIGTERM arrived 47 minutes early — and it
+  arrives *past* the failure handler, so a slow run died with no report and no
+  notification, looking exactly like the silence the desk emits on a quiet day.
+  Now 7200. The inner bounds do the work; this is the last resort behind them,
+  and a last resort that fires first is not one.
+- **A bare `ExecStart=` name ignores the unit's own `Environment=PATH`.**
+  systemd resolves it against its *compiled-in* search path instead, so
+  `ExecStart=python3` silently pins to `/usr/bin/python3` and skips the pyenv
+  shim the unit puts first — and a name present only on `Environment=PATH` does
+  not launch at all (verified on systemd 255). The heartbeat goes through
+  `/usr/bin/env python3`, which is absolute and then does the lookup with the
+  inherited PATH. It used to hardcode `%h/.pyenv/shims/python3`: a dead
+  `ExecStart` the moment pyenv is removed or has its version unset, in the one
+  unit whose whole job is to notice when things have gone quiet. Safe to fall
+  back because `heartbeat.py` is stdlib-only and needs neither `tomllib` nor
+  `pyexpat`.
+
 ### Installed units drift from the repo, silently
 
 Both schedulers copy: systemd units into `~/.config/systemd/user/`, and launchd

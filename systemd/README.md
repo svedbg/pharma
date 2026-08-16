@@ -14,7 +14,7 @@ the project lives at `~/projects/pharma`.
 - **pharma-desk** — Mon–Fri 23:18 local. The US close lands at 22:00–23:00
   Europe/Sofia in every daylight-saving alignment, so the daily bar is settled.
 - **pharma-heartbeat** — Mon–Fri 10:23 local. Alerts if no report has appeared
-  for two weekdays. Deliberately a separate unit: if the main run dies before
+  for three weekdays. Deliberately a separate unit: if the main run dies before
   reaching `notify.py`, its own failure handler dies with it.
 
 `Persistent=true` on both catches up a run missed while the machine was off.
