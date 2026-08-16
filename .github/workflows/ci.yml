@@ -7,13 +7,22 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         # 3.11 is the declared floor; 3.12 is what it runs on in practice.
         # Both are tested because a 3.12-only f-string once slipped through.
         python-version: ["3.11", "3.12"]
+        exclude:
+          # The Python floor is a Python question and the second platform is a
+          # shell question, so crossing them buys nothing. macOS runs the newer
+          # interpreter and carries the shell checks below; a 3.11-only Python
+          # problem would show up on Linux just as well, and half an hour of
+          # macOS queue time would not.
+          - os: macos-latest
+            python-version: "3.11"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -40,3 +49,63 @@ jobs:
           for f in *.py; do
             python -c "import importlib; importlib.import_module('${f%.py}')" || exit 1
           done
+
+      # ---------------------------------------------------------------- shell
+      # The reason macOS is in the matrix at all. The desk's two least-exercised
+      # code paths exist only there: run_daily.sh falls back to a symlink lock
+      # where flock is absent, and to a hand-rolled watchdog where timeout is.
+      # Neither runs on Linux, so neither had ever been executed by CI -- and
+      # the tests that look like cross-platform coverage all read a file as text
+      # and assert on its contents, which passes on Linux whatever macOS does.
+      - name: Shell must parse under this platform's bash
+        # macOS ships bash 3.2 (the last GPLv2 release) at /bin/bash, so a
+        # bash 4+ construct is a syntax error there and nowhere else. Parsing
+        # under the system bash is what catches that; parsing under whichever
+        # newer bash happens to be on PATH is not.
+        run: |
+          set -euo pipefail
+          bash --version | head -1
+          for f in run_daily.sh systemd/check-units.sh launchd/install-launchd.sh; do
+            bash -n "$f"
+            if [ -x /bin/bash ]; then /bin/bash -n "$f"; fi
+            echo "  ok  $f"
+          done
+          echo "system bash: $(/bin/bash --version | head -1)"
+
+      - name: launchd job generator, and its platform contract
+        # --check writes only to a temp directory and never calls launchctl, so
+        # it is safe on both platforms -- that is what makes it testable here.
+        # It needs `claude` on PATH only to bake a path into the plist, so a stub
+        # is enough to exercise the generator itself.
+        #
+        # The assertion is the platform contract, not merely "it ran": on macOS
+        # a job that is not installed IS drift and must exit non-zero, while on
+        # Linux the same state is correct and must exit 0. That asymmetry lives
+        # in one line of the installer (MISSING_IS_DRIFT) and nothing else
+        # checks it.
+        run: |
+          set -uo pipefail
+          stub="${RUNNER_TEMP:-/tmp}/stub"
+          mkdir -p "$stub"
+          printf '#!/bin/sh\nexit 0\n' > "$stub/claude"
+          chmod +x "$stub/claude"
+          export PATH="$stub:$PATH"
+
+          out="$(./launchd/install-launchd.sh --check 2>&1)"; rc=$?
+          echo "$out"
+          echo "--- exit $rc"
+
+          for label in com.pharma.desk com.pharma.heartbeat; do
+            echo "$out" | grep -q "$label" \
+              || { echo "generator never reached $label"; exit 1; }
+          done
+
+          if [ "$(uname -s)" = "Darwin" ]; then
+            [ "$rc" -ne 0 ] || {
+              echo "on macOS an uninstalled job is drift and must exit non-zero"; exit 1; }
+            echo "$out" | grep -q "not installed" \
+              || { echo "expected the uninstalled state to be reported"; exit 1; }
+          else
+            [ "$rc" -eq 0 ] || {
+              echo "on Linux there are no launchd jobs to be stale; exit 0 expected"; exit 1; }
+          fi
