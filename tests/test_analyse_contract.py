@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
-import signals
 from signals import analyse
 
 SETTINGS = {"max_position_pct": 28, "max_position_pct_lottery": 5,
