@@ -406,6 +406,47 @@ def test_the_outer_timeout_outlives_the_run_it_is_bounding():
         f"run_daily.sh; systemd would kill the run before it could report")
 
 
+def test_the_analysis_pass_cannot_overwrite_an_existing_report():
+    """Two runs on different days can name their report for the same session --
+    the session is the newest bar, not the run date -- so the analysis pass has
+    to displace the report it finds *before* Claude writes over it.
+
+    Friday's run wrote reports/2026-08-14.md at 23:39; Monday's run analysed the
+    same Friday bar and wrote straight over it. reports/ is gitignored, so
+    Friday's analysis existed only as the attachment on Friday's email. The
+    ordering is the whole fix: preserving it after the pass preserves the new
+    file, not the old one.
+    """
+    script = (ROOT / "run_daily.sh").read_text()
+
+    preserve = script.find('cp -p "$REPORT" "$PRIOR_REPORT"')
+    analysis = script.find("claude -p")
+    assert preserve != -1, "run_daily.sh no longer preserves the existing report"
+    assert analysis != -1, "found no analysis invocation to order against"
+    assert preserve < analysis, (
+        "the existing report is preserved after the analysis pass has already "
+        "overwritten it")
+    assert "reports/superseded" in script, \
+        "the displaced report must land in reports/superseded/, which the " \
+        "archive builder skips"
+    assert ".written-$stamp.md" in script, \
+        "the displaced report must be stamped with when it was written"
+
+
+def test_an_unchanged_report_is_a_failed_run_not_a_second_delivery():
+    """`[[ -f "$REPORT" ]]` passes on the *previous* run's file, so leniently
+    keeping the old report in place -- which is what makes a failed analysis pass
+    non-destructive -- also lets the run email a report that was already
+    delivered, as if it were new. A full inbox and no new analysis is the one
+    outcome this desk cannot see, so the byte comparison turns it into a loud
+    failure."""
+    script = (ROOT / "run_daily.sh").read_text()
+    assert '"$now_hash" == "$PRIOR_HASH"' in script
+    guard = script[script.find('"$now_hash" == "$PRIOR_HASH"'):]
+    assert re.search(r"fail \"the analysis pass left", guard), \
+        "an unchanged report must go through fail(), which notifies"
+
+
 def test_both_schedulers_agree_on_the_schedule():
     """The launchd job bakes its times into the plist and the systemd timer
     keeps its own. Nothing enforces that they match, and a desk that runs at two

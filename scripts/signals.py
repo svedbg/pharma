@@ -1753,7 +1753,7 @@ def main() -> int:
              for r in rows for c in (r.get("catalysts") or [])),
             key=lambda x: (x[0], x[1]),
         )
-        (summaries / f"{out['session_date']}.json").write_text(json.dumps({
+        payload = json.dumps({
             "session_date": out["session_date"],
             "regime": (regime or {}).get("label"),
             "tiers": {t: sum(1 for r in rows if r["tier"] == t)
@@ -1764,7 +1764,39 @@ def main() -> int:
             "next_catalyst": ({"symbol": nxt[0][1], "date": nxt[0][2]["date"],
                                "days_until": nxt[0][0], "kind": nxt[0][2].get("kind")}
                               if nxt else None),
-        }, indent=2))
+        }, indent=2)
+        target = summaries / f"{out['session_date']}.json"
+        # Two runs on different days land on the same session whenever one wins
+        # the race with the provider and the next loses it -- the session is the
+        # newest bar, not the run date, so Monday analysing Friday's bar files
+        # under Friday. The second run used to write straight over the first.
+        # This record is half of the pair publish.py builds the archive index
+        # from; the report is the other half, displaced the same way in
+        # run_daily.sh. Keep the canonical name for the newest, because that
+        # pairing is by filename, and move the displaced one aside stamped with
+        # when it was written, so the day it described is still readable.
+        #
+        # An identical payload is not a second version, so it is left alone:
+        # superseded/ means "a record that said something else", and filling it
+        # with copies of the live file would bury the ones that do.
+        if target.exists() and target.read_text() != payload:
+            displaced = summaries / "superseded"
+            displaced.mkdir(parents=True, exist_ok=True)
+            # The file's own mtime, not a clock read: stage 2 takes no reading
+            # of the wall clock, and this names the version being displaced by
+            # when that version was produced. To the second, because this file
+            # recommends re-running signals.py to pick up a watchlist edit and
+            # two such runs a few seconds apart would otherwise displace onto
+            # one filename, losing the first version to the fix meant to keep
+            # it.
+            stamp = datetime.fromtimestamp(
+                target.stat().st_mtime).strftime("%Y%m%dT%H%M%S")
+            keep = displaced / f"{out['session_date']}.written-{stamp}.json"
+            target.replace(keep)
+            print(f"[signals] {target.name} already existed for this session; "
+                  f"kept the previous one as superseded/{keep.name}",
+                  file=sys.stderr)
+        target.write_text(payload)
     # The state file is what makes an alert fire *once*, so writing it commits
     # to having recorded the transition. On a run with no session date nothing
     # was recorded -- the alert log above is keyed by session and skipped it --
