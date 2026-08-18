@@ -819,7 +819,10 @@ and WebSearch content, so this is untrusted input by construction.
 `data/summaries/<date>.json` is written by `signals.py` **only on a live run**,
 which is the same `--state` test that gates the alert log. A screening pass
 borrows the whole module, and before that gate it silently overwrote the real
-day's summary and corrupted the archive index.
+day's summary and corrupted the archive index. A live run that lands on a
+session already recorded displaces the previous record into
+`data/summaries/superseded/` instead of overwriting it — see the collision note
+under Schedule for why two runs on different days share one session.
 
 ## Briefing documents
 
@@ -864,6 +867,34 @@ race against the provider publishing the daily bar at all. That is fine and
 needs no adjustment: the run analyses whatever the newest bar turns out to be
 and names itself after that session, so losing the race costs a day of latency
 rather than a day of wrong dates.
+
+**It also costs a collision, which is not the same as latency.** Whichever way
+each run goes is decided 18 minutes after the close, so a run that wins the race
+and the next run that loses it name their report for the *same* session — and
+that pair of outcomes is ordinary, not a corner case. It happened on the second
+week the desk was live: Friday's run won and wrote `reports/2026-08-14.md` at
+23:39, Monday's run found no Monday bar, analysed the same Friday session, and
+wrote straight over it. `reports/` and `data/` are gitignored, so Friday's
+analysis survived only as the attachment on Friday's own email. Nothing was
+wrong with either report; the second simply took the first one's name.
+
+Both halves of the pair are now displaced rather than overwritten —
+`reports/superseded/<session>.written-<stamp>.md` in `run_daily.sh` and
+`data/summaries/superseded/` in `signals.py`, each stamped with when the
+displaced version was written. The newest keeps the canonical name because
+`publish.py` pairs report and summary by filename, and the archive skips the
+displaced copies twice over: they sit in a subdirectory, and their stems are not
+bare dates. An *identical* payload is not a second version and is left alone, or
+`superseded/` fills with copies of the live file and buries the ones that differ.
+
+Two consequences worth keeping in mind. The report is displaced **before** the
+analysis pass runs, since preserving it afterwards would preserve the new file
+and not the old one. And because the existing report is copied rather than moved
+— so a failed analysis pass still leaves the archive the day it already had —
+`[[ -f "$REPORT" ]]` can now pass on the *previous* run's file. A report left
+byte-identical is therefore a failed run, not a second delivery: without that
+check the run emails an already-delivered report as if it were new, and a full
+inbox with no new analysis is the one failure this desk cannot see.
 
 ```bash
 # Linux

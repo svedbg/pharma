@@ -9,11 +9,13 @@ the internals.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import date, timedelta
 
 import pytest
 
+import publish
 import signals
 
 SETTINGS = {"max_position_pct": 28, "max_position_pct_lottery": 5,
@@ -354,6 +356,87 @@ def test_a_screening_run_leaves_no_trace_in_the_live_archive(monkeypatch, tmp_pa
     }, state_name="screen_alerts.json")
     assert not (tmp_path / "summaries").exists(), \
         "a screening run must not write the live archive's per-day summary"
+
+
+def _summary_snapshot(filings):
+    """One name, calm prices, with whatever filings the caller wants -- enough to
+    change the archive summary's `vetoed` list without changing anything else."""
+    prices = [10.0 + (i % 7) * 0.2 for i in range(60)]
+    return {
+        "local_date": "2026-08-14", "status": "ok", "benchmarks": {},
+        "tickers": {"TEST": {"symbol": "TEST", "tier": "B", "financials": {},
+                             "trials": [], "bars": _bars(prices),
+                             "filings": filings}},
+    }
+
+
+def test_a_second_run_on_the_same_session_displaces_the_summary_it_replaces(
+        monkeypatch, tmp_path, capsys):
+    """The session is the newest bar, not the run date, so two runs on different
+    days land on the same summary whenever one wins the race with the provider
+    and the next loses it.
+
+    That happened: Friday's run wrote the 2026-08-14 pair, Monday's run analysed
+    the same Friday bar and overwrote both halves. reports/ and data/ are
+    gitignored, so the displaced version was recoverable only from the email it
+    had already been sent in. Keep the canonical name for the newest, because
+    publish.py pairs report and summary by filename, and keep the old one.
+    """
+    _run_main(monkeypatch, tmp_path, _summary_snapshot([]),
+              state_name="alerts.json")
+    first = json.loads((tmp_path / "summaries" / "2026-08-14.json").read_text())
+    assert first["vetoed"] == []
+
+    _run_main(monkeypatch, tmp_path, _summary_snapshot(
+        [{"form": "424B5", "filed": "2026-08-13", "items": "",
+          "offering_type": "priced", "report_date": None, "url": "u"}],
+    ), state_name="alerts.json")
+
+    live = json.loads((tmp_path / "summaries" / "2026-08-14.json").read_text())
+    assert live["vetoed"] == ["TEST"], "the canonical name must hold the newest run"
+
+    kept = sorted((tmp_path / "summaries" / "superseded").glob("*.json"))
+    assert len(kept) == 1, kept
+    assert re.fullmatch(r"2026-08-14\.written-\d{8}T\d{6}\.json", kept[0].name), \
+        kept[0].name
+    assert json.loads(kept[0].read_text()) == first, \
+        "the displaced summary must survive verbatim"
+    assert "superseded/" in capsys.readouterr().err
+
+
+def test_re_running_an_unchanged_session_leaves_no_superseded_copy(
+        monkeypatch, tmp_path):
+    """superseded/ means "a record that said something else". Re-running the same
+    snapshot -- which this project recommends, to pick up a watchlist edit --
+    must not fill it with copies of the live file, or the versions that do differ
+    are buried among them."""
+    _run_main(monkeypatch, tmp_path, _summary_snapshot([]),
+              state_name="alerts.json")
+    _run_main(monkeypatch, tmp_path, _summary_snapshot([]),
+              state_name="alerts.json")
+    assert not (tmp_path / "summaries" / "superseded").exists()
+
+
+def test_the_archive_indexes_one_page_per_session_not_the_displaced_versions(
+        monkeypatch, tmp_path):
+    """The displaced reports live under reports/, so the archive builder has to
+    ignore them -- twice over, since they sit in a subdirectory *and* carry a
+    stem that is not a bare date. Otherwise every collision would add a second
+    page for the same day, which is the archive disagreeing with itself about
+    what happened."""
+    reports = tmp_path / "reports"
+    (reports / "superseded").mkdir(parents=True)
+    (reports / "2026-08-14.md").write_text("# live\n\nthe newest analysis\n")
+    (reports / "superseded" / "2026-08-14.written-20260814T233915.md").write_text(
+        "# displaced\n\nFriday's analysis\n")
+    monkeypatch.setattr(publish, "REPORTS", reports)
+    monkeypatch.setattr(publish, "SUMMARIES", tmp_path / "summaries")
+    monkeypatch.setattr(publish, "SITE", tmp_path / "site")
+
+    assert publish.build() == 0
+    pages = sorted(p.name for p in (tmp_path / "site").glob("*.html"))
+    assert pages == ["2026-08-14.html", "index.html"], pages
+    assert "the newest analysis" in (tmp_path / "site" / "2026-08-14.html").read_text()
 
 
 def test_main_ages_filings_from_the_snapshot_not_from_today(monkeypatch, tmp_path):
