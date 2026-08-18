@@ -356,6 +356,53 @@ fi
 # --- 3. judgement ---------------------------------------------------------
 # The report is written by Claude directly; we only check that it appeared.
 echo "--- analysis"
+
+# Two runs on different days can name their report for the same session. The
+# session is the newest bar, not the run date, so whenever one run wins the race
+# with the provider and the next loses it, both land on the same file: Friday's
+# run wrote reports/2026-08-14.md at 23:39, Monday's run analysed the same
+# Friday bar and wrote straight over it. reports/ is gitignored, so Friday's
+# analysis survived only as the attachment on Friday's email.
+#
+# So displace it first, stamped with the time it was written. The new report
+# keeps the canonical name because publish.py pairs reports/<session>.md with
+# data/summaries/<session>.json by that name, and the superseded copy is both in
+# a subdirectory and outside the YYYY-MM-DD stem the archive globs for, so it is
+# preserved without appearing twice in the index. signals.py displaces the
+# summary half the same way.
+#
+# Copied rather than moved: if the analysis pass then produces nothing, moving
+# would have emptied the canonical slot and cost the archive a day it already
+# had. The hash below is what stops that leniency from turning into a silent
+# re-send of a report already delivered.
+PRIOR_REPORT=""
+PRIOR_HASH=""
+if [[ -f "$REPORT" ]]; then
+    # $PY, not `date -r`: GNU date reads a file there and BSD date reads epoch
+    # seconds, and this script runs under both.
+    stamp="$("$PY" -c '
+import datetime, os, sys
+print(datetime.datetime.fromtimestamp(os.path.getmtime(sys.argv[1])).strftime("%Y%m%dT%H%M%S"))
+' "$REPORT" 2>/dev/null)"
+    [[ -n "$stamp" ]] || stamp="$(date +%Y%m%dT%H%M%S)"
+    mkdir -p "$ROOT/reports/superseded"
+    PRIOR_REPORT="$ROOT/reports/superseded/$SESSION.written-$stamp.md"
+    if cp -p "$REPORT" "$PRIOR_REPORT" 2>/dev/null; then
+        PRIOR_HASH="$("$PY" -c '
+import hashlib, sys
+print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())
+' "$REPORT" 2>/dev/null)"
+        echo "[run] $SESSION already has a report; kept it as superseded/$(basename "$PRIOR_REPORT")"
+        # The guard below is skipped without this hash, so an unreadable one
+        # would quietly restore the very behaviour it exists to stop.
+        [[ -n "$PRIOR_HASH" ]] || echo "WARNING: could not hash $REPORT; an unchanged report will not be detected" >&2
+    else
+        # Not fatal on its own, but the run is about to overwrite the only copy,
+        # so say plainly that the old one is going.
+        echo "WARNING: could not preserve the existing report at $REPORT; it will be overwritten" >&2
+        PRIOR_REPORT=""
+    fi
+fi
 PROMPT="$(cat "$ROOT/prompts/daily.md")
 
 The session being analysed is $SESSION -- every price, filing age and catalyst
@@ -389,6 +436,24 @@ run_with_timeout 1800 claude -p "$PROMPT" \
 
 if [[ ! -f "$REPORT" ]]; then
     fail "no report produced at reports/$SESSION.md"
+fi
+
+# A report left byte-identical to the one already on disk is not a new report --
+# the analysis pass wrote nothing and this is the previous run's file. Without
+# this check the existence test above passes on the old content and the run
+# cheerfully emails a report that was already delivered, which is precisely the
+# shape of failure the desk cannot see: a full inbox and no new analysis.
+if [[ -n "$PRIOR_HASH" ]]; then
+    now_hash="$("$PY" -c '
+import hashlib, sys
+print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())
+' "$REPORT" 2>/dev/null)"
+    if [[ "$now_hash" == "$PRIOR_HASH" ]]; then
+        # The preserved copy is a duplicate of the live file, so drop it:
+        # superseded/ means "a version that said something else".
+        [[ -n "$PRIOR_REPORT" ]] && rm -f "$PRIOR_REPORT"
+        fail "the analysis pass left reports/$SESSION.md unchanged -- no new report was written"
+    fi
 fi
 echo "--- report: $REPORT ($(wc -l < "$REPORT") lines)"
 
