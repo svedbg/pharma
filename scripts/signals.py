@@ -479,6 +479,28 @@ def resolved_catalysts(path: Path, asof: date, window_days: int = 21) -> dict:
     return out
 
 
+def soonest_catalyst(rows: list[dict]):
+    """The soonest dated catalyst across the watchlist, for the day summary.
+
+    Sorted on the first two fields only. Comparing whole tuples fell through
+    to the catalyst dict whenever two entries tied on both days_until and
+    symbol -- i.e. one ticker with two catalysts on the same date, which is an
+    ordinary shape for a PDUFA and its AdCom and for a re-appended entry.
+    Dicts are unorderable, so that raised TypeError out of main() and cost the
+    whole day's report (2026-08-18).
+    """
+    nxt = sorted(
+        ((c["days_until"], r["symbol"], c)
+         for r in rows for c in (r.get("catalysts") or [])),
+        key=lambda t: t[:2],
+    )
+    if not nxt:
+        return None
+    days, sym, c = nxt[0]
+    return {"symbol": sym, "date": c["date"],
+            "days_until": days, "kind": c.get("kind")}
+
+
 def exit_signals(rec: dict, out: dict, last: float, hard: list,
                  resolved: list, last_alert: dict | None) -> list:
     """Reasons to reduce or exit, as opposed to reasons to buy.
@@ -1742,17 +1764,6 @@ def main() -> int:
     if session and live_run:
         summaries = DATA / "summaries"
         summaries.mkdir(parents=True, exist_ok=True)
-        # Sorted on the first two fields only. Comparing whole tuples fell
-        # through to the catalyst dict whenever two entries tied on both
-        # days_until and symbol -- i.e. one ticker with two catalysts on the
-        # same date, which is an ordinary shape for a PDUFA and its AdCom and
-        # for a re-appended entry. Dicts are unorderable, so that raised
-        # TypeError out of main() and cost the whole day's report.
-        nxt = sorted(
-            ((c["days_until"], r["symbol"], c)
-             for r in rows for c in (r.get("catalysts") or [])),
-            key=lambda x: (x[0], x[1]),
-        )
         payload = json.dumps({
             "session_date": out["session_date"],
             "regime": (regime or {}).get("label"),
@@ -1761,9 +1772,7 @@ def main() -> int:
             "alerts": [n["symbol"] for n in out["notify"]],
             "exits": [n["symbol"] for n in out["notify_exits"]],
             "vetoed": sorted({r["symbol"] for r in rows if r.get("hard_vetoes")}),
-            "next_catalyst": ({"symbol": nxt[0][1], "date": nxt[0][2]["date"],
-                               "days_until": nxt[0][0], "kind": nxt[0][2].get("kind")}
-                              if nxt else None),
+            "next_catalyst": soonest_catalyst(rows),
         }, indent=2)
         target = summaries / f"{out['session_date']}.json"
         # Two runs on different days land on the same session whenever one wins
