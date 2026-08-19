@@ -18,6 +18,12 @@ data/screen_candidates.toml
 # Your objective, risk posture and broker preferences -- personal, not code.
 STRATEGY.local.md
 
+# Personal Claude Code settings for this repo (model choice, auto-mode context).
+.claude/settings.local.json
+
+# macOS Finder metadata.
+.DS_Store
+
 # Generated PDFs. The capability brief is committed so it has a stable, linkable
 # URL for sharing; the internal briefing stays generated-only.
 docs/*.pdf
