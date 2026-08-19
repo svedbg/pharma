@@ -181,3 +181,79 @@ confidence = "expected"
 description = "Long-term TRUST-I and TRUST-II data for IBTROZI presented at WCLC and ESMO"
 source = "Nuvation Bio 2026 investor update"
 
+# --- appended by the 2026-08-17 run ---
+
+[[catalyst]]
+symbol = "CYTK"
+date = "2026-08-28"
+kind = "conference"
+confidence = "confirmed"
+description = "ACACIA-HCM full results (aficamten in non-obstructive HCM, both primary endpoints met per topline) in an ESC Congress Hot Line session, Munich"
+source = "Cytokinetics Q2 2026 business update, 2026-08-06 (ESC Hot Line stated in release); ESC late-breaking abstract listing"
+
+[[catalyst]]
+symbol = "CYTK"
+date = "2026-11-14"
+kind = "PDUFA"
+confidence = "rumored"
+description = "Reported MAPLE-HCM sNDA target action date (aficamten monotherapy vs metoprolol, oHCM). NOT in the company's own Q2 2026 release (checked 2026-08-17) -- aggregator-sourced only, verify before trusting"
+source = "secondary aggregation only; absent from ir.cytokinetics.com Q2 2026 release"
+
+[[catalyst]]
+symbol = "CHRS"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "Casdozokitug randomized Phase 2 first readout (casdozokitug + toripalimab + bevacizumab in HCC), enrollment complete, guided to 2H 2026"
+source = "Coherus Q2 2026 results release, 2026-08-05"
+
+[[catalyst]]
+symbol = "PCRX"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "ZILRETTA Phase 3 shoulder-OA topline, company guided to 'later in 2026'; would be first FDA-approved shoulder-OA indication"
+source = "Pacira Q2 2026 earnings coverage, 2026-08-04/05"
+
+[[catalyst]]
+symbol = "PCRX"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "PCRX-201 (enekinragene inzadenovec, knee OA) Phase 2 ASCEND Part A topline, guided by end of 2026"
+source = "Pacira PR 2026-07-27 (manufacturing transition; Part A topline by end of 2026)"
+
+[[catalyst]]
+symbol = "AKBA"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "Vafseo Phase 3b VOCAL topline, guided to Q4 2026; TDAPA reimbursement expires 2026-12-31 with planned price reset into the ESRD bundle from 2027"
+source = "Akebia Q2 2026 results coverage (Seeking Alpha summary of company guidance), 2026-08-05"
+
+[[catalyst]]
+symbol = "JUNS"
+date = "2026-08-25"
+kind = "other"
+confidence = "confirmed"
+description = "Nasdaq compliance deadline (minimum bid price + market value of listed securities, notices dated 2026-02-26); 1-for-75 reverse split effective 2026-08-06 was the cure attempt -- delisting determination possible if not regained"
+source = "Jupiter Neurosciences reverse-split PR 2026-08-05; Feb 2026 deficiency notices coverage"
+
+[[catalyst]]
+symbol = "COLL"
+date = "2027-01-23"
+kind = "other"
+confidence = "confirmed"
+description = "Earliest contractual date Teva may launch generic Belbuca under the patent settlement; management has an authorized-generic response ready. Alvogen barred until Dec 2032"
+source = "Collegium Q2 2026 earnings call transcript, 2026-08-13"
+
+
+# --- appended by the 2026-08-18 run (retroactive, executed 2026-08-19) ---
+
+[[catalyst]]
+symbol = "SMMT"
+date = "2026-11-14"
+kind = "PDUFA"
+confidence = "confirmed"
+description = "Ivonescimab BLA PDUFA (2L EGFR-mutated nonsquamous NSCLC, based on HARMONi). Company PR 2026-07-22: 'PDUFA goal action date of November 14, 2026'. Updated OS HR 0.76 in Western subgroup (June 2026 cutoff), not statistically significant"
+source = "https://smmttx.com/news/press-releases/news-details/2026/Ivonescimab-Plus-Chemotherapy-Shows-Consistent-Favorable-Overall-Survival-Results-in-Western-and-Asian-Patients-in-Updated-Analysis-from-Global-Phase-III-HARMONi-Study/default.aspx"
