@@ -1021,21 +1021,42 @@ def fetch_trials(sponsor: str) -> list[dict]:
 # ------------------------------------------------------------------- persistence
 
 
-def persist(con: sqlite3.Connection, ticker: str, bars, filings, fin) -> list[dict]:
-    """Write to sqlite. Returns filings not seen in any previous run."""
-    con.executemany(
-        "INSERT OR REPLACE INTO bars VALUES (?,?,?,?,?,?,?,?)",
-        [
-            (ticker, b["date"], b["open"], b["high"], b["low"], b["close"], b["adjclose"], b["volume"])
-            for b in bars
-        ],
-    )
+def persist(con: sqlite3.Connection, ticker: str, bars, filings, fin,
+            *, write: bool = True) -> list[dict]:
+    """Return filings not seen in any previous run, and (unless write=False)
+    record this run's bars, filings and facts.
+
+    The two halves are separable on purpose. Answering "what is new?" reads the
+    filings table; recording commits to having seen it, and only the FIRST run
+    to see a filing reports it as new -- every later one finds it known. So a
+    second, non-recording pass over the same day (the pre-market run) would
+    silently consume the flag and the nightly report would never mention the
+    8-K, having been beaten to it by an email that is not the desk's record of
+    the day. That is the same shared-state hazard `--screening` exists to close
+    on the alert log and the archive summary, arriving through sqlite instead.
+
+    With write=False nothing is committed: no bars (pre-market there is no new
+    bar to add anyway), no filings, no facts, and main() writes no `runs` row.
+    The pass sees exactly what the next recording run will see.
+    """
+    if write:
+        con.executemany(
+            "INSERT OR REPLACE INTO bars VALUES (?,?,?,?,?,?,?,?)",
+            [
+                (ticker, b["date"], b["open"], b["high"], b["low"], b["close"], b["adjclose"], b["volume"])
+                for b in bars
+            ],
+        )
 
     now = datetime.now(UTC).isoformat()
     known = {
         r[0] for r in con.execute("SELECT accession FROM filings WHERE ticker=?", (ticker,))
     }
     fresh = [f for f in filings if f["accession"] not in known]
+    if not write:
+        # Computed against the same table the recording run will read, so the
+        # answer is identical -- it is just not spent.
+        return fresh
     con.executemany(
         "INSERT OR IGNORE INTO filings VALUES (?,?,?,?,?,?,?,?,?)",
         [
@@ -1174,6 +1195,12 @@ def main() -> int:
     ap.add_argument("--watchlist", default=str(ROOT / "watchlist.toml"))
     ap.add_argument("--out", default=str(DATA / "latest.json"))
     ap.add_argument("--refresh-ciks", action="store_true")
+    # The read-only counterpart of signals.py --screening. A pass that is not
+    # the desk's record of the day must not spend the record: see persist().
+    ap.add_argument("--no-persist", action="store_true",
+                    help="do not write bars, filings, facts or a runs row to "
+                         "history.sqlite -- for a second look at a day the "
+                         "nightly run has already recorded (the pre-market run)")
     args = ap.parse_args()
 
     cfg = tomllib.loads(Path(args.watchlist).read_text())
@@ -1207,12 +1234,19 @@ def main() -> int:
             snapshot["benchmarks"][bsym] = {
                 "symbol": bsym, "name": bname, "source": bsrc, "bars": bbars[-320:],
             }
-            con.executemany(
-                "INSERT OR REPLACE INTO bars VALUES (?,?,?,?,?,?,?,?)",
-                [(bsym, b["date"], b["open"], b["high"], b["low"], b["close"],
-                  b["adjclose"], b["volume"]) for b in bbars],
-            )
-            con.commit()
+            # Guarded like every other write: --no-persist means this pass
+            # records nothing at all. The benchmark bars are the same ones the
+            # nightly run stores, so skipping them costs nothing -- but writing
+            # them from a read-only pass would make "no-persist" a claim the
+            # code does not honour, and a half-honoured isolation flag is worse
+            # than none, because it is trusted.
+            if not args.no_persist:
+                con.executemany(
+                    "INSERT OR REPLACE INTO bars VALUES (?,?,?,?,?,?,?,?)",
+                    [(bsym, b["date"], b["open"], b["high"], b["low"], b["close"],
+                      b["adjclose"], b["volume"]) for b in bbars],
+                )
+                con.commit()
             print(f"[fetch] benchmark {bsym}: {len(bbars)} bars", file=sys.stderr)
         except FetchError as e:
             snapshot["errors"].append(f"benchmark {bsym}: {e}")
@@ -1248,7 +1282,8 @@ def main() -> int:
         sym = entry["symbol"].upper()
         rec, bars, filings, fin = results[sym]
         rec["new_filings_since_last_run"] = (
-            persist(con, sym, bars, filings, fin) if (bars or filings) else []
+            persist(con, sym, bars, filings, fin, write=not args.no_persist)
+            if (bars or filings) else []
         )
         rec["short_volume"] = regsho.get(sym, [])
         snapshot["tickers"][sym] = rec
@@ -1270,17 +1305,21 @@ def main() -> int:
               f"({date.today().isoformat()}) -- the newest bar available is what "
               f"the run analyses", file=sys.stderr)
 
+    # The snapshot itself is always written -- --out is where the caller asked
+    # for it, and a read-only pass still needs its own file to analyse.
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(snapshot, indent=2))
-    con.execute(
-        "INSERT OR REPLACE INTO runs VALUES (?,?,?,?)",
-        (
-            datetime.now(UTC).isoformat(),
-            snapshot["local_date"],
-            snapshot["status"],
-            "; ".join(snapshot["errors"])[:500],
-        ),
-    )
-    con.commit()
+    if not args.no_persist:
+        con.execute(
+            "INSERT OR REPLACE INTO runs VALUES (?,?,?,?)",
+            (
+                datetime.now(UTC).isoformat(),
+                snapshot["local_date"],
+                snapshot["status"],
+                "; ".join(snapshot["errors"])[:500],
+            ),
+        )
+        con.commit()
     con.close()
 
     print(

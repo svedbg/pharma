@@ -11,7 +11,8 @@
 # cheap way to tell the two apart, and to notice before the difference matters.
 #
 # The launchd equivalent of systemd/. Same two jobs, same schedule:
-#   com.pharma.desk       Mon-Fri 23:18  the daily run
+#   com.pharma.desk       Tue-Sat 01:30  the daily run (the prior session)
+#   com.pharma.premarket  Mon-Fri 14:30  the pre-market news pass
 #   com.pharma.heartbeat  Mon-Fri 10:23  alerts if no report for three weekdays
 #
 # The plists are generated here with plistlib rather than kept as sed
@@ -25,7 +26,12 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LABELS=(com.pharma.desk com.pharma.heartbeat)
+# Must list every label the Python `jobs` dict below writes a plist for.
+# The shell half bootstraps, checks and uninstalls; the Python half
+# generates. A label present in one and not the other is a job that gets
+# written and never loaded, or loaded and never removed -- and a test pins
+# the two together so adding a third job cannot half-land.
+LABELS=(com.pharma.desk com.pharma.premarket com.pharma.heartbeat)
 DOMAIN="gui/$(id -u)"
 
 usage() {
@@ -231,6 +237,7 @@ def finish(log: str) -> str:
     )
 
 desk_log = f"{home}/Library/Logs/pharma-desk.log"
+premarket_log = f"{home}/Library/Logs/pharma-premarket.log"
 heartbeat_log = f"{home}/Library/Logs/pharma-heartbeat.log"
 
 # Start/exit markers bracket every run, so an unattended failure is
@@ -253,6 +260,22 @@ desk_cmd = "; ".join([
     finish(desk_log),
 ])
 
+# Same prerequisites as the desk run, because it is the same pipeline plus an
+# analysis pass -- and its own log, since the two describe different questions
+# and thirteen hours apart.
+premarket_cmd = "; ".join([
+    marker.format(name="pharma-premarket"),
+    claude_path,
+    f'cd {q(root)} || {{ echo "FATAL: project directory missing"; exit 66; }}',
+    'command -v claude >/dev/null || { echo "FATAL: claude not on PATH (re-run launchd/install-launchd.sh)"; exit 127; }',
+    '"$PHARMA_PYTHON" -c "import tomllib, pyexpat" || { echo "FATAL: $PHARMA_PYTHON lacks tomllib or pyexpat; re-run launchd/install-launchd.sh"; exit 78; }',
+    "sleep $((RANDOM % 240))",
+    # No await_network: run_premarket.sh sources the same prologue as the desk
+    # run and does its own wait.
+    "./run_premarket.sh",
+    finish(premarket_log),
+])
+
 heartbeat_cmd = "; ".join([
     marker.format(name="pharma-heartbeat"),
     f'cd {q(root)} || {{ echo "FATAL: project directory missing"; exit 66; }}',
@@ -265,18 +288,29 @@ heartbeat_cmd = "; ".join([
     finish(heartbeat_log),
 ])
 
-def weekdays(hour: int, minute: int) -> list[dict]:
-    return [{"Weekday": w, "Hour": hour, "Minute": minute} for w in range(1, 6)]
+# launchd numbers weekdays 0=Sunday..6=Saturday. The day set is a parameter
+# rather than a hardcoded Mon-Fri because the desk job runs AFTER midnight on
+# the session it analyses, so its days are Tue-Sat while the heartbeat's are
+# still Mon-Fri. Baking Mon-Fri in here would have silently skipped Monday's
+# session and analysed Friday's twice on the Mac, while Linux did the right
+# thing -- exactly the cross-scheduler drift the installer exists to prevent.
+DAY_SETS = {"Mon-Fri": range(1, 6), "Tue-Sat": range(2, 7)}
 
-def job(label: str, cmd: str, hour: int, minute: int, log: str) -> dict:
+def on_days(days: str, hour: int, minute: int) -> list[dict]:
+    return [{"Weekday": w, "Hour": hour, "Minute": minute} for w in DAY_SETS[days]]
+
+def job(label: str, cmd: str, days: str, hour: int, minute: int, log: str) -> dict:
     return {
         "Label": label,
         "ProgramArguments": ["/bin/zsh", "-lc", cmd],
         "EnvironmentVariables": env,
-        # 23:18 Europe/Sofia is after the US close in every DST alignment.
+        # The desk runs 01:30 Tue-Sat: the US close (16:00 ET) lands at
+        # 22:00-23:00 Sofia in every DST alignment, so that is 2.5-3.5h after
+        # the closing print, and the price provider has published the daily bar
+        # by then. At the old 23:18 it had not -- see pharma-desk.timer.
         # launchd coalesces calendar events missed during SLEEP into one run at
         # wake; a machine powered OFF over the trigger skips that day.
-        "StartCalendarInterval": weekdays(hour, minute),
+        "StartCalendarInterval": on_days(days, hour, minute),
         # stdout and stderr share one file on purpose: the run markers and the
         # pre-log diagnostics (FATALs, lock messages) belong in the same
         # stream, the way journald interleaved them.
@@ -287,9 +321,11 @@ def job(label: str, cmd: str, hour: int, minute: int, log: str) -> dict:
 
 jobs = {
     "com.pharma.desk": job(
-        "com.pharma.desk", desk_cmd, 23, 18, desk_log),
+        "com.pharma.desk", desk_cmd, "Tue-Sat", 1, 30, desk_log),
+    "com.pharma.premarket": job(
+        "com.pharma.premarket", premarket_cmd, "Mon-Fri", 14, 30, premarket_log),
     "com.pharma.heartbeat": job(
-        "com.pharma.heartbeat", heartbeat_cmd, 10, 23, heartbeat_log),
+        "com.pharma.heartbeat", heartbeat_cmd, "Mon-Fri", 10, 23, heartbeat_log),
 }
 
 for label, data in jobs.items():
@@ -374,7 +410,8 @@ done
 
 cat <<EOF
 
-  desk:       Mon-Fri 23:18 (after the US close in every DST alignment)
+  desk:       Tue-Sat 01:30 (2.5-3.5h after the US close, so the bar exists)
+  premarket:  Mon-Fri 14:30 (07:30 ET, ~2h before the open)
   heartbeat:  Mon-Fri 10:23
 
   run now:    launchctl kickstart -k $DOMAIN/com.pharma.desk

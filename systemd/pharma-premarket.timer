@@ -1,0 +1,32 @@
+[Unit]
+Description=Pre-market news pass over the biotech watchlist
+
+[Timer]
+# 14:30 Europe/Sofia = 07:30 ET, about two hours before the 09:30 ET open.
+#
+# Placed to sit AFTER the pre-open company PR wave (which clusters 06:30-08:00
+# ET, where FDA news, trial readouts and priced takedowns land) and well BEFORE
+# the open, so there is time to read a filing and decide. Later would catch a
+# little more news and leave less time to act on it; the extra 45 minutes are
+# not worth arriving at 08:45 with an order to place.
+#
+# Mon-Fri and NOT Tue-Sat, unlike pharma-desk.timer: this run is about the
+# morning it fires on, not about a session that closed the previous evening, so
+# its days are the days the US market opens.
+#
+# The DST-mismatch weeks are why it is not later. EU and US switch on different
+# Sundays, so for a fortnight each spring and autumn Sofia sits one hour closer
+# to ET: 14:30 Sofia is 07:30 ET normally and 08:30 ET in those weeks. Both are
+# pre-market. At 15:45 Sofia the same shift would land at 09:45 ET, after the
+# open, and the one property this unit must never lose is being pre-market.
+OnCalendar=Mon-Fri 14:30
+RandomizedDelaySec=240
+# Deliberately NOT Persistent. A missed pre-market pass is worthless: catching
+# it up at 17:00 would email a "pre-market" note about a session already three
+# hours into trading, which is worse than silence because it reads as current.
+# The nightly run is the opposite case and does set Persistent=true.
+Persistent=false
+Unit=pharma-premarket.service
+
+[Install]
+WantedBy=timers.target

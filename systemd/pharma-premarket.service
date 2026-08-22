@@ -1,0 +1,20 @@
+[Unit]
+Description=Pre-market news pass over the biotech watchlist
+Documentation=file:%h/projects/pharma/CLAUDE.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/pharma
+# Same minimal-PATH problem as the desk unit: claude and pyenv both have to be
+# reachable or the run dies before it fetches anything.
+Environment=PATH=%h/.local/bin:%h/.pyenv/shims:%h/.pyenv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/projects/pharma/run_premarket.sh
+# Must stay ABOVE the sum of run_premarket.sh's own per-stage bounds, for the
+# same reason the desk unit must: 127s network wait + 1800 fetch + 900 signals
+# + 300 delta + 1200 analysis + 300 notify = ~77 minutes worst case. A last
+# resort that fires first is not one, and systemd's SIGTERM arrives past the
+# failure handler, so a run killed here dies with no report and no notification
+# -- indistinguishable from a quiet morning.
+TimeoutStartSec=5400

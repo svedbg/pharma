@@ -714,6 +714,138 @@ def test_the_drill_down_shows_the_levels_a_decision_uses(monkeypatch, tmp_path, 
     assert out.count("invalidation_breached") == 1
 
 
+
+# ------------------------------------------------------- the list-wide view
+
+
+def _brief(monkeypatch, tmp_path, capsys, tickers, extra_argv=()):
+    """Drive signals.main() then brief.main(), and return what brief printed.
+
+    End to end rather than unit-tested, for the same reason the drill-down and
+    overlay tests are: brief.py is now the only list-wide view the analysis pass
+    gets, and every stage of the chain that feeds it can look fine on its own
+    while a field never arrives. That is exactly how invalidation_price stayed
+    unreachable for all 57 names that had one.
+    """
+    import brief
+
+    snapshot = {"local_date": "2026-08-15", "status": "ok", "benchmarks": {},
+                "tickers": tickers}
+    (tmp_path / "latest.json").write_text(json.dumps(snapshot))
+
+    monkeypatch.setattr(signals, "ROOT", tmp_path)
+    monkeypatch.setattr(signals, "DATA", tmp_path)
+    monkeypatch.setattr(signals, "STATE", tmp_path)
+    watchlist = tmp_path / "watchlist.toml"
+    watchlist.write_text("[settings]\n" + "".join(
+        f'\n[[ticker]]\nsymbol = "{sym}"\n' for sym in tickers))
+    monkeypatch.setattr("sys.argv", [
+        "signals.py", "--snapshot", str(tmp_path / "latest.json"),
+        "--watchlist", str(watchlist), "--out", str(tmp_path / "signals.json"),
+        "--state", str(tmp_path / "candidate_alerts.json"),
+    ])
+    assert signals.main() == 0
+    capsys.readouterr()
+
+    monkeypatch.setattr(brief, "DATA", tmp_path)
+    monkeypatch.setattr("sys.argv", ["brief.py", "--dataset", str(tmp_path),
+                                     *extra_argv])
+    assert brief.main() == 0
+    return capsys.readouterr().out
+
+
+def test_the_list_wide_view_carries_what_a_decision_uses(
+        monkeypatch, tmp_path, capsys):
+    """brief.py replaced reading signals.json whole, so it has to carry every
+    number the report acts on -- not a readable summary of them.
+
+    The same list detail.py is pinned against: the entry zone and where price
+    sits in it, the invalidation level an exit is measured against, the
+    conviction score on both sides, the exit flags, capitulation_volume (which
+    ACT requires), the runway, and the links_md line the report puts under every
+    name it discusses. A view that dropped any of them would look entirely
+    normal and quietly stop informing a decision.
+    """
+    prices = [10.0 - i * 0.05 for i in range(60)]
+    last = prices[-1]
+    out = _brief(monkeypatch, tmp_path, capsys, {
+        "TEST": {"symbol": "TEST", "tier": "A", "company": "Test Bio",
+                 "filings": [], "financials": {}, "trials": [],
+                 "entry_low": 5.0, "entry_high": 9.0,
+                 "invalidation_price": last + 1.0,
+                 "invalidation": "thesis dead below here",
+                 "bars": _bars(prices)},
+    })
+
+    assert "zone $5.0 - $9.0" in out
+    assert "IN ZONE" in out
+    assert f"invalidation ${last + 1.0}" in out
+    assert "conviction:" in out
+    assert "EXIT (high) invalidation_breached" in out
+    assert "capitulation_volume" in out
+    assert "runway:" in out
+    assert "Chart: [6M](" in out, "no links_md line, so the report cannot cite one"
+    # The truncated copies analyse() appends to `reasons` must not print
+    # alongside the full ones, in this view least of all.
+    assert out.count("invalidation_breached") == 1
+
+
+def test_every_name_reaches_the_brief_in_one_form_or_another(
+        monkeypatch, tmp_path, capsys):
+    """A name is detailed, flagged in one line, or named in the roster -- never
+    absent.
+
+    This is the failure screen.py's --limit shipped: a cap decided by the
+    alphabet, applied every month, presented as a complete look. A list-wide view
+    that silently omits a name reads as "nothing there" for a name nobody
+    checked, so the count and the names are printed even when there is nothing
+    to say about them.
+    """
+    quiet = [10.0 + (i % 9) * 0.3 for i in range(120)]   # nothing to flag
+    falling = [10.0 - i * 0.05 for i in range(60)]       # oversold, in zone
+    out = _brief(monkeypatch, tmp_path, capsys, {
+        "QUIET": {"symbol": "QUIET", "tier": "B", "company": "Quiet Bio",
+                  "filings": [], "financials": {}, "trials": [],
+                  "entry_low": 0, "entry_high": 0, "invalidation_price": 0,
+                  "bars": _bars(quiet)},
+        "LOUD": {"symbol": "LOUD", "tier": "A", "company": "Loud Bio",
+                 "filings": [], "financials": {}, "trials": [],
+                 "entry_low": 5.0, "entry_high": 9.0, "invalidation_price": 0,
+                 "bars": _bars(falling)},
+    })
+    assert "### LOUD" in out
+    assert "QUIET" in out, "a name with nothing to say about it vanished entirely"
+    assert "### QUIET" not in out, "a quiet name should not get a full block"
+    assert "nothing to say about them" in out
+
+
+@pytest.mark.parametrize(("label", "rec_extra"), [
+    ("a hard veto", {"filings": [{"form": "424B5", "filed": "2026-08-14",
+                                  "items": "", "offering_type": "priced",
+                                  "url": "u"}]}),
+    ("a late filing", {"filings": [{"form": "NT 10-Q", "filed": "2026-08-14",
+                                    "items": "", "url": "u"}]}),
+])
+def test_a_veto_promotes_a_quiet_name_to_a_full_block(
+        monkeypatch, tmp_path, capsys, label, rec_extra):
+    """The triage bar in prompts/daily.md is what brief.py implements, so the
+    things on it have to actually promote a name.
+
+    Asserted in both directions by the test above, which pins that a name with
+    none of them stays out of the detailed section. A bar that promoted
+    everything would make the brief a rename of the file it replaced; one that
+    promoted nothing would hide a priced takedown behind a one-liner.
+    """
+    rec = {"symbol": "TEST", "tier": "B", "company": "Test Bio",
+           "filings": [], "financials": {}, "trials": [],
+           "entry_low": 0, "entry_high": 0, "invalidation_price": 0,
+           "bars": _bars([10.0 + (i % 9) * 0.3 for i in range(120)])}
+    rec.update(rec_extra)
+    out = _brief(monkeypatch, tmp_path, capsys, {"TEST": rec})
+    assert "### TEST" in out, f"{label} did not earn a full block"
+    assert "HARD VETO" in out
+
+
 # ------------------------------------------------------------------ exposure
 
 

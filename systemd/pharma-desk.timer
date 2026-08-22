@@ -1,13 +1,38 @@
 [Unit]
-Description=Weekday evening run of the biotech desk
+Description=Overnight run of the biotech desk, analysing the session that just closed
 
 [Timer]
-# 23:18 Europe/Sofia. The US close (16:00 ET) lands at 22:00-23:00 Sofia time in
-# every DST alignment, so this is always after the closing print with room to
-# spare. Off-the-hour on purpose, plus jitter, to avoid the :00/:30 stampede.
-OnCalendar=Mon-Fri 23:18
+# 01:30 Europe/Sofia, the day AFTER the session it analyses -- hence Tue-Sat.
+#
+# The US close (16:00 ET) lands at 22:00-23:00 Sofia in every DST alignment, so
+# this is 2.5-3.5 hours after the closing print. That gap is the whole point.
+# This used to be Mon-Fri 23:18, which is 18 minutes after the close, chosen on
+# the assumption that the daily bar would usually be published by then and that
+# losing the race would cost "a day of latency rather than a day of wrong
+# dates". Measured over every scheduled run after fetch.session_date() landed,
+# it lost the race EVERY time -- 3 for 3:
+#
+#   2026-08-17 23:27  session is 2026-08-14, not today
+#   2026-08-18 23:25  session is 2026-08-17, not today
+#   2026-08-19 23:26  session is 2026-08-18, not today
+#
+# Nasdaq's historical endpoint had not published the day's row 25 minutes after
+# the close; by the following morning it had. So it was not a race, it was a
+# schedule that ran before the data existed, and every report was named for the
+# previous session and delivered a full session stale -- the close it was built
+# on was already 3.5 hours old at send time, and the close that had just
+# happened was invisible to it.
+#
+# Tue-Sat because the run crosses midnight: Monday's session is analysed at
+# 01:30 Tuesday, Friday's at 01:30 Saturday. Nothing downstream cares -- the
+# report is named for the session out of signals.json, not for the run date --
+# but the day-of-week spec has to move with the hour or Monday's session would
+# never be analysed and Friday's would be analysed twice.
+OnCalendar=Tue-Sat 01:30
 RandomizedDelaySec=240
-# Catch up if the laptop was asleep or powered off at the scheduled time.
+# Catch up if the laptop was asleep or powered off at the scheduled time. A
+# catch-up run is strictly safer at this hour than at the old one: the bar it
+# missed is certainly published by the time the machine wakes.
 Persistent=true
 Unit=pharma-desk.service
 

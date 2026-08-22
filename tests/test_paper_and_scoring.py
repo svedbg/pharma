@@ -388,7 +388,7 @@ def test_a_broken_delivery_channel_is_a_heartbeat_fault(tmp_path, monkeypatch):
     import json
 
     import heartbeat
-    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOGS", (("nightly run", tmp_path / "last_delivery.json"),))
     (tmp_path / "last_delivery.json").write_text(json.dumps({
         "at": "2026-08-15T23:20:00", "session_date": "2026-08-15",
         "channels": {"ntfy": True, "email": False},
@@ -402,7 +402,7 @@ def test_a_clean_delivery_is_not_a_fault(tmp_path, monkeypatch):
     import json
 
     import heartbeat
-    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOGS", (("nightly run", tmp_path / "last_delivery.json"),))
     (tmp_path / "last_delivery.json").write_text(json.dumps({
         "at": "2026-08-15T23:20:00", "session_date": "2026-08-15",
         "channels": {"ntfy": None, "email": True},
@@ -418,7 +418,7 @@ def test_a_quiet_day_that_sent_nothing_is_not_a_fault(tmp_path, monkeypatch):
     import json
 
     import heartbeat
-    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOGS", (("nightly run", tmp_path / "last_delivery.json"),))
     (tmp_path / "last_delivery.json").write_text(json.dumps({
         "at": "2026-08-15T23:20:00", "session_date": "2026-08-15",
         "channels": {"ntfy": None, "email": None},
@@ -437,7 +437,7 @@ def test_an_unconfigured_channel_is_not_reported_as_a_broken_one(tmp_path, monke
     assert notify.configured_channels(cfg) == {"ntfy": False, "email": True}
 
     import heartbeat
-    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOGS", (("nightly run", tmp_path / "last_delivery.json"),))
     notify.record_delivery("2026-08-15", {"ntfy": None, "email": True},
                            notify.configured_channels(cfg))
     assert heartbeat.delivery_fault() is None
@@ -447,7 +447,7 @@ def test_a_missing_delivery_record_is_not_a_fault(tmp_path, monkeypatch):
     """It means notify.py has not run since this was added. Inventing an alarm
     out of that would fire once on every install."""
     import heartbeat
-    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "nope.json")
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOGS", (("nightly run", tmp_path / "nope.json"),))
     assert heartbeat.delivery_fault() is None
 
 
@@ -457,7 +457,7 @@ def test_a_desk_with_nowhere_to_send_is_a_fault(tmp_path, monkeypatch):
     import json
 
     import heartbeat
-    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOGS", (("nightly run", tmp_path / "last_delivery.json"),))
     (tmp_path / "last_delivery.json").write_text(json.dumps({
         "at": "2026-08-15T23:20:00", "session_date": "2026-08-15",
         "channels": {"ntfy": None, "email": None},
@@ -496,7 +496,7 @@ def test_the_failure_notice_records_whether_it_was_delivered(tmp_path, monkeypat
     import heartbeat
     import notify
     monkeypatch.setattr(notify, "DELIVERY_LOG", tmp_path / "last_delivery.json")
-    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOGS", (("nightly run", tmp_path / "last_delivery.json"),))
     monkeypatch.setattr(notify, "load_config",
                         lambda: {"NTFY_TOPIC": "t", "SMTP_HOST": "h", "EMAIL_TO": "a@b.org"})
     monkeypatch.setattr(notify, "send_ntfy", lambda *a, **k: True)
@@ -519,7 +519,7 @@ def test_a_desk_with_no_config_at_all_records_that_it_has_nowhere_to_send(
     import heartbeat
     import notify
     monkeypatch.setattr(notify, "DELIVERY_LOG", tmp_path / "last_delivery.json")
-    monkeypatch.setattr(heartbeat, "DELIVERY_LOG", tmp_path / "last_delivery.json")
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOGS", (("nightly run", tmp_path / "last_delivery.json"),))
     monkeypatch.setattr(notify, "load_config", dict)
     monkeypatch.setattr(notify.sys, "argv", ["notify.py"])
 
