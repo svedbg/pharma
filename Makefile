@@ -1,4 +1,4 @@
-.PHONY: help setup lint fmt test check check-units run run-fast briefing brief screen site
+.PHONY: help setup lint fmt test check check-units run run-fast premarket premarket-fast briefing brief screen site
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -27,6 +27,12 @@ run-fast:  ## fetch + signals only, no LLM, no notifications
 
 run:    ## the full daily run
 	./run_daily.sh
+
+premarket:  ## the pre-market news pass (07:30 ET; emails, pushes only if urgent)
+	./run_premarket.sh
+
+premarket-fast:  ## pre-market fetch + signals + delta only, no LLM, no email
+	./run_premarket.sh --no-llm
 
 brief:  ## rebuild the marketing/capability PDF from its HTML source
 	@command -v google-chrome >/dev/null || { echo "needs google-chrome"; exit 1; }

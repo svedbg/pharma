@@ -394,7 +394,11 @@ def test_the_outer_timeout_outlives_the_run_it_is_bounding():
     day. This recomputes the inner sum from the script, so adding a stage
     without raising the outer bound fails here rather than in production.
     """
-    script = (ROOT / "run_daily.sh").read_text()
+    # Both files: the network probe and capture_if_ok moved into the sourced
+    # prologue, and a bounded stage added there counts against the same outer
+    # ceiling. Summing only run_daily.sh would silently stop seeing half of them.
+    script = ((ROOT / "run_daily.sh").read_text()
+              + (ROOT / "lib" / "run_preamble.sh").read_text())
     inner = sum(int(m) for m in re.findall(
         r"^\s*(?:run_with_timeout|capture_if_ok \S+ \S+) (\d+)", script, re.M))
     assert inner > 0, "found no stage timeouts to add up"
@@ -447,14 +451,271 @@ def test_an_unchanged_report_is_a_failed_run_not_a_second_delivery():
         "an unchanged report must go through fail(), which notifies"
 
 
+def _systemd_schedule(unit: str) -> tuple[str, int, int]:
+    """(day spec, hour, minute) out of a timer's OnCalendar line."""
+    timer = (ROOT / "systemd" / unit).read_text()
+    m = re.search(r"^OnCalendar=(\S+) (\d+):(\d+)", timer, re.M)
+    assert m, f"{unit} has no parseable OnCalendar line"
+    return m.group(1), int(m.group(2)), int(m.group(3))
+
+
 def test_both_schedulers_agree_on_the_schedule():
     """The launchd job bakes its times into the plist and the systemd timer
     keeps its own. Nothing enforces that they match, and a desk that runs at two
-    different times on two machines is a difference nobody would look for."""
+    different times on two machines is a difference nobody would look for.
+
+    The DAY SPEC is compared as well as the clock time, because it stopped being
+    a constant. The desk runs after midnight on the session it analyses, so its
+    days are Tue-Sat while the heartbeat's are still Mon-Fri; the launchd side
+    used to hardcode range(1, 6) for everything, which would have skipped
+    Monday's session and analysed Friday's twice on a Mac while Linux did the
+    right thing. A schedule that is wrong on one platform only is the exact
+    drift this test exists to catch.
+    """
     installer = (ROOT / "launchd" / "install-launchd.sh").read_text()
-    for unit, hhmm in (("pharma-desk.timer", "23, 18"),
-                       ("pharma-heartbeat.timer", "10, 23")):
-        timer = (ROOT / "systemd" / unit).read_text()
-        h, m = re.search(r"^OnCalendar=Mon-Fri (\d+):(\d+)", timer, re.M).groups()
-        assert f"{int(h)}, {int(m)}" == hhmm, f"{unit} drifted from the launchd job"
-        assert hhmm in installer, f"launchd installer no longer schedules {hhmm}"
+    for unit, label in (("pharma-desk.timer", "com.pharma.desk"),
+                        ("pharma-premarket.timer", "com.pharma.premarket"),
+                        ("pharma-heartbeat.timer", "com.pharma.heartbeat")):
+        days, h, m = _systemd_schedule(unit)
+        call = re.search(rf'"{re.escape(label)}", \w+, "([\w-]+)", (\d+), (\d+),',
+                         installer)
+        assert call, f"launchd installer schedules no job for {label}"
+        assert (call.group(1), int(call.group(2)), int(call.group(3))) == (days, h, m), (
+            f"{unit} says {days} {h:02d}:{m:02d}, but the launchd job for {label} "
+            f"says {call.group(1)} {int(call.group(2)):02d}:{int(call.group(3)):02d}")
+        # on_days() looks the spec up in DAY_SETS, so an unmapped one is a
+        # KeyError at install time -- on the Mac, during setup, far from here.
+        assert f'"{days}":' in installer, (
+            f"launchd's DAY_SETS has no entry for {days}, so installing would raise")
+
+
+def test_the_desk_day_spec_matches_the_side_of_midnight_it_runs_on():
+    """A run after midnight analyses the PREVIOUS day's session, so its day spec
+    has to be shifted one day later than the sessions it covers.
+
+    The desk fires at 01:30 to give the price provider time to publish the daily
+    bar -- at the old 23:18, 18 minutes after the close, it lost that race on
+    every single scheduled run and every report was named for the previous
+    session. Moving the clock without moving the days would leave Monday's
+    session analysed by nothing and Friday's analysed twice, which looks like a
+    quiet Monday rather than a scheduling bug. Moving the days back without the
+    clock is the same mistake mirrored.
+    """
+    days, hour, _ = _systemd_schedule("pharma-desk.timer")
+    if hour < 12:
+        assert days == "Tue-Sat", (
+            f"the desk runs at {hour:02d}:xx, i.e. after midnight on the session it "
+            f"analyses, so its days must be Tue-Sat and not {days}")
+    else:
+        assert days == "Mon-Fri", (
+            f"the desk runs at {hour:02d}:xx, the same evening as the session it "
+            f"analyses, so its days must be Mon-Fri and not {days}")
+
+
+def test_the_launchd_label_array_matches_the_jobs_it_generates():
+    """install-launchd.sh has two halves that must agree: a shell LABELS array
+    that bootstraps, checks and uninstalls, and a Python `jobs` dict that writes
+    the plists.
+
+    A label in only one of them is a job that is written and never loaded, or
+    loaded and never removed. Adding the pre-market job meant touching both, and
+    the shell array is the half that is easy to miss because nothing fails when
+    it is wrong -- the plist appears on disk and simply never runs.
+    """
+    installer = (ROOT / "launchd" / "install-launchd.sh").read_text()
+    array = re.search(r"^LABELS=\(([^)]*)\)", installer, re.M)
+    assert array, "no LABELS array found"
+    declared = set(array.group(1).split())
+    generated = set(re.findall(r'^\s*"(com\.pharma\.[a-z]+)": job\(', installer, re.M))
+    assert declared == generated, (
+        f"LABELS has {sorted(declared)} but jobs generates {sorted(generated)}; "
+        f"the difference is a job that is never loaded or never removed")
+
+
+def test_the_premarket_pass_records_its_delivery_separately():
+    """Two runs, two delivery records, both checked by the heartbeat.
+
+    One shared file let the 14:30 pre-market pass overwrite the 01:30 nightly
+    run's verdict, so a nightly report that never reached anyone read as a
+    healthy desk -- the exact blind spot the delivery record exists to close,
+    reopened by adding a second sender to it.
+    """
+    notify = (ROOT / "scripts" / "notify.py").read_text()
+    heartbeat = (ROOT / "scripts" / "heartbeat.py").read_text()
+    assert "last_delivery_premarket.json" in notify, \
+        "notify.py does not write a separate pre-market delivery record"
+    assert "last_delivery_premarket.json" in heartbeat, \
+        "heartbeat.py does not read the pre-market delivery record"
+    assert "last_delivery.json" in heartbeat, \
+        "heartbeat.py stopped reading the nightly delivery record"
+
+
+def test_the_premarket_run_cannot_write_the_desks_shared_state():
+    """The pre-market pass runs over a session the nightly run has already
+    recorded, so every shared artefact has to be isolated or it corrupts the
+    record: --no-persist keeps it out of history.sqlite, --screening plus its own
+    --state keeps it out of the alert log and the archive summary, and its
+    outputs land under data/premarket/.
+
+    Without --no-persist it would consume `new_filings_since_last_run` and the
+    nightly report would never mention the 8-K, having been beaten to it by an
+    email that is not the desk's record of anything.
+    """
+    script = (ROOT / "run_premarket.sh").read_text()
+    assert "--no-persist" in script, "the pre-market fetch would write to history.sqlite"
+    assert "--screening" in script, "the pre-market signals pass would run as live"
+    assert "state/premarket_alerts.json" in script, \
+        "the pre-market pass would consume the live alert state"
+    assert '--out "$PM/signals.json"' in script, \
+        "the pre-market signals would overwrite data/signals.json"
+    # Named for the run date under reports/premarket/, which is outside the
+    # reports/*.md glob that publish.py and heartbeat.py use. A pre-market note
+    # must not be able to satisfy the check that asks whether the desk still
+    # produces reports.
+    assert 'REPORT="$ROOT/reports/premarket/$DATE.md"' in script
+
+
+def test_neither_the_archive_nor_the_heartbeat_sees_premarket_reports():
+    """reports/premarket/ must stay invisible to both. publish.py pairs
+    reports/<d>.md with data/summaries/<d>.json, and heartbeat.py answers "has
+    the desk gone quiet" from the same glob -- a daily pre-market note dropped
+    into that namespace would keep the heartbeat permanently happy while the
+    nightly run was dead, which is the one failure it exists to catch.
+
+    Both use a non-recursive glob, so a subdirectory is already excluded. This
+    pins that: a change to rglob would be silent and catastrophic.
+    """
+    for mod in ("publish.py", "heartbeat.py"):
+        src = (ROOT / "scripts" / mod).read_text()
+        assert 'glob("*.md")' in src, f"{mod} no longer globs reports non-recursively"
+        assert "rglob" not in src, (
+            f"{mod} uses rglob, which would pull reports/premarket/ into the "
+            f"archive and the staleness check")
+
+
+def test_both_entry_points_share_one_prologue():
+    """The lock, the interpreter probe, run_with_timeout, capture_if_ok and the
+    network wait live in lib/run_preamble.sh, and both run_daily.sh and
+    run_premarket.sh source it rather than carrying a copy.
+
+    Every one of those encodes a failure that already happened here: a recycled
+    pid making a lock look held forever, a bare `flock` exiting 127 on macOS and
+    being read as "already running", an interpreter missing pyexpat silently
+    deleting the insider layer from every report. Two copies would drift, and
+    the copy that drifts is the one that is NOT the nightly run -- so the drift
+    would present as the pre-market pass quietly doing nothing.
+    """
+    provided = ("busy", "notify_failure", "fail", "run_with_timeout",
+                "capture_if_ok")
+    preamble = (ROOT / "lib" / "run_preamble.sh").read_text()
+    for fn in provided:
+        assert re.search(rf"^{fn}\(\) \{{", preamble, re.M), \
+            f"lib/run_preamble.sh no longer defines {fn}()"
+
+    for entry in ("run_daily.sh", "run_premarket.sh"):
+        script = (ROOT / entry).read_text()
+        assert 'source "$ROOT/lib/run_preamble.sh"' in script, \
+            f"{entry} does not source the shared prologue"
+        assert re.search(r'^RUN_LABEL=', script, re.M), \
+            f"{entry} sets no RUN_LABEL, so a failure notice would be unattributed"
+        for fn in provided:
+            assert not re.search(rf"^{fn}\(\) \{{", script, re.M), (
+                f"{entry} redefines {fn}(), which is the drift the shared "
+                f"prologue exists to prevent")
+
+
+def test_both_entry_points_take_the_same_lock():
+    """The pre-market pass reads history.sqlite and data/ while the nightly run
+    writes both. They must not be able to overlap, so the lock has to be one
+    lock -- and it is, because both get it from the same sourced prologue."""
+    preamble = (ROOT / "lib" / "run_preamble.sh").read_text()
+    assert 'LOCK="$ROOT/data/.run.lock"' in preamble
+    for entry in ("run_daily.sh", "run_premarket.sh"):
+        script = (ROOT / entry).read_text()
+        assert "LOCK=" not in script, (
+            f"{entry} defines its own lock path, so the two runs could overlap "
+            f"on sqlite and data/")
+
+
+def test_both_reports_are_written_in_one_shared_register():
+    """The caveman register the two reports are written in is defined once, in
+    lib/run_preamble.sh, and appended to both prompts from there.
+
+    Same argument as the prologue itself: two copies would drift, and the copy
+    that drifts is the one that is not the nightly run, so the drift would
+    present as the pre-market note quietly reverting to prose while the report
+    it is read alongside stayed compressed.
+
+    Three of the assertions are about the directive not turning a shorter
+    report into a thinner one. The skill's own boundary is that anything
+    persisted outside the chat stays normal prose, so the override has to be
+    explicit or the run compresses its own chatter and leaves the report --
+    the only artefact this is for -- untouched. `full` rather than `ultra` is
+    pinned because ultra strips conjunctions, and this document states which
+    way a veto went. And the negation rule is pinned because an inverted
+    "no hard veto" is the one compression failure that reads as a buy.
+    """
+    preamble = (ROOT / "lib" / "run_preamble.sh").read_text()
+    assert "CAVEMAN_DIRECTIVE=\"$(cat <<'CAVEMAN'" in preamble, \
+        "lib/run_preamble.sh no longer defines CAVEMAN_DIRECTIVE"
+
+    directive = preamble.split("CAVEMAN_DIRECTIVE=", 1)[1]
+    assert "`caveman` skill" in directive, \
+        "the directive no longer names the skill it activates"
+    assert "persisted outside the chat" in directive, (
+        "the directive no longer overrides the skill's persisted-prose "
+        "boundary, so the report itself would stay uncompressed")
+    assert "`full`, not `ultra`" in directive, (
+        "the directive no longer pins the intensity; ultra strips the "
+        "conjunctions this document needs to say which way a veto went")
+    assert "links_md" in directive, \
+        "the directive no longer protects the links_md lines"
+    assert '"not", "no",' in directive, \
+        "the directive no longer forbids dropping a negation"
+
+    for entry in ("run_daily.sh", "run_premarket.sh"):
+        script = (ROOT / entry).read_text()
+        assert "CAVEMAN_DIRECTIVE=" not in script, (
+            f"{entry} defines its own register, which is the drift the shared "
+            f"prologue exists to prevent")
+        used = script.find("$CAVEMAN_DIRECTIVE")
+        assert used != -1, f"{entry} does not write its report in the register"
+        run = script.find('claude -p "$PROMPT"')
+        assert run != -1, f"{entry} no longer runs the analysis pass"
+        assert used < run, (
+            f"{entry} interpolates the register after the analysis pass has "
+            f"already been handed its prompt")
+        assert re.search(r'^ALLOWED_TOOLS=".*\bSkill\b', script, re.M), (
+            f"{entry} does not allow the Skill tool, so the run cannot reach "
+            f"the caveman skill and would write a normal-prose report without "
+            f"saying why")
+
+
+def test_the_list_wide_view_is_actually_wired_into_both_runs():
+    """brief.py only saves anything if the prompts and the runs point at it.
+
+    A view nothing reads is a view that drifts: signals.json would go on growing
+    with the watchlist, the prompt would go on saying "start here", and the only
+    evidence would be the token bill. So both prompts name brief.py, both forbid
+    reading signals.json wholesale, and both entry points tell the run how to
+    invoke it -- with `--dataset` on the pre-market side, where reading the
+    nightly state against this morning's delta is the standing hazard.
+    """
+    daily = (ROOT / "prompts" / "daily.md").read_text()
+    assert "scripts/brief.py" in daily, "the daily prompt no longer starts at brief.py"
+    assert "Do not read `data/signals.json` wholesale" in daily, (
+        "the daily prompt no longer forbids reading signals.json whole, which is "
+        "the 122,000-token read brief.py exists to replace")
+    assert "Do not read `data/latest.json` directly" in daily, (
+        "the older and larger of the two prohibitions went missing")
+
+    premarket = (ROOT / "prompts" / "premarket.md").read_text()
+    assert "scripts/brief.py --dataset data/premarket" in premarket, (
+        "the pre-market prompt does not pass --dataset to brief.py, so it would "
+        "read the nightly state against this morning's delta")
+
+    for entry, flag in (("run_daily.sh", ""),
+                        ("run_premarket.sh", " --dataset data/premarket")):
+        script = (ROOT / entry).read_text()
+        assert f"scripts/brief.py{flag}" in script, (
+            f"{entry} does not tell the run how to invoke the list-wide view")

@@ -7,9 +7,16 @@ launchd/install-launchd.sh              # install or reinstall; idempotent
 launchd/install-launchd.sh --uninstall  # remove both jobs
 ```
 
-- **com.pharma.desk** — Mon–Fri 23:18 local. The US close (16:00 ET) lands at
-  22:00–23:00 Europe/Sofia in every daylight-saving alignment, so the daily bar
-  is settled.
+- **com.pharma.desk** — **Tue–Sat 01:30** local, analysing the session that
+  closed the previous evening. The US close (16:00 ET) lands at 22:00–23:00
+  Europe/Sofia in every daylight-saving alignment, so this is 2½–3½ hours after
+  the closing print and the price provider has published the daily bar. At the
+  old Mon–Fri 23:18 it had not, on every scheduled run. The day spec moves with
+  the hour: at 01:30 the run covers the previous calendar day, so Mon–Fri would
+  skip Monday's session and analyse Friday's twice.
+- **com.pharma.premarket** — Mon–Fri 14:30 local (07:30 ET), roughly two hours
+  before the US open. The overnight news and filings pass; see "The pre-market
+  pass" in `CLAUDE.md`. Optional.
 - **com.pharma.heartbeat** — Mon–Fri 10:23 local. Alerts if no report has
   appeared for three weekdays. A separate job on purpose: if the desk run dies
   before reaching `notify.py`, its own failure handler dies with it.
@@ -67,9 +74,10 @@ binary moves.
 
 | systemd | launchd |
 |---|---|
-| `OnCalendar=Mon-Fri 23:18` | `StartCalendarInterval` array, `Weekday` 1–5 |
+| `OnCalendar=Tue-Sat 01:30` (desk) | `StartCalendarInterval` array, `Weekday` 2–6 |
+| `OnCalendar=Mon-Fri 14:30` (pre-market) | `StartCalendarInterval` array, `Weekday` 1–5 |
 | `RandomizedDelaySec=` | `sleep $((RANDOM % n))` inside the job |
-| `TimeoutStartSec=3600` | no equivalent key — every stage is bounded inside `run_daily.sh` (`run_with_timeout`) |
+| `TimeoutStartSec=` | no equivalent key — every stage is bounded inside `lib/run_preamble.sh` (`run_with_timeout`), which both runs source |
 | `Persistent=true` | **partial**: see below |
 | `Environment=PATH=…` | `EnvironmentVariables` dict, baked at install time — but the login shell reorders it, so `claude` is re-prepended in the job command (above) |
 | `After=network-online.target` | no equivalent for a calendar job — reachability is waited on instead, up to ~2min, then the run proceeds anyway: inside `run_daily.sh` for the desk, inside the job for the heartbeat |

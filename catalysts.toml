@@ -257,3 +257,70 @@ kind = "PDUFA"
 confidence = "confirmed"
 description = "Ivonescimab BLA PDUFA (2L EGFR-mutated nonsquamous NSCLC, based on HARMONi). Company PR 2026-07-22: 'PDUFA goal action date of November 14, 2026'. Updated OS HR 0.76 in Western subgroup (June 2026 cutoff), not statistically significant"
 source = "https://smmttx.com/news/press-releases/news-details/2026/Ivonescimab-Plus-Chemotherapy-Shows-Consistent-Favorable-Overall-Survival-Results-in-Western-and-Asian-Patients-in-Updated-Analysis-from-Global-Phase-III-HARMONi-Study/default.aspx"
+
+
+# --- appended by the 2026-08-19 run (executed 2026-08-20) ---
+
+[[catalyst]]
+symbol = "CRNX"
+date = "2026-08-28"
+kind = "other"
+confidence = "confirmed"
+description = "Stockholder vote on the Vertex acquisition at $85.00/share cash; HSR expired 2026-08-12, Austrian/German/Australian clearances in, closing expected early September 2026. The 2026-08-18 report stated this entry had been added and it had not -- added here."
+source = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001658247&type=8-K -- CRNX 8-K item 8.01 filed 2026-08-19"
+
+[[catalyst]]
+symbol = "IMNM"
+date = "2027-04-28"
+kind = "PDUFA"
+confidence = "confirmed"
+description = "Varegacestat (oral gamma secretase inhibitor, formerly AL102) NDA target action date in adults with progressing desmoid tumors; NDA accepted 2026-07-08 off the Phase 3 RINGSIDE data. Would be the second GSI approved in the indication after SpringWorks' Ogsiveo"
+source = "https://www.businesswire.com/news/home/20260708283482/en/Immunome-Announces-U.S.-FDA-Acceptance-of-New-Drug-Application-for-Varegacestat-for-the-Treatment-of-Adults-with-Desmoid-Tumors"
+
+[[catalyst]]
+symbol = "AMLX"
+date = "2026-12-01"
+kind = "other"
+confidence = "expected"
+description = "Avexitide NDA submission in post-bariatric hypoglycaemia. Company language is 'by the end of 2026' with launch preparations for 2027 -- no month given, so this is the first of the guided window's last month, not a stated date"
+source = "https://www.amylyx.com/news/amylyx-pharmaceuticals-announces-positive-topline-results-from-phase-3-lucidity-clinical-trial-of-avexitide-in-post-bariatric-hypoglycemia (2026-08-18 LUCIDITY topline release)"
+
+[[catalyst]]
+symbol = "TECX"
+date = "2026-12-01"
+kind = "readout"
+confidence = "expected"
+description = "TX45 APEX Phase 2 topline in PH-HFpEF (191 patients, 14 countries, primary endpoint PVR change in the CpcPH subgroup). Company guidance is 'late Q4 2026 or early Q1 2027', so this date is the start of that window and may slip into 2027; CT.gov NCT06616974 carries a 2026-11-24 primary completion"
+source = "Tectonic Therapeutic Q1 2026 results and the 2026-06-10 APEX enrolment-completion release; CT.gov NCT06616974"
+
+[[catalyst]]
+symbol = "ANTX"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "Epetraborole Phase 2 proof-of-concept initial data in phlebotomy-dependent polycythemia vera; trial start guided to 3Q26 with initial data 'as early as 4Q26'. Broader epetraborole readouts guided from Q4 2026 through 2027"
+source = "https://www.businesswire.com/news/home/20260303819156/en/AN2-Therapeutics-Announces-Plans-to-Advance-Oral-Epetraborole-into-Phase-2-Study-for-Polycythemia-Vera-PV (2026-03-03), reaffirmed in the Q1 2026 corporate update"
+
+[[catalyst]]
+symbol = "SLS"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "SLS009 (tambiciclib) Phase 2 frontline AML topline, guided to Q4 2026. The REGAL Phase 3 of galinpepimut-S is deliberately given no date: its final analysis triggers on the 80th event (78 reported), so it is event-driven, not calendar-driven"
+source = "https://www.globenewswire.com/news-release/2026/08/11/3343171/0/en/sellas-life-sciences-reports-second-quarter-2026-financial-results-and-provides-corporate-update.html"
+
+[[catalyst]]
+symbol = "XFOR"
+date = "2026-12-01"
+kind = "readout"
+confidence = "expected"
+description = "4WARD Phase 3 topline, mavorixafor in chronic neutropenia. Enrolment guided complete by end of Q3 2026 with topline 'in late 2026' -- a loose window, so this is the first of that window's last month and may slip into 2027"
+source = "X4 Pharmaceuticals Q2 2026 corporate update -- https://www.biospace.com/press-releases/x4-pharmaceuticals-reports-second-quarter-2026-financial-results-and-provides-corporate-update"
+
+[[catalyst]]
+symbol = "EYPT"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "LUCIA, the second pivotal Phase 3 of DURAVYU 2.7mg in wet AMD, topline guided to Q4 2026 with an NDA planned for 1H 2027. After LUGANO missed non-inferiority on visual acuity in the full analysis set (2026-08-17), this is the entire remaining thesis"
+source = "https://www.globenewswire.com/news-release/2026/08/17/3345965/0/en/eyepoint-announces-topline-data-from-lugano-the-first-of-two-pivotal-phase-3-clinical-trials-for-duravyu-2-7mg-in-wet-amd.html"

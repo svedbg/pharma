@@ -20,12 +20,22 @@ scripts/fetch.py         -> data/latest.json      deterministic; prices, filings
 scripts/signals.py       -> data/signals.json     fixed arithmetic; indicators, tiers, vetoes
                          -> data/summaries/*.json one small record per day, for the archive index
 scripts/propose_zones.py -> watchlist.toml        entry zones from each name's own range
+scripts/brief.py                                 the list-wide view -- the analysis pass reads this, not signals.json
 scripts/detail.py                                 per-ticker drill-down for the analysis pass
 prompts/daily.md         -> reports/YYYY-MM-DD.md the analysis (judgement lives here)
 scripts/notify.py                                 ntfy push + email
 scripts/render_email.py                           markdown -> mobile-readable HTML (used by notify and publish)
 scripts/publish.py       -> site/                 local browsable archive of past reports (`make site`)
 run_daily.sh                                      orchestration, invoked by the scheduler (systemd timer / launchd job)
+lib/run_preamble.sh                               lock, interpreter probe, bounded stages, network wait, report register -- sourced by both runs
+```
+
+The pre-market pass, which answers a different question over the same data:
+
+```
+scripts/premarket_delta.py -> data/premarket/delta.json   deterministic diff against the nightly run
+prompts/premarket.md       -> reports/premarket/YYYY-MM-DD.md   the morning's news, judgement again
+run_premarket.sh                                  orchestration, 14:30 local (07:30 ET)
 ```
 
 Measurement and validation, none of it on the daily path except the scorecard:
@@ -42,9 +52,59 @@ An LLM must never be the source of a price, a share count or a cash balance.
 Those come from `data/latest.json` or they do not appear in the report.
 
 **Never read `data/latest.json` wholesale during analysis** — at 60+ names it is
-several megabytes. Read `data/signals.json` (compact, all names) and then use
+several megabytes. **And `data/signals.json` is no longer small enough either.**
+Run `python3 scripts/brief.py` for the list-wide view and
 `python3 scripts/detail.py TICKER` for the few names that warrant a close look.
 The triage rules in `prompts/daily.md` cap deep-dives at 12 per run.
+
+`signals.json` was "the compact file" only by comparison. At 62 names it is
+487KB — about 122,000 tokens, fifteen times the report it produces — and the
+prompt told the run to start there and read all of it, on every turn. Almost
+none of it is list-wide material: seven chart URLs per name sitting beside the
+ready-made `links_md` line that replaces them, the XBI `regime` block repeated
+**identically for all 62 names**, every moving average, every insider
+transaction, the full provenance of every balance sheet. `brief.py` prints the
+same run at ~24,700 tokens, an 80% cut, by projecting rather than summarising:
+every number a decision uses is still there in full, and what is dropped is
+drill-down material `detail.py` already prints on request.
+
+The division is the one this file already drew between `latest.json` and
+`signals.json`, moved up a level now that the list has grown into the same
+shape. It will need moving again: the file grows with the watchlist, and nothing
+in the pipeline notices.
+
+`brief.py` prints three tiers, mirroring the report's own structure rather than
+inventing a second one:
+
+- **A full block** for each name over the triage bar in `prompts/daily.md` — tier
+  at WATCH or above, a hard veto, a `recent_events` entry, new filings, or a
+  catalyst inside 30 days — **plus any exit flag**, which is the one addition,
+  because that bar predates `exit_signals()` and an `invalidation_breached`
+  reduced to a one-liner is the buy-side-only view the exit layer exists to
+  prevent.
+- **One line** for a name below that bar that still has something the report has
+  a section for: an unusual move, a soft flag, insider activity, a divergence
+  from XBI, a catalyst inside 90 days. This is the prompt's own "also flagged"
+  heading.
+- **A named roster** of everything else, with a count. Not decoration: a view
+  that silently drops two thirds of the watchlist reads as "we looked at
+  everything, and this is what there was" — the failure `--limit` in `screen.py`
+  already paid for by hiding 91 names behind the alphabet every month.
+
+**A tier change only counts as "left a tier".** `tier_changed` is true for every
+name on a fresh state file, because `previous_tier` is then `None` for all of
+them, so a bar that trusted it put the entire watchlist under "also flagged" on
+the first run and looked like a busy night. It counts only when the previous tier
+was a real one that was not `NONE`.
+
+`brief.py` takes **`--dataset DIR`** and reads *both* files behind it, for the
+reason `detail.py` takes one flag for the pair: the entry zone and
+`invalidation_price` are in the snapshot while the tier and vetoes derived from
+them are in the signals file. A directory cannot be half-set.
+
+The zone rendering itself lives in `detail.zone_lines()` and both callers import
+it. Two spellings of "in zone" is how a rule ends up scored against a paraphrase
+of itself — the same argument `zone_from_closes()` settles for the arithmetic.
 
 `detail.py` is the only view of a name the analysis pass gets, so it has to
 carry what a decision uses: the entry zone and where price sits in it, the
@@ -533,13 +593,196 @@ Both branches are now driven through `main()`: over-committed, where
 ceiling, where it is `1.0` rather than absent — the report multiplies by it
 unconditionally, so an omitted value would size every position at zero.
 
+## The pre-market pass
+
+A second, smaller run at **14:30 Europe/Sofia (07:30 ET)**, about two hours
+before the 09:30 ET open. It answers a different question from the nightly
+report: the 01:30 run is the desk's record of the session that just closed, and
+this one asks what has happened *since*, in the hours no daily bar reflects — an
+8-K filed at 06:40 ET, a priced takedown, a catalyst dated today, news no
+structured feed carries.
+
+14:30 is placed after the pre-open PR wave (06:30–08:00 ET, where FDA news,
+readouts and takedowns land) and well before the open, so there is time to read a
+filing and decide. **Later would be worse, not better.** EU and US DST switch on
+different Sundays, so for a fortnight each spring and autumn Sofia sits an hour
+closer to ET: 14:30 Sofia is 07:30 ET normally and 08:30 ET in those weeks — both
+pre-market. At 15:45 Sofia the same shift lands at 09:45 ET, after the open, and
+being pre-market is the one property this unit cannot lose.
+
+Its timer is **`Persistent=false`**, the opposite of the desk's. A missed
+pre-market pass is worthless: catching it up at 17:00 would email a "pre-market"
+note about a session already three hours into trading, which is worse than
+silence because it reads as current.
+
+### It runs over a day the nightly run has already recorded
+
+That is the whole difficulty. Three separate isolations, and all three are
+load-bearing:
+
+- **`fetch.py --no-persist`** writes nothing to `history.sqlite` — no bars, no
+  filings, no facts, no `runs` row. `persist()` both answers "what is new?" and
+  commits to having seen it, and only the **first** run to see a filing reports
+  it in `new_filings_since_last_run`. So without this flag the pre-market pass
+  would silently *spend* the flag and the nightly report would never mention the
+  8-K, having been beaten to it by an email that is not the desk's record of
+  anything. The delta is computed against the same table the next recording run
+  will read, so the answer is identical — it is just not consumed. This is the
+  same hazard `--screening` closes on the alert log and the archive summary,
+  arriving through sqlite instead.
+- **`signals.py --screening` with its own `--state`** writes no alert row and no
+  archive summary, and cannot consume a tier transition the nightly run should
+  report.
+- **Every artefact lands under `data/premarket/`**, and the report under
+  `reports/premarket/`. That subdirectory is deliberately outside the
+  `reports/*.md` glob that `publish.py` and `heartbeat.py` use — both are
+  non-recursive, and a test pins that neither switches to `rglob`. A daily
+  pre-market note inside that namespace would keep the heartbeat permanently
+  happy while the nightly run was dead, which is the one failure it exists to
+  catch.
+
+The report is named for the **run date**, not the session — the nightly report is
+an account of a session, this is an account of a morning, and two mornings can
+follow the same session (a Monday holiday leaves Friday's bar newest all through
+Tuesday). Naming it by session would make the second morning overwrite the first.
+
+### The urgency decision is arithmetic, not judgement
+
+`scripts/premarket_delta.py` diffs the pre-market signals against the nightly
+ones and writes `data/premarket/delta.json`. `notify.py --premarket` reads
+`urgent` out of that file to decide whether the phone buzzes. **An LLM must never
+be the source of a price, a share count or a cash balance, and it must not be the
+source of "wake him up" either.** A name is urgent when:
+
+- a new hard veto appeared, or
+- a new **high**-severity exit flag fired (`invalidation_breached`,
+  `catalyst_resolved` — `medium`, a standing live veto, is reported but does not
+  push, or the channel gets muted), or
+- a new 8-K carries any item in `fetch.ITEM_MEANINGS` — imported, not restated,
+  so the two runs cannot describe item 8.01 differently — which includes **8.01**,
+  where readouts, CRLs and FDA correspondence land and where the veto layer has
+  no opinion precisely because it is news rather than a mechanical condition, or
+- a new `424B*` that is not a `424B7` resale, matching the veto layer's own
+  exclusion, or
+- a catalyst dated today or tomorrow.
+
+A Form 4 is reported without pushing. It matters, the insider layer reads it
+every night, and it is not a reason to look at a screen at 07:30 ET.
+
+**Vetoes are compared by `(form, filed)`, never as whole dicts.** `days_ago` and
+the rendered `reason` both move with the clock, so a dict comparison would report
+every standing veto as new every single morning and the phone would buzz daily
+for nothing.
+
+**Catalyst proximity is measured from the run date, not from `days_until`.** That
+field is measured from the snapshot's session date, which is correct everywhere
+in stage 2 and wrong here: the pre-market pass re-derives the *previous* session,
+because no new bar exists yet. A catalyst resolving this morning therefore
+arrives from `signals.py` as `days_until: 1`, and reading that as "tomorrow"
+would put the strongest sizing instruction the desk emits one day out on the
+morning it actually matters. `premarket_delta.py` measures from the catalyst's
+own ISO date against an explicit `--asof`, recorded in the output.
+
+**It refuses when the two sides name different sessions.** The pre-market pass
+runs before any new bar exists, so it must re-derive the same session the nightly
+run analysed. If it did not, the diff is between two different days and every
+line of it is an artefact of the mismatch rather than something that happened.
+
+### Delivery is recorded separately
+
+`notify.py --premarket` writes `data/last_delivery_premarket.json`, not the
+nightly `data/last_delivery.json`, and `heartbeat.delivery_fault()` checks both.
+One shared record let the 14:30 pass overwrite the 01:30 run's verdict: the
+nightly report fails to deliver, the pre-market note succeeds, and the heartbeat
+— which reads whatever is there — sees a healthy desk while last night's report
+never reached anyone. That is the exact blind spot the delivery record exists to
+close, reopened by adding a second sender to it. A missing file is still not a
+fault, so the pre-market timer stays optional.
+
+Email goes out every weekday morning (subject `[biotech desk] pre-market <date>`,
+visibly distinct from the nightly subject because both land in the same mailbox
+on the same day and describe different things). ntfy fires **only** when
+something is urgent, per the desk's standing rule that notifications fire on
+changes and not on states.
+
+### Two entry points, one prologue
+
+`lib/run_preamble.sh` holds the lock, the interpreter probe, `run_with_timeout`,
+`capture_if_ok` and the network wait, and both `run_daily.sh` and
+`run_premarket.sh` source it. Every one of those encodes a failure that already
+happened here — a recycled pid making a lock look held forever, a bare `flock`
+exiting 127 on macOS and being read as "already running", an interpreter missing
+`pyexpat` silently deleting the insider layer from every report. Two copies would
+drift, and the copy that drifts is the one that is *not* the nightly run, so the
+drift would present as the pre-market pass quietly doing nothing.
+
+**Both runs take the same lock.** The pre-market pass reads `history.sqlite` and
+`data/` while the nightly run writes both. At 14:30 against 01:30 they never
+overlap unless one is a hand run, which is exactly when the lock earns its keep;
+a held lock exits 0, and skipping the news pass is the right answer when the desk
+is mid-report.
+
+`detail.py` takes **`--dataset DIR`** — one flag for both `latest.json` and
+`signals.json`, not a `--snapshot` and a `--signals`. They are two halves of one
+run: the snapshot holds the prices and filings, the signals file holds the tier,
+vetoes and zone derived from exactly those. Overriding one and not the other
+would print a fresh price under last night's veto — a drill-down that is
+internally inconsistent while looking entirely normal. A directory cannot be
+half-set.
+
+## The register both reports are written in
+
+Both scheduled passes are written **caveman-compressed** — the `caveman` skill
+at intensity `full`. `lib/run_preamble.sh` defines `$CAVEMAN_DIRECTIVE` and both
+entry points append it to their prompt, for the same reason the lock and the
+interpreter probe live there: two copies would drift, and the copy that drifts
+is the one that is *not* the nightly run.
+
+It is the same goal the two prompts already encode as line budgets — 250 for the
+nightly report, 80 for the pre-market note, both "read on a phone" — reached by
+compressing the prose rather than by dropping sections.
+
+Three things about the directive are load-bearing, and all three are pinned by
+`test_both_reports_are_written_in_one_shared_register`:
+
+- **It overrides the skill's own boundary explicitly.** The skill's rule is that
+  anything persisted outside the chat stays normal prose, and the report is
+  exactly that — so a run told only "use caveman" would compress its own
+  transcript chatter, which nobody reads, and leave the one artefact this is for
+  untouched.
+- **`full`, never `ultra`.** Ultra strips conjunctions when cause and effect stay
+  unambiguous, and this document states which way a veto went. An inverted
+  "no hard veto" is the one compression failure that reads as a buy, which is
+  why the directive also forbids dropping a negation outright.
+- **Fewer words, never fewer findings.** Every section the output spec asks for
+  still appears in the same order. Numbers, dates, tickers and units stay exact;
+  `links_md` lines stay verbatim; vetoes, sizing instructions, exit horizons, the
+  fenced `toml` bootstrap blocks (pasted into hand-edited files and read out of
+  them months later) and the not-financial-advice line stay in whole sentences.
+
+`Skill` is on both runs' `--allowedTools` list because of this. A tool the run
+cannot call is a directive it cannot follow, and the failure is silent: the
+report comes out in prose with nothing to say why. Without the skill installed
+at all the runs degrade to exactly that, which is the behaviour that shipped
+before this and is safe.
+
 ## Heartbeat
 
 `pharma-heartbeat.timer` / `com.pharma.heartbeat` (Mon-Fri) alerts if no report
 appears for three weekdays — two of genuine slack, plus one for the
-gap between a session and the day it is checked on, since reports are named
-for the session and a run that loses the race with the provider dates its
-report a day back.
+gap between a session and the day it is checked on. That last day is
+structural, not slack: reports are named for the session they analyse and the
+desk fires at 01:30 the following day, so a check at 10:23 always finds a newest
+report dated yesterday. A perfectly healthy desk therefore sits at one weekday
+stale, permanently, and at a threshold of 2 the first holiday would look like
+the second consecutive miss.
+
+**It watches `reports/*.md` only, and that glob is non-recursive on purpose.**
+The pre-market pass writes `reports/premarket/<date>.md` every weekday; if those
+landed in the same namespace the heartbeat would be permanently satisfied while
+the nightly run was dead — the exact failure it exists to catch, defeated by a
+second writer. A test pins that neither this nor `publish.py` switches to
+`rglob`.
 **Silence is the desk's normal output**, so a broken run and a quiet market look
 identical. Separate unit on purpose: if the main run dies before reaching
 notify.py, run_daily.sh's own failure handler dies with it.
@@ -548,8 +791,16 @@ notify.py, run_daily.sh's own failure handler dies with it.
 not evidence that anything was sent, and watching reports alone meant a wrong
 SMTP password read as a perfectly healthy desk: the run wrote its file, the
 heartbeat passed, and the phone stayed silent indefinitely. `notify.py` records
-each channel's outcome in `data/last_delivery.json` and
-`heartbeat.delivery_fault()` is the only place that answer exists.
+each channel's outcome and `heartbeat.delivery_fault()` is the only place that
+answer exists.
+
+**Each run records separately, and both records are checked** —
+`data/last_delivery.json` for the nightly run and
+`data/last_delivery_premarket.json` for the pre-market pass. One shared file let
+the 14:30 pass overwrite the 01:30 run's verdict: the nightly report fails to
+deliver, the morning note succeeds, and the heartbeat reads whatever is there and
+sees a healthy desk. Both faults are reported in one message rather than two
+alarms racing down the same channel, and each names which run it was.
 
 Two distinctions the record has to keep, or it cries wolf:
 
@@ -845,6 +1096,12 @@ project rather than driving it — nothing in the pipeline reads them.
   `pharma.env` wins and is the one to write to.
 - `data/history.sqlite` accumulates bars and filings so day-over-day deltas and
   "new since last run" work even when a provider has an outage.
+- A run that is **not the desk's record of the day** must isolate itself on
+  every shared artefact, and there are now three flags for it, one per artefact:
+  **`--screening`** plus a **`--state`** of its own on `signals.py` (the alert
+  log and the archive summary), and **`--no-persist`** on `fetch.py`
+  (`history.sqlite`). Forgetting any one of them is the same class of mistake,
+  and each is silent — the run looks fine and corrupts the record.
 - Screening a candidate list must pass **`--screening`** to `signals.py`, and a
   `--state` path of its own. Either marks a run as *not* live, and liveness
   gates every shared artefact: the alert log `score_alerts.py` grades, and the
@@ -857,16 +1114,44 @@ project rather than driving it — nothing in the pipeline reads them.
 
 ## Schedule
 
-`pharma-desk.timer` (Linux) / `com.pharma.desk` (macOS) Mon–Fri 23:18 local —
-after the US close in every DST alignment, so the daily bar is settled. On
-Linux `Persistent=true` catches up a miss; launchd only coalesces across
+Three units. `pharma-desk.timer` / `com.pharma.desk` **Tue–Sat 01:30** local is
+the nightly report; `pharma-premarket.timer` / `com.pharma.premarket` **Mon–Fri
+14:30** is the pre-market news pass; `pharma-heartbeat.timer` /
+`com.pharma.heartbeat` Mon–Fri 10:23 notices when the first one stops. On Linux
+the desk's `Persistent=true` catches up a miss; launchd only coalesces across
 sleep, not shutdown — the heartbeat covers the gap.
 
-23:18 Europe/Sofia is 18 minutes after the 16:00 ET close in summer, which is a
-race against the provider publishing the daily bar at all. That is fine and
-needs no adjustment: the run analyses whatever the newest bar turns out to be
-and names itself after that session, so losing the race costs a day of latency
-rather than a day of wrong dates.
+**The desk runs at 01:30 the morning after its session, which is why its days
+are Tue–Sat.** It used to be Mon–Fri 23:18, 18 minutes after the 16:00 ET close,
+and this file used to argue that the resulting race with the price provider "is
+fine and needs no adjustment: losing the race costs a day of latency rather than
+a day of wrong dates". That reasoning assumed losing was occasional. Measured
+over every scheduled run after `fetch.session_date()` landed, it lost **every
+time** — 3 for 3:
+
+```
+2026-08-17 23:27  session is 2026-08-14, not today
+2026-08-18 23:25  session is 2026-08-17, not today
+2026-08-19 23:26  session is 2026-08-18, not today
+```
+
+Nasdaq's historical endpoint had not published the day's row 25 minutes after
+the close; by the following morning it had. So it was not a race, it was a
+schedule that ran before the data existed. Every report was named for the
+previous session and delivered a full session stale: the close it was built on
+was already 3½ hours old at send time, and the close that had just happened was
+invisible to it. The staleness predates the fix — runs before `session_date()`
+took their date from `date.today()`, so they *looked* current while carrying
+yesterday's prices, and one of them stamped a Saturday. The fix made the lag
+visible; moving the clock is what removes it.
+
+The close lands at 22:00–23:00 Sofia in every DST alignment, so 01:30 is 2½–3½
+hours after the closing print. **The day-of-week spec has to move with the
+hour**: at 01:30 the run analyses the *previous* calendar day, so Mon–Fri would
+leave Monday's session analysed by nothing and Friday's analysed twice, which
+looks like a quiet Monday rather than a scheduling bug.
+`test_the_desk_day_spec_matches_the_side_of_midnight_it_runs_on` pins the two
+together in both directions.
 
 **It also costs a collision, which is not the same as latency.** Whichever way
 each run goes is decided 18 minutes after the close, so a run that wins the race
@@ -900,12 +1185,20 @@ inbox with no new analysis is the one failure this desk cannot see.
 # Linux
 systemctl --user list-timers 'pharma-*'
 journalctl --user -u pharma-desk.service -n 50
+journalctl --user -u pharma-premarket.service -n 50
 # macOS
 launchctl print gui/$(id -u)/com.pharma.desk | head -20
 tail -50 ~/Library/Logs/pharma-desk.log
+tail -50 ~/Library/Logs/pharma-premarket.log
 # both
 ./run_daily.sh --no-llm            # data + signals only, fast and free
+./run_premarket.sh --no-llm        # fetch + signals + delta only, no email
 ```
+
+The two runs keep separate logs — `logs/<date>.log` and
+`logs/<date>.premarket.log`. They fire thirteen hours apart and answer different
+questions; interleaving them would put the morning's news pass and the small
+hours' report in one file where `tail` shows whichever ran last.
 
 `PHARMA_PYTHON=/path/to/python3` is tried first, then `python3`, then
 `~/.local/bin/python3`. It is a preference, not an override: every candidate

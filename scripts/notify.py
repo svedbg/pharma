@@ -36,6 +36,13 @@ ROOT = Path(__file__).resolve().parent.parent
 # on the phone, indefinitely -- and the heartbeat's own alarm would have gone out
 # through the same dead channel.
 DELIVERY_LOG = ROOT / "data" / "last_delivery.json"
+# The pre-market pass records separately. One shared file would let the two runs
+# overwrite each other's verdict: the nightly run fails to deliver at 01:30, the
+# pre-market pass succeeds at 14:30, and the heartbeat -- which reads whatever is
+# there -- sees a healthy desk while last night's report never arrived. Two
+# records, both checked, is the only arrangement where a permanently broken
+# channel on either run stays visible.
+PREMARKET_DELIVERY_LOG = ROOT / "data" / "last_delivery_premarket.json"
 
 
 def load_config() -> dict:
@@ -58,15 +65,17 @@ def configured_channels(cfg: dict) -> dict[str, bool]:
 
 
 def record_delivery(session_date: str, channels: dict[str, bool | None],
-                    configured: dict[str, bool] | None = None) -> None:
+                    configured: dict[str, bool] | None = None,
+                    path: Path | None = None) -> None:
     """Write what each channel did. None means 'not attempted', not 'failed'.
 
     Best-effort: a delivery that worked must not be reported as broken because
     the note about it could not be written.
     """
+    dest = path or DELIVERY_LOG
     try:
-        DELIVERY_LOG.parent.mkdir(parents=True, exist_ok=True)
-        DELIVERY_LOG.write_text(json.dumps({
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(json.dumps({
             "at": datetime.now().isoformat(timespec="seconds"),
             "session_date": session_date or None,
             "channels": channels,
@@ -79,6 +88,9 @@ def record_delivery(session_date: str, channels: dict[str, bool | None],
             # to go out, go out?
             "ok": all(v for v in channels.values() if v is not None),
             "attempted": [k for k, v in channels.items() if v is not None],
+            # Which run wrote this. The heartbeat reports both records and has
+            # to be able to say which one could not deliver.
+            "run": "premarket" if dest == PREMARKET_DELIVERY_LOG else "daily",
         }, indent=2))
     except OSError as e:
         print(f"[notify] could not record delivery state: {e}", file=sys.stderr)
@@ -111,7 +123,8 @@ def send_ntfy(cfg: dict, title: str, body: str, priority: str = "default", tags:
 
 
 def send_email(cfg: dict, subject: str, body: str, html_body: str | None = None,
-               attachment: Path | None = None) -> bool:
+               attachment: Path | None = None,
+               attachment_name: str | None = None) -> bool:
     host = cfg.get("SMTP_HOST")
     to = cfg.get("EMAIL_TO")
     if not host or not to:
@@ -127,9 +140,14 @@ def send_email(cfg: dict, subject: str, body: str, html_body: str | None = None,
     if html_body:
         msg.add_alternative(html_body, subtype="html")
     if attachment and attachment.exists():
+        # The name is overridable because both runs write a file called
+        # <date>.md, in different directories. A mail client shows only the
+        # basename, so the nightly report and the pre-market note would arrive
+        # on the same day as two identically named attachments -- undoing the
+        # whole point of giving them distinguishable subjects.
         msg.add_attachment(
             attachment.read_bytes(), maintype="text", subtype="markdown",
-            filename=attachment.name,
+            filename=attachment_name or attachment.name,
         )
 
     port = int(cfg.get("SMTP_PORT", 587))
@@ -179,6 +197,60 @@ def email_subject(summary: str, session_date: str) -> str:
     return f"[biotech desk] {session_date} - {summary}"
 
 
+def premarket_subject(summary: str, run_date: str) -> str:
+    """Subject for the pre-market note.
+
+    Kept visibly distinct from the nightly subject. Both land in the same
+    mailbox on the same calendar day and describe different things -- the
+    nightly one is an account of a closed session, this is an account of a
+    morning -- so a reader filing by subject must be able to tell them apart
+    without opening either. Stamped with the RUN date, because that is what this
+    report is about; the session it is measured against is in the body.
+    """
+    return f"[biotech desk] pre-market {run_date} - {summary}"
+
+
+def build_premarket_text(delta: dict) -> tuple[str, str, str]:
+    """What changed this morning, as (summary, body, priority).
+
+    Read from premarket_delta.py's output and nothing else. The body is the
+    urgent block only: it becomes an ntfy push, which is read on a lock screen,
+    and the full account is in the email. Priority is `high` when anything is
+    urgent, because that is the whole reason a pre-market push exists.
+
+    A morning with nothing urgent returns priority `default` and an empty-ish
+    body; main() then sends no push at all. Per the desk's own rule that
+    notifications fire on changes and not on states, a daily pre-market buzz
+    saying "nothing happened" is how the channel gets muted.
+    """
+    urgent = delta.get("urgent") or []
+    counts = delta.get("counts") or {}
+    changed = counts.get("changed", 0)
+
+    if not urgent and not changed:
+        return ("nothing new since the close", "No filings, no new vetoes, no "
+                "catalyst inside a day. Nothing has changed since the nightly run.",
+                "default")
+
+    bits = []
+    if urgent:
+        bits.append(f"{len(urgent)} urgent")
+    if changed:
+        bits.append(f"{changed} changed")
+    if counts.get("new_filings"):
+        bits.append(f"{counts['new_filings']} new filing"
+                    f"{'s' if counts['new_filings'] > 1 else ''}")
+    summary = ", ".join(bits)
+
+    lines = []
+    for ch in urgent:
+        lines.append(f"{ch['symbol']} ${ch.get('close')} [{ch.get('tier') or 'NONE'}]")
+        for why in ch.get("urgent_because") or []:
+            lines.append(f"  {why}")
+    body = "\n".join(lines) if lines else summary
+    return summary, body, ("high" if urgent else "default")
+
+
 def build_alert_text(sig: dict) -> tuple[str, str, str]:
     """What happened, as (summary, body, priority).
 
@@ -211,11 +283,81 @@ def build_alert_text(sig: dict) -> tuple[str, str, str]:
     return " + ".join(bits), "\n".join(lines), priority
 
 
+def send_premarket(cfg: dict, configured: dict[str, bool], args) -> int:
+    """Deliver the pre-market note: email always, ntfy only when urgent.
+
+    The urgency decision is read out of premarket_delta.py's JSON, never
+    inferred from the report text. The report is written by a model; whether the
+    phone buzzes at 07:30 ET is arithmetic, and it stays arithmetic.
+
+    A missing delta file is a hard stop rather than a silent "nothing urgent".
+    Defaulting to quiet would turn every future breakage of the delta stage into
+    a permanently silent phone, which is indistinguishable from a calm market --
+    the exact failure the heartbeat exists to catch and the reason this run keeps
+    its own delivery record.
+    """
+    report = Path(args.premarket)
+    delta_path = Path(args.delta)
+    if not delta_path.exists():
+        print(f"[notify] no delta at {delta_path}; refusing to guess whether "
+              f"anything is urgent", file=sys.stderr)
+        record_delivery("", {"ntfy": None, "email": None}, configured,
+                        path=PREMARKET_DELIVERY_LOG)
+        return 1
+    delta = json.loads(delta_path.read_text())
+
+    summary, body, priority = build_premarket_text(delta)
+    run_date = delta.get("asof") or ""
+    session = delta.get("current_session") or ""
+    channels: dict[str, bool | None] = {"ntfy": None, "email": None}
+
+    # Push only on urgency. `high` is set by build_premarket_text() exactly when
+    # delta["urgent"] is non-empty, so this is the same condition spelled once.
+    if priority == "high" or cfg.get("NTFY_ALWAYS", "0") == "1":
+        ok = send_ntfy(cfg, f"Pre-market {run_date} - {summary}", body,
+                       priority=priority, tags="warning")
+        if configured["ntfy"]:
+            channels["ntfy"] = ok
+        print(f"[notify] premarket ntfy sent={ok}", file=sys.stderr)
+
+    if cfg.get("EMAIL_ALWAYS", "1") == "1" or priority == "high":
+        report_md = report.read_text() if report.exists() else body
+        html_body = None
+        try:
+            sig = json.loads(Path(args.signals).read_text())
+            html_body = build_email_html(report_md, sig)
+        except Exception as e:
+            print(f"[notify] HTML render failed, sending plain text: {e}",
+                  file=sys.stderr)
+        ok = send_email(cfg, premarket_subject(summary, run_date), report_md,
+                        html_body=html_body,
+                        attachment=report if report.exists() else None,
+                        attachment_name=f"premarket-{run_date or report.stem}.md")
+        if configured["email"]:
+            channels["email"] = ok
+        print(f"[notify] premarket email sent={ok} (html={bool(html_body)})",
+              file=sys.stderr)
+
+    # Keyed by the session the delta was measured against, so the record says
+    # which day's numbers this morning's note was compared with.
+    record_delivery(session, channels, configured, path=PREMARKET_DELIVERY_LOG)
+    failed = [name for name, ok in channels.items() if ok is False]
+    if failed:
+        print(f"[notify] WARNING: premarket {', '.join(failed)} did not deliver; "
+              f"recorded in {PREMARKET_DELIVERY_LOG.name}", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Send alerts for the daily desk run")
     ap.add_argument("--signals", default=str(ROOT / "data" / "signals.json"))
     ap.add_argument("--report", default=None, help="path to the day's markdown report")
     ap.add_argument("--failure", default=None, help="send a failure notice instead")
+    ap.add_argument("--premarket", default=None, metavar="REPORT",
+                    help="send the pre-market note at this path instead of the "
+                         "nightly report")
+    ap.add_argument("--delta", default=str(ROOT / "data" / "premarket" / "delta.json"),
+                    help="premarket_delta.py output; decides what counts as urgent")
     args = ap.parse_args()
 
     cfg = load_config()
@@ -251,6 +393,9 @@ def main() -> int:
         record_delivery("", channels, configured)
         print(f"[notify] ntfy sent={ok_push} email sent={ok_mail}", file=sys.stderr)
         return 0
+
+    if args.premarket:
+        return send_premarket(cfg, configured, args)
 
     sig = json.loads(Path(args.signals).read_text())
     summary, body, priority = build_alert_text(sig)

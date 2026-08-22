@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 #
-# Daily biotech desk run. Invoked by the weekday scheduler (a systemd timer on
-# Linux, a launchd job on macOS) after the US close. Safe to run by hand at any
-# time.
+# Nightly biotech desk run: the desk's record of the session that just closed.
+# Invoked by the scheduler (a systemd timer on Linux, a launchd job on macOS) at
+# 01:30 local, which is 2.5-3.5 hours after the US close in every DST alignment
+# -- late enough that the price provider has actually published the daily bar.
+# Safe to run by hand at any time; it analyses whatever the newest bar is and
+# names its report for that session, never for the wall clock.
+#
+# The pre-market counterpart is run_premarket.sh, which asks what has happened
+# since and records nothing. Both source lib/run_preamble.sh for the lock, the
+# interpreter probe, run_with_timeout and the network wait.
 #
 #   ./run_daily.sh            full run
 #   ./run_daily.sh --no-llm   fetch + signals only (fast, free, no API usage)
@@ -62,230 +69,15 @@ for arg in "$@"; do
     esac
 done
 
-busy() {
-    # Benign: exit 0 so the scheduler does not record a skipped overlap as a failure.
-    echo "another run is already in progress; exiting" >&2
-    exit 0
-}
+# --- shared prologue ------------------------------------------------------
+# The lock, the interpreter probe, run_with_timeout, capture_if_ok and the
+# network wait live in lib/run_preamble.sh because run_premarket.sh needs the
+# identical machinery and two copies would drift. Sourcing it acquires the lock
+# and sets $PY: everything below assumes both.
+RUN_LABEL="Biotech desk run"
+# shellcheck source=lib/run_preamble.sh
+source "$ROOT/lib/run_preamble.sh"
 
-# notify.py is deliberately runnable on any python3 -- stdlib-only, no 3.11
-# features -- so the alarm can be raised even when the interpreter probe below
-# is exactly what failed. Tries the vetted interpreter first, then anything.
-notify_failure() {
-    local c
-    for c in "${PY:-}" "${PHARMA_PYTHON:-}" python3 "$HOME/.local/bin/python3"; do
-        [[ -n "$c" ]] || continue
-        command -v "$c" >/dev/null 2>&1 || continue
-        "$c" "$ROOT/scripts/notify.py" --failure "$1" && return 0
-    done
-    echo "WARNING: could not send the failure notification" >&2
-    return 1
-}
-
-fail() {
-    echo "FAILED: $1"
-    notify_failure "Biotech desk run failed on $DATE: $1" || true
-    exit 1
-}
-
-# --- one run at a time ------------------------------------------------------
-# A manual run colliding with the scheduled one shares the log file, races on
-# state/alerts.json and interleaves sqlite writes -- all of which happened
-# during development.
-#
-# flock(1) is util-linux and absent on macOS/BSD, where the old unconditional
-# call exited 127 and was read as "already running": the job exited 0 having
-# silently done nothing. Where flock is missing, a symlink whose *target* is
-# the owner's pid carries the lock: creation is atomic and the pid is embedded
-# in the same operation, so there is no window in which the lock exists but
-# its owner is unknown.
-LOCK="$ROOT/data/.run.lock"
-LOCKLINK="$ROOT/data/.run.lock.owner"
-
-if command -v flock >/dev/null 2>&1; then
-    # Without `set -e` a failed `exec` redirection does NOT stop the script; it
-    # returns 1 and carries on, and flock then fails on a bad descriptor. An
-    # unwritable lock file is not an overlap.
-    exec 9>"$LOCK" || {
-        echo "FATAL: cannot open lock file $LOCK" >&2
-        exit 1
-    }
-    # -n rather than --nonblock: the short spelling is the portable one.
-    # Only status 1 means "held by another process"; anything else (unsupported
-    # option, ENOLCK on a network filesystem) is a real error, and reporting it
-    # as a benign overlap would be a silent nightly no-op.
-    flock -n 9
-    rc=$?
-    case $rc in
-        0) ;;
-        1) busy ;;
-        *) echo "FATAL: flock exited $rc -- an error, not contention" >&2
-           exit 1 ;;
-    esac
-else
-    # The lock's identity is pid PLUS process start time, not pid alone.
-    # `kill -0` fails both ways as an ownership probe: a recycled pid from a
-    # SIGKILLed run makes it succeed forever (busy every night, silently), and
-    # EPERM on another user's pid makes a live lock look stale. Start time
-    # survives neither failure -- a recycled pid has a new one, and ps reads
-    # other users' processes where kill cannot signal them.
-    lock_id() {
-        local started
-        started="$(ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//')"
-        [[ -n "$started" ]] && echo "$1|$started"
-    }
-    # Is the process recorded in the lock still the one that took it?
-    lock_held() {
-        local target="$1" owner="${1%%|*}"
-        [[ -n "$owner" ]] || return 1
-        if [[ "$target" != *"|"* ]]; then
-            # A bare-pid lock written by the previous format. There is no start
-            # time to compare, so fall back to the old liveness probe: reaping
-            # it on format alone would steal the lock from a run that is still
-            # going, which is the one thing this block exists to prevent. Only
-            # reachable in the single upgrade window where a pre-existing run
-            # is still holding the old-format link.
-            kill -0 "$owner" 2>/dev/null
-            return
-        fi
-        # Same pid AND same start time: the recorded owner is genuinely running.
-        # RHS quoted -- unquoted it is a glob pattern, not a literal.
-        [[ "$(lock_id "$owner")" == "$target" ]]
-    }
-    SELF_ID="$(lock_id $$)"
-    if [[ -z "$SELF_ID" ]]; then
-        # No usable `ps -o lstart` (busybox, a stripped container). Record the
-        # bare pid and let lock_held fall back with it: the recycled-pid hole
-        # reopens, but refusing to start would trade a rare wrong answer for a
-        # certain silent nightly no-op, which is the worse of the two.
-        echo "WARNING: ps -o lstart unavailable; lock falls back to pid only" >&2
-        SELF_ID="$$"
-    fi
-    if ! ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null; then
-        target="$(readlink "$LOCKLINK" 2>/dev/null || true)"
-        owner="${target%%|*}"
-        if [[ -z "$target" ]]; then
-            # The link vanished between our attempt and the read: its owner
-            # just exited. One retry; failing again is genuine contention.
-            ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null || busy
-        elif lock_held "$target"; then
-            busy
-        else
-            # Stale lock from a killed run. Reap it by atomic rename, so
-            # exactly one contender wins the takeover -- the loser's mv fails
-            # and it yields. A third starter that claims the freed path first
-            # wins instead: our own claim then fails and we yield to it.
-            mv "$LOCKLINK" "$LOCKLINK.reap.$$" 2>/dev/null || busy
-            rm -f "$LOCKLINK.reap.$$"
-            echo "removed stale lock left by pid ${owner:-unknown}" >&2
-            ln -s "$SELF_ID" "$LOCKLINK" 2>/dev/null || busy
-        fi
-    fi
-    trap 'rm -f "$LOCKLINK"' EXIT
-fi
-
-# --- interpreter preflight ---------------------------------------------------
-# Everything under scripts/ is stdlib-only, but two stdlib pieces are not
-# guaranteed to be present: tomllib (3.11+) and pyexpat, which parses the Form 4
-# ownership XML. An interpreter missing pyexpat runs the entire desk and merely
-# records status=degraded -- the insider layer, which CLAUDE.md calls the
-# strongest available evidence for refuting a veto, just quietly disappears from
-# every report. Refuse to start instead of producing a plausible-looking one;
-# the refusal is logged above and notified below, so it is a loud failure.
-PY=""
-for candidate in "${PHARMA_PYTHON:-}" python3 "$HOME/.local/bin/python3"; do
-    [[ -n "$candidate" ]] || continue
-    if ! command -v "$candidate" >/dev/null 2>&1; then
-        [[ "$candidate" == "${PHARMA_PYTHON:-}" ]] &&
-            echo "WARNING: PHARMA_PYTHON=$candidate not found; trying fallbacks" >&2
-        continue
-    fi
-    if "$candidate" -c 'import tomllib, pyexpat' 2>/dev/null; then
-        PY="$candidate"
-        break
-    fi
-    # An explicitly requested interpreter that fails the probe must say so --
-    # silently falling through to another python is how the wrong one ends up
-    # in use without anything drawing attention to it.
-    [[ "$candidate" == "${PHARMA_PYTHON:-}" ]] &&
-        echo "WARNING: PHARMA_PYTHON=$candidate fails the tomllib/pyexpat probe; trying fallbacks" >&2
-done
-if [[ -z "$PY" ]]; then
-    fail "no python3 with both tomllib (3.11+) and pyexpat found -- install one (e.g. 'uv python install 3.12 --default') or set PHARMA_PYTHON"
-fi
-# Say which one, so a fallback is never mistaken for the interpreter on PATH.
-[[ "$PY" == "python3" ]] || echo "[run] python: $PY"
-
-# --- bounded execution --------------------------------------------------------
-# timeout(1) is GNU coreutils and absent from a stock macOS. Every stage must
-# stay bounded regardless: systemd's TimeoutStartSec=3600 has no launchd
-# equivalent, and a stage hung on a stalled socket keeps its pid alive, so every
-# later start would exit 0 as "already in progress" -- silently, nightly,
-# forever.
-run_with_timeout() {
-    local secs="$1"; shift
-    local tool
-    for tool in timeout gtimeout; do
-        if command -v "$tool" >/dev/null 2>&1; then
-            "$tool" "$secs" "$@"
-            return $?
-        fi
-    done
-    "$@" &
-    local pid=$!
-    # The watchdog's sleeps run as background children it waits on, so the TERM
-    # trap can reach them: killing a subshell does not kill the sleep it is
-    # blocked in, and an unreaped `sleep 1800` outlives every fast run, holding
-    # the log descriptor for half an hour.
-    (
-        s=""
-        trap '[[ -n "$s" ]] && kill "$s" 2>/dev/null; exit 0' TERM
-        sleep "$secs" & s=$!
-        wait "$s" 2>/dev/null || exit 0
-        kill -TERM "$pid" 2>/dev/null
-        sleep 10 & s=$!
-        wait "$s" 2>/dev/null || exit 0
-        kill -KILL "$pid" 2>/dev/null
-    ) &
-    local watchdog=$!
-    wait "$pid"; local rc=$?
-    kill -TERM "$watchdog" 2>/dev/null
-    wait "$watchdog" 2>/dev/null
-    return $rc
-}
-
-# --- 0. network -----------------------------------------------------------
-# systemd declares After=network-online.target; launchd has no equivalent for a
-# calendar job, and a Mac waking at 09:00 runs the missed 23:18 job before Wi-Fi
-# has associated. Living here rather than in the launchd job means one wait that
-# every scheduler gets -- a hand-rolled cron and a manual run included -- so the
-# desk job no longer waits separately. (The heartbeat still does: it never comes
-# through this script.)
-#
-# http://captive.apple.com, not a bare TCP connect: a captive portal completes
-# the handshake for anything and would read as "network up" while every fetch
-# came back as the portal's login page. It is also the endpoint macOS itself
-# probes, so it exercises DNS, TCP and HTTP.
-#
-# run_with_timeout bounds each attempt because the socket timeout does not: it
-# covers connect(), not getaddrinfo(), so a stalled resolver has no ceiling of
-# its own -- and this loop runs holding the lock. Worst case is 12 probes capped
-# at 6s and 11 pauses of 5s, so a little over two minutes, then it proceeds
-# regardless: a genuinely offline machine should fail loudly through fetch.py
-# rather than stall here. The happy path costs one probe, ~0.3s.
-NET_ATTEMPTS=12
-net_ok=0
-for attempt in $(seq 1 "$NET_ATTEMPTS"); do
-    if run_with_timeout 6 "$PY" -c \
-        'import urllib.request; urllib.request.urlopen("http://captive.apple.com", timeout=5).read(64)' \
-        >/dev/null 2>&1; then
-        net_ok=1
-        break
-    fi
-    [[ "$attempt" -eq 1 ]] && echo "--- waiting for network"
-    [[ "$attempt" -eq "$NET_ATTEMPTS" ]] || sleep 5
-done
-[[ "$net_ok" -eq 1 ]] || echo "WARNING: no network after ~2min -- running anyway" >&2
 
 # --- 1. facts -------------------------------------------------------------
 echo "--- fetch"
@@ -316,24 +108,6 @@ fi
 [[ "$SESSION" == "$DATE" ]] || echo "[run] session $SESSION (run date $DATE)"
 REPORT="$ROOT/reports/$SESSION.md"
 
-# Capture a stage's output into a file only if the stage succeeded. Redirecting
-# straight onto the destination truncated it before the command ran, so a
-# transient failure replaced the last good scorecard with a Python traceback --
-# and the analysis pass reads that file, so the report then quoted the traceback
-# as the desk's performance record. Keeping the previous content is strictly
-# better: it is stale by one day and says so, rather than being wrong.
-capture_if_ok() {
-    local label="$1" dest="$2" secs="$3"; shift 3
-    local tmp="$dest.partial.$$"
-    if run_with_timeout "$secs" "$@" > "$tmp" 2>&1; then
-        mv -f "$tmp" "$dest"
-        return 0
-    fi
-    echo "WARNING: $label failed; keeping the previous $(basename "$dest")" >&2
-    tail -15 "$tmp" | sed 's/^/    | /' >&2
-    rm -f "$tmp"
-    return 1
-}
 
 # --- 2b. grade past alerts ------------------------------------------------
 # Non-fatal: a scoring failure must not cost you the day's report.
@@ -409,13 +183,19 @@ The session being analysed is $SESSION -- every price, filing age and catalyst
 countdown in data/signals.json is measured from that date, not from now. Today's
 wall-clock date is $DATE; use $SESSION for anything about the data.
 Write the report to reports/$SESSION.md.
-Run python scripts with: $PY (e.g. \`$PY scripts/detail.py TICKER\`)."
+Run python scripts with: $PY
+Start with the list-wide view: \`$PY scripts/brief.py\`
+Then drill into a name: \`$PY scripts/detail.py TICKER\`
+$CAVEMAN_DIRECTIVE"
 
 # The analysis pass drills down via scripts/detail.py, so it needs to run the
 # same vetted interpreter as the pipeline -- not whatever python3 happens to be
 # on PATH, which on the machine the preflight protects against is precisely the
 # interpreter that failed the probe.
-ALLOWED_TOOLS="Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Bash(python3:*)"
+# Skill is on the list because the register the report is written in comes from
+# the `caveman` skill, and a tool the run cannot call is a directive it cannot
+# follow -- it would write a normal-prose report and say nothing about why.
+ALLOWED_TOOLS="Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Skill,Bash(python3:*)"
 [[ "$PY" != "python3" ]] && ALLOWED_TOOLS+=",Bash($PY:*)"
 
 # 9>&- closes the flock descriptor for this child and everything it starts. An

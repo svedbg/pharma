@@ -11,8 +11,10 @@ Read in this order:
 0. `STRATEGY.local.md` — the owner's objective, risk posture, bucket meanings,
    brokers and constraints. **Read this first**; it governs every sizing and
    routing decision below.
-1. `data/signals.json` — computed indicators, tier, hard vetoes, soft flags, cash
-   runway, dilution, recent collapse/spike events for every name. **Start here.**
+1. `python3 scripts/brief.py` — the list-wide view. Regime, exposure, settings,
+   the signal table for every name, a full block for each name that clears the
+   triage bar below, one line each for the rest, the catalyst calendar, and the
+   thesis/catalyst bootstrap candidates. **Start here.**
 2. `watchlist.toml` — bucket, thesis, entry zone and invalidation per name.
 3. Yesterday's report in `reports/`, for continuity.
 4. `python3 scripts/detail.py TICKER` — full record for one name: recent bars,
@@ -22,6 +24,14 @@ Read in this order:
 
 **Do not read `data/latest.json` directly** — it is several megabytes across ~60
 names. `detail.py` exists so you never have to.
+
+**Do not read `data/signals.json` wholesale either.** At 60+ names it is ~490KB,
+about 122,000 tokens — fifteen times the size of the report you are writing, and
+most of it is drill-down material: seven chart URLs per name beside the ready-made
+markdown line that replaces them, the XBI regime block repeated identically for
+every name, every moving average, every insider transaction. `brief.py` is that
+file with the drill-down half removed and `detail.py` is the drill-down. Read a
+field out of `signals.json` by hand only when you need one neither of them prints.
 
 **Never state a price, share count, cash balance or percentage that you did not
 read from those files.** If a figure is missing, say it is missing. A number you
@@ -40,6 +50,12 @@ Everything else gets one line in the table and no prose. If more than 12 names
 qualify, rank by (tier, then bucket A before B before lottery) and deep-dive the
 top 12; list the rest under a "also flagged" heading with one line each, and say
 explicitly that you capped the deep-dives.
+
+`brief.py` applies this same bar — plus any exit flag, which predates neither the
+bar nor the flags — so its detailed blocks are the qualifying names and its "also
+flagged" section is the rest. It does not apply the cap of 12; that is still your
+ranking decision, and it prints every qualifier so the ranking has something to
+rank.
 
 ## What to do
 

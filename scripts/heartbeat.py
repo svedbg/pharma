@@ -27,16 +27,24 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 REPORTS = ROOT / "reports"
-DELIVERY_LOG = ROOT / "data" / "last_delivery.json"
+# Both runs record separately, and both are checked. A single shared record let
+# the pre-market pass at 14:30 overwrite the nightly run's verdict from 01:30, so
+# a report that never reached anyone read as a healthy desk. Named here so the
+# alarm can say which run could not deliver.
+DELIVERY_LOGS = (
+    ("nightly run", ROOT / "data" / "last_delivery.json"),
+    ("pre-market pass", ROOT / "data" / "last_delivery_premarket.json"),
+)
 # Two missed weekdays of slack -- one is a holiday or a slow night, two is a
 # fault -- plus one for the gap between a session and the day it is checked on.
 #
-# Reports are named for the *session* they analyse, not the day the run fired,
-# and those differ whenever the newest bar is not today's. The scheduled run is
-# 18 minutes after the US close, so losing that race to the provider dates the
-# report a day back. At a threshold of 2 a persistent one-day lag sat exactly on
-# the limit: still passing, but with none of the holiday slack this number
-# exists to provide, so the first real miss would look like the second.
+# That last day is structural, not slack. Reports are named for the *session*
+# they analyse, not the day the run fired, and the desk fires at 01:30 on the
+# day after its session so the price provider has actually published the daily
+# bar. So this check, running at 10:23, always finds a newest report dated
+# yesterday: a perfectly healthy desk sits at one weekday stale, permanently.
+# At a threshold of 2 that left a single weekday of real slack, so the first
+# holiday would look like the second consecutive miss.
 MAX_WEEKDAYS_STALE = 3
 
 
@@ -66,36 +74,51 @@ def latest_report() -> tuple[date | None, Path | None]:
     return best, best_path
 
 
-def delivery_fault() -> str | None:
-    """Why the last run's notifications did not arrive, or None if they did.
+def _fault_in(label: str, path: Path) -> str | None:
+    """Why one run's notifications did not arrive, or None if they did.
 
     A report on disk is not evidence that anything was sent. Watching only
     reports meant a wrong SMTP password read as a completely healthy desk: the
     run wrote its file, this check passed, and the phone stayed silent for as
-    long as nobody thought to wonder. notify.py now records what each channel
-    did, and that record is the only place the answer exists.
+    long as nobody thought to wonder. notify.py records what each channel did,
+    and that record is the only place the answer exists.
 
-    A missing file is not a fault. It means notify.py has not run since this was
-    added, and inventing an alarm out of that would fire once on every install.
+    A missing file is not a fault. It means notify.py has not run for this entry
+    point since it was added, and inventing an alarm out of that would fire once
+    on every install -- and again for anyone who has not enabled the pre-market
+    timer, which is optional.
     """
-    if not DELIVERY_LOG.exists():
+    if not path.exists():
         return None
     try:
-        rec = json.loads(DELIVERY_LOG.read_text())
+        rec = json.loads(path.read_text())
     except (json.JSONDecodeError, OSError) as e:
-        return f"delivery record at {DELIVERY_LOG} is unreadable ({e})"
+        return f"the {label}'s delivery record at {path} is unreadable ({e})"
     failed = [name for name, ok in (rec.get("channels") or {}).items() if ok is False]
     if failed:
-        return (f"the last run ({rec.get('session_date') or 'undated'}, sent "
+        return (f"the last {label} ({rec.get('session_date') or 'undated'}, sent "
                 f"{rec.get('at')}) could not deliver via {', '.join(sorted(failed))} "
                 f"-- the report was written but never reached you.")
     # Sending nothing is not a fault: a quiet day with EMAIL_ALWAYS=0 correctly
     # sends nothing at all. Having nowhere to send is.
     if not any((rec.get("configured") or {}).values()):
-        return (f"the last run ({rec.get('session_date') or 'undated'}) had no delivery "
-                f"channel configured -- set NTFY_TOPIC, or SMTP_HOST and EMAIL_TO, in "
-                f"~/.config/pharma/pharma.env")
+        return (f"the last {label} ({rec.get('session_date') or 'undated'}) had no "
+                f"delivery channel configured -- set NTFY_TOPIC, or SMTP_HOST and "
+                f"EMAIL_TO, in ~/.config/pharma/pharma.env")
     return None
+
+
+def delivery_fault() -> str | None:
+    """The first delivery fault across every run that records one.
+
+    Both are reported rather than only the newest record, because they fail
+    independently: the nightly SMTP send can be broken for a week while the
+    pre-market push works fine, and a single record would show whichever ran
+    last. Joined into one message so a machine with both broken raises one
+    alarm naming both, not two alarms racing down the same channel.
+    """
+    faults = [f for f in (_fault_in(label, path) for label, path in DELIVERY_LOGS) if f]
+    return " Also: ".join(faults) if faults else None
 
 
 def main() -> int:
