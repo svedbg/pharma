@@ -37,12 +37,29 @@ ROOT = Path(__file__).resolve().parent.parent
 # through the same dead channel.
 DELIVERY_LOG = ROOT / "data" / "last_delivery.json"
 # The pre-market pass records separately. One shared file would let the two runs
-# overwrite each other's verdict: the nightly run fails to deliver at 01:30, the
+# overwrite each other's verdict: the nightly run fails to deliver at 09:00, the
 # pre-market pass succeeds at 14:30, and the heartbeat -- which reads whatever is
 # there -- sees a healthy desk while last night's report never arrived. Two
 # records, both checked, is the only arrangement where a permanently broken
 # channel on either run stays visible.
 PREMARKET_DELIVERY_LOG = ROOT / "data" / "last_delivery_premarket.json"
+
+
+def delivery_log_for(run: str) -> Path:
+    """Which record this invocation writes.
+
+    The two records above only stay separate if EVERY path through main() picks
+    between them, and the two that did not were the failure notice and the
+    empty-config notice -- the paths taken precisely when something has already
+    gone wrong. Both wrote the nightly record whichever run called them, so a
+    pre-market pass that died at 14:30 stamped `{"run": "daily", "ok": true}`
+    over the nightly run's verdict: the heartbeat then read a healthy desk, and
+    read it as healthy *because* the morning's failure notification had
+    delivered successfully. That is the shared-record blind spot the split
+    exists to close, reopened through the one path with nothing downstream of it
+    to notice.
+    """
+    return PREMARKET_DELIVERY_LOG if run == "premarket" else DELIVERY_LOG
 
 
 def load_config() -> dict:
@@ -179,9 +196,9 @@ def ntfy_title(summary: str, session_date: str) -> str:
     """Title for a push that arrives with no other context on the lock screen.
 
     It carries the date because the phone stamps the message with when it
-    arrived, which is not the session it describes: the desk fires at 23:18, so
-    a run that overruns midnight pushes yesterday's session onto today's
-    notification, and a hand re-send is later still.
+    arrived, which is not the session it describes: the desk fires the morning
+    after its session, so every scheduled push carries yesterday's date, and a
+    hand re-send is later still.
     """
     return f"{summary} - {session_date}" if session_date else summary
 
@@ -358,7 +375,18 @@ def main() -> int:
                          "nightly report")
     ap.add_argument("--delta", default=str(ROOT / "data" / "premarket" / "delta.json"),
                     help="premarket_delta.py output; decides what counts as urgent")
+    ap.add_argument("--run", choices=("daily", "premarket"), default="daily",
+                    help="which run this is. Selects the delivery record and "
+                         "names the run in a failure notice. --premarket implies "
+                         "it; a failure notice has no report to imply it from, "
+                         "which is why the flag exists at all")
     args = ap.parse_args()
+
+    # --premarket names a report, so it settles the question on its own. --run
+    # carries it on the paths that send no report: the failure notice and the
+    # empty-config notice.
+    run = "premarket" if args.premarket else args.run
+    record_log = delivery_log_for(run)
 
     cfg = load_config()
     if not cfg:
@@ -372,7 +400,8 @@ def main() -> int:
         # without writing it made that branch unreachable in the one case it
         # most obviously describes: a machine with no config at all. A missing
         # record is correctly not a fault, so the fault has to be written down.
-        record_delivery("", {"ntfy": None, "email": None}, {"ntfy": False, "email": False})
+        record_delivery("", {"ntfy": None, "email": None}, {"ntfy": False, "email": False},
+                        path=record_log)
         return 0
 
     configured = configured_channels(cfg)
@@ -384,13 +413,19 @@ def main() -> int:
         # wrong, on a path where nothing afterwards would notice it never
         # arrived. Keyed to no session because a failed run has none.
         channels: dict[str, bool | None] = {"ntfy": None, "email": None}
-        ok_push = send_ntfy(cfg, "Biotech desk FAILED", args.failure, priority="high", tags="warning")
+        # Named for the run, like the record it writes and like the pre-market
+        # subject line. Both runs can fail on the same day into the same mailbox
+        # and the same ntfy topic, and "which one" is the first thing worth
+        # knowing.
+        which = " (pre-market)" if run == "premarket" else ""
+        ok_push = send_ntfy(cfg, f"Biotech desk FAILED{which}", args.failure,
+                            priority="high", tags="warning")
         if configured["ntfy"]:
             channels["ntfy"] = ok_push
-        ok_mail = send_email(cfg, "[biotech desk] run failed", args.failure)
+        ok_mail = send_email(cfg, f"[biotech desk] run failed{which}", args.failure)
         if configured["email"]:
             channels["email"] = ok_mail
-        record_delivery("", channels, configured)
+        record_delivery("", channels, configured, path=record_log)
         print(f"[notify] ntfy sent={ok_push} email sent={ok_mail}", file=sys.stderr)
         return 0
 

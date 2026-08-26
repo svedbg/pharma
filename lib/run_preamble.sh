@@ -21,6 +21,12 @@
 #   ROOT       the project directory
 #   DATE       the run date (names the log)
 #   RUN_LABEL  what to call this run in a failure notification
+#   RUN_KIND   `daily` or `premarket`. Which delivery record a failure notice
+#              writes. RUN_LABEL is prose for a human; this is the key the
+#              heartbeat reads back, and the two must not be inferred from one
+#              another -- a failure notice that wrote the wrong record made a
+#              dead nightly run read as healthy, because the morning's failure
+#              had delivered successfully into the nightly run's slot.
 #
 # It defines busy/notify_failure/fail/run_with_timeout/capture_if_ok, and then
 # ACQUIRES THE LOCK, picks $PY and waits for the network -- in that order, as
@@ -28,8 +34,12 @@
 # exports $CAVEMAN_DIRECTIVE, the register both analysis prompts are written
 # in, for the same one-definition reason as the rest.
 
-if [[ -z "${ROOT:-}" || -z "${DATE:-}" || -z "${RUN_LABEL:-}" ]]; then
-    echo "FATAL: run_preamble.sh sourced without ROOT, DATE and RUN_LABEL set" >&2
+if [[ -z "${ROOT:-}" || -z "${DATE:-}" || -z "${RUN_LABEL:-}" || -z "${RUN_KIND:-}" ]]; then
+    echo "FATAL: run_preamble.sh sourced without ROOT, DATE, RUN_LABEL and RUN_KIND set" >&2
+    exit 1
+fi
+if [[ "$RUN_KIND" != "daily" && "$RUN_KIND" != "premarket" ]]; then
+    echo "FATAL: RUN_KIND is '$RUN_KIND'; expected daily or premarket" >&2
     exit 1
 fi
 # A guard, not decoration: sourced with `set -e` absent, a missing ROOT would
@@ -49,7 +59,7 @@ notify_failure() {
     for c in "${PY:-}" "${PHARMA_PYTHON:-}" python3 "$HOME/.local/bin/python3"; do
         [[ -n "$c" ]] || continue
         command -v "$c" >/dev/null 2>&1 || continue
-        "$c" "$ROOT/scripts/notify.py" --failure "$1" && return 0
+        "$c" "$ROOT/scripts/notify.py" --failure "$1" --run "$RUN_KIND" && return 0
     done
     echo "WARNING: could not send the failure notification" >&2
     return 1

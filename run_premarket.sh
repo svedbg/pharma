@@ -3,7 +3,7 @@
 # Pre-market news pass. Invoked by the weekday scheduler at 14:30 Europe/Sofia
 # (07:30 ET), about two hours before the 09:30 ET open.
 #
-# It answers a different question from the nightly run. The 01:30 run is the
+# It answers a different question from the nightly run. The 09:00 run is the
 # desk's record of the session that just closed; this one asks what has happened
 # SINCE, in the hours where nothing shows up in a daily bar: an 8-K filed at
 # 06:40 ET, a priced takedown, a catalyst whose date is today, news no
@@ -67,10 +67,14 @@ done
 # --- shared prologue ------------------------------------------------------
 # Same lock as run_daily.sh, deliberately. This pass reads history.sqlite and
 # data/ while the nightly run writes both, so they must not overlap -- and at
-# 14:30 against 01:30 they never do unless one is a hand run, which is exactly
+# 14:30 against 09:00 they never do unless one is a hand run, which is exactly
 # when the lock earns its keep. A held lock exits 0: skipping the news pass is
 # the right answer when the desk is mid-report.
 RUN_LABEL="Biotech desk pre-market pass"
+# Which delivery record a failure notice writes. Not inferred from RUN_LABEL:
+# this pass failing at 14:30 used to stamp the nightly run's record, so a dead
+# nightly run read as healthy because this pass's failure notice had delivered.
+RUN_KIND="premarket"
 # shellcheck source=lib/run_preamble.sh
 source "$ROOT/lib/run_preamble.sh"
 
@@ -101,7 +105,15 @@ run_with_timeout 300 "$PY" "$ROOT/scripts/premarket_delta.py" \
     --out "$PM/delta.json" \
     --asof "$DATE" \
     > "$PM/delta.txt" 2>&1 \
-    || { cat "$PM/delta.txt"; fail "premarket_delta.py returned $?"; }
+    || delta_rc=$?
+# $? has to be captured BEFORE anything else runs, or it is the status of that
+# other thing. `{ cat ...; fail "... returned $?"; }` reported cat's status, so
+# every one of these failures logged "returned 0" -- a line that reads as a
+# success and sent whoever went looking to the wrong stage.
+if [[ -n "${delta_rc:-}" ]]; then
+    cat "$PM/delta.txt"
+    fail "premarket_delta.py returned $delta_rc"
+fi
 cat "$PM/delta.txt"
 
 if [[ $NO_LLM -eq 1 ]]; then

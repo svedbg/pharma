@@ -1,38 +1,56 @@
 [Unit]
-Description=Overnight run of the biotech desk, analysing the session that just closed
+Description=Morning run of the biotech desk, analysing the session that closed the previous evening
 
 [Timer]
-# 01:30 Europe/Sofia, the day AFTER the session it analyses -- hence Tue-Sat.
+# 09:00 Europe/Sofia, the day AFTER the session it analyses -- hence Tue-Sat.
 #
-# The US close (16:00 ET) lands at 22:00-23:00 Sofia in every DST alignment, so
-# this is 2.5-3.5 hours after the closing print. That gap is the whole point.
-# This used to be Mon-Fri 23:18, which is 18 minutes after the close, chosen on
-# the assumption that the daily bar would usually be published by then and that
-# losing the race would cost "a day of latency rather than a day of wrong
-# dates". Measured over every scheduled run after fetch.session_date() landed,
-# it lost the race EVERY time -- 3 for 3:
+# The time is measured, not reasoned about, because reasoning about it has now
+# been wrong twice. The `runs` table records (run_at, session_date) for every
+# fetch that ever persisted, which is a direct log of when the provider had
+# published a given session's bar:
+#
+#   ABSENT   16:25 ET, 16:27 ET, 18:36 ET, 18:37 ET, 18:40 ET  (5 runs)
+#   PRESENT  01:52 ET, 01:59 ET, 02:33 ET, 03:07 ET, 03:11 ET, 03:55 ET
+#
+# Nasdaq's historical endpoint does not have the day's row in the evening at
+# all; it has it by the small hours of the following morning, ET. The earliest
+# confirmed sighting is 01:52 ET = 08:52 Sofia, so 09:00 Sofia is the first
+# clock time this desk has evidence for.
+#
+# This was 23:18 Mon-Fri (18 minutes after the close) and then 01:30 Tue-Sat,
+# and BOTH lost on every single scheduled run -- 3 for 3 each:
 #
 #   2026-08-17 23:27  session is 2026-08-14, not today
 #   2026-08-18 23:25  session is 2026-08-17, not today
 #   2026-08-19 23:26  session is 2026-08-18, not today
+#   2026-08-22 01:33  session is 2026-08-20, not 08-21
+#   2026-08-25 01:32  session is 2026-08-21, not 08-24
+#   2026-08-26 01:34  session is 2026-08-24, not 08-25
 #
-# Nasdaq's historical endpoint had not published the day's row 25 minutes after
-# the close; by the following morning it had. So it was not a race, it was a
-# schedule that ran before the data existed, and every report was named for the
-# previous session and delivered a full session stale -- the close it was built
-# on was already 3.5 hours old at send time, and the close that had just
-# happened was invisible to it.
+# 01:30 Sofia is 18:30 ET, which sits inside the ABSENT band above -- the move
+# from 23:18 bought 2 hours 12 minutes and needed roughly seven. Every report
+# was named for the session before the one that had just closed, and from
+# 2026-08-22 that also broke the pre-market pass outright: premarket_delta.py
+# correctly refuses when the baseline and the morning name different sessions,
+# so it failed every weekday and the only thing the desk sent was its own
+# failure notice.
 #
-# Tue-Sat because the run crosses midnight: Monday's session is analysed at
-# 01:30 Tuesday, Friday's at 01:30 Saturday. Nothing downstream cares -- the
-# report is named for the session out of signals.json, not for the run date --
-# but the day-of-week spec has to move with the hour or Monday's session would
-# never be analysed and Friday's would be analysed twice.
-OnCalendar=Tue-Sat 01:30
+# The 14:30 pre-market pass is the ceiling on how late this can go. 09:00
+# leaves 5.5 hours, against a run bounded at 107 minutes worst case and
+# typically under 20.
+#
+# Tue-Sat because the run still crosses midnight relative to its session:
+# Monday's session is analysed at 09:00 Tuesday, Friday's at 09:00 Saturday.
+# Nothing downstream cares -- the report is named for the session out of
+# signals.json, not for the run date -- but the day-of-week spec has to move
+# with the hour or Monday's session would never be analysed and Friday's would
+# be analysed twice.
+OnCalendar=Tue-Sat 09:00
 RandomizedDelaySec=240
-# Catch up if the laptop was asleep or powered off at the scheduled time. A
-# catch-up run is strictly safer at this hour than at the old one: the bar it
-# missed is certainly published by the time the machine wakes.
+# Catch up if the laptop was asleep or powered off at the scheduled time. Safe
+# at this hour for the same reason the hour was chosen: the bar it missed was
+# already published when the run was due, so a late run analyses the same
+# session it would have.
 Persistent=true
 Unit=pharma-desk.service
 

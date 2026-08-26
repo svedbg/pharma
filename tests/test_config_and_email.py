@@ -493,13 +493,14 @@ def test_the_desk_day_spec_matches_the_side_of_midnight_it_runs_on():
     """A run after midnight analyses the PREVIOUS day's session, so its day spec
     has to be shifted one day later than the sessions it covers.
 
-    The desk fires at 01:30 to give the price provider time to publish the daily
-    bar -- at the old 23:18, 18 minutes after the close, it lost that race on
-    every single scheduled run and every report was named for the previous
-    session. Moving the clock without moving the days would leave Monday's
-    session analysed by nothing and Friday's analysed twice, which looks like a
-    quiet Monday rather than a scheduling bug. Moving the days back without the
-    clock is the same mistake mirrored.
+    The desk fires at 09:00 the morning after its session, because that is when
+    the price provider has measurably published the daily bar. Both earlier
+    times were derived from the close instead -- 23:18 and then 01:30 -- and
+    both lost on every single scheduled run, so every report was named for the
+    session before the one that had just closed. Moving the clock without moving
+    the days would leave Monday's session analysed by nothing and Friday's
+    analysed twice, which looks like a quiet Monday rather than a scheduling
+    bug. Moving the days back without the clock is the same mistake mirrored.
     """
     days, hour, _ = _systemd_schedule("pharma-desk.timer")
     if hour < 12:
@@ -540,14 +541,52 @@ def test_the_premarket_pass_records_its_delivery_separately():
     healthy desk -- the exact blind spot the delivery record exists to close,
     reopened by adding a second sender to it.
     """
-    notify = (ROOT / "scripts" / "notify.py").read_text()
+    source = (ROOT / "scripts" / "notify.py").read_text()
     heartbeat = (ROOT / "scripts" / "heartbeat.py").read_text()
-    assert "last_delivery_premarket.json" in notify, \
+    assert "last_delivery_premarket.json" in source, \
         "notify.py does not write a separate pre-market delivery record"
     assert "last_delivery_premarket.json" in heartbeat, \
         "heartbeat.py does not read the pre-market delivery record"
     assert "last_delivery.json" in heartbeat, \
         "heartbeat.py stopped reading the nightly delivery record"
+
+
+@pytest.mark.parametrize(("run", "expected"), [
+    ("daily", "last_delivery.json"),
+    ("premarket", "last_delivery_premarket.json"),
+])
+def test_a_failure_notice_records_against_the_run_that_failed(run, expected):
+    """The split above only holds if EVERY path through main() honours it, and
+    the failure notice -- the one send with nothing downstream of it to notice
+    it never arrived -- did not. It always wrote the nightly record, so a
+    pre-market pass dying at 14:30 stamped `{"run": "daily", "ok": true}` over
+    the morning run's verdict and the heartbeat read a healthy desk *because*
+    the failure notification had delivered successfully.
+
+    The existing test above greps notify.py for the pre-market filename, which
+    was true throughout and caught none of it. This one asks the function which
+    file it picks.
+    """
+    assert notify.delivery_log_for(run).name == expected
+
+
+def test_the_entry_points_declare_which_run_they_are():
+    """RUN_KIND is what reaches notify.py --run, and it is set per entry point
+    rather than inferred from RUN_LABEL: prose for a human and a key the
+    heartbeat reads back are not the same thing, and inferring one from the
+    other is how the two records merged again.
+
+    The preamble refuses to be sourced without it, so a new entry point that
+    forgets fails loudly at the top instead of silently recording as the desk.
+    """
+    preamble = (ROOT / "lib" / "run_preamble.sh").read_text()
+    assert 'RUN_KIND' in preamble and '--run "$RUN_KIND"' in preamble, \
+        "run_preamble.sh does not pass the run kind to notify.py --failure"
+    assert '-z "${RUN_KIND:-}"' in preamble, \
+        "run_preamble.sh does not require RUN_KIND before sourcing"
+    for script, kind in (("run_daily.sh", "daily"), ("run_premarket.sh", "premarket")):
+        text = (ROOT / script).read_text()
+        assert f'RUN_KIND="{kind}"' in text, f"{script} does not set RUN_KIND={kind}"
 
 
 def test_the_premarket_run_cannot_write_the_desks_shared_state():

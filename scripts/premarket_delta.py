@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What changed between the desk's record of a session and this morning.
 
-The nightly run at 01:30 is the desk's record of the session that just closed.
+The nightly run at 09:00 is the desk's record of the session that just closed.
 By the time the US pre-market opens, things have happened that no bar reflects:
 an 8-K filed at 06:40 ET, a priced takedown, a catalyst whose date is today.
 This is the deterministic half of the pre-market run -- it compares the

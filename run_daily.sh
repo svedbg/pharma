@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# Nightly biotech desk run: the desk's record of the session that just closed.
-# Invoked by the scheduler (a systemd timer on Linux, a launchd job on macOS) at
-# 01:30 local, which is 2.5-3.5 hours after the US close in every DST alignment
-# -- late enough that the price provider has actually published the daily bar.
+# Biotech desk run: the desk's record of the session that closed the previous
+# evening. Invoked by the scheduler (a systemd timer on Linux, a launchd job on
+# macOS) at 09:00 local, the morning after that session. The hour is measured
+# rather than derived from the close -- Nasdaq publishes the daily bar overnight,
+# not in the evening -- see systemd/pharma-desk.timer for the log it was read
+# from and for the two earlier times that were argued from the close and lost.
 # Safe to run by hand at any time; it analyses whatever the newest bar is and
 # names its report for that session, never for the wall clock.
 #
@@ -75,6 +77,7 @@ done
 # identical machinery and two copies would drift. Sourcing it acquires the lock
 # and sets $PY: everything below assumes both.
 RUN_LABEL="Biotech desk run"
+RUN_KIND="daily"
 # shellcheck source=lib/run_preamble.sh
 source "$ROOT/lib/run_preamble.sh"
 
