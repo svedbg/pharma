@@ -11,14 +11,16 @@ systemctl --user list-timers 'pharma-*'
 `%h` expands to the user's home directory, so no paths need editing as long as
 the project lives at `~/projects/pharma`.
 
-- **pharma-desk** — **Tue–Sat 01:30** local, analysing the session that closed
-  the previous evening. The US close lands at 22:00–23:00 Europe/Sofia in every
-  daylight-saving alignment, so this is 2½–3½ hours after the closing print and
-  the price provider has actually published the daily bar. At the old Mon–Fri
-  23:18 it had not, on every single scheduled run, and every report was named
-  for the previous session. The day spec has to move with the hour: at 01:30 the
-  run covers the previous calendar day, so Mon–Fri would skip Monday's session
-  and analyse Friday's twice.
+- **pharma-desk** — **Tue–Sat 09:00** local, analysing the session that closed
+  the previous evening. The hour is measured, not derived from the close: the
+  `runs` table shows Nasdaq had not published the day's bar at any evening hour
+  ever observed (16:25–18:40 ET) and had published it by 01:52 ET the following
+  morning, which is 08:52 Sofia. Mon–Fri 23:18 and then Tue–Sat 01:30 were both
+  argued from the close, and both lost on every single scheduled run — every
+  report was named for the session *before* the one that had just closed. The
+  day spec has to move with the hour: at 09:00 the run still covers the previous
+  calendar day, so Mon–Fri would skip Monday's session and analyse Friday's
+  twice.
 - **pharma-premarket** — Mon–Fri 14:30 local (07:30 ET), about two hours before
   the US open. The overnight news and filings pass; see "The pre-market pass" in
   `CLAUDE.md`. Optional — the desk works without it.

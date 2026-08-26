@@ -597,7 +597,7 @@ unconditionally, so an omitted value would size every position at zero.
 
 A second, smaller run at **14:30 Europe/Sofia (07:30 ET)**, about two hours
 before the 09:30 ET open. It answers a different question from the nightly
-report: the 01:30 run is the desk's record of the session that just closed, and
+report: the 09:00 run is the desk's record of the session that just closed, and
 this one asks what has happened *since*, in the hours no daily bar reflects — an
 8-K filed at 06:40 ET, a priced takedown, a catalyst dated today, news no
 structured feed carries.
@@ -692,7 +692,7 @@ line of it is an artefact of the mismatch rather than something that happened.
 
 `notify.py --premarket` writes `data/last_delivery_premarket.json`, not the
 nightly `data/last_delivery.json`, and `heartbeat.delivery_fault()` checks both.
-One shared record let the 14:30 pass overwrite the 01:30 run's verdict: the
+One shared record let the 14:30 pass overwrite the 09:00 run's verdict: the
 nightly report fails to deliver, the pre-market note succeeds, and the heartbeat
 — which reads whatever is there — sees a healthy desk while last night's report
 never reached anyone. That is the exact blind spot the delivery record exists to
@@ -717,7 +717,7 @@ drift, and the copy that drifts is the one that is *not* the nightly run, so the
 drift would present as the pre-market pass quietly doing nothing.
 
 **Both runs take the same lock.** The pre-market pass reads `history.sqlite` and
-`data/` while the nightly run writes both. At 14:30 against 01:30 they never
+`data/` while the nightly run writes both. At 14:30 against 09:00 they never
 overlap unless one is a hand run, which is exactly when the lock earns its keep;
 a held lock exits 0, and skipping the news pass is the right answer when the desk
 is mid-report.
@@ -772,7 +772,7 @@ before this and is safe.
 appears for three weekdays — two of genuine slack, plus one for the
 gap between a session and the day it is checked on. That last day is
 structural, not slack: reports are named for the session they analyse and the
-desk fires at 01:30 the following day, so a check at 10:23 always finds a newest
+desk fires at 09:00 the following day, so a check at 10:23 always finds a newest
 report dated yesterday. A perfectly healthy desk therefore sits at one weekday
 stale, permanently, and at a threshold of 2 the first holiday would look like
 the second consecutive miss.
@@ -797,7 +797,7 @@ answer exists.
 **Each run records separately, and both records are checked** —
 `data/last_delivery.json` for the nightly run and
 `data/last_delivery_premarket.json` for the pre-market pass. One shared file let
-the 14:30 pass overwrite the 01:30 run's verdict: the nightly report fails to
+the 14:30 pass overwrite the 09:00 run's verdict: the nightly report fails to
 deliver, the morning note succeeds, and the heartbeat reads whatever is there and
 sees a healthy desk. Both faults are reported in one message rather than two
 alarms racing down the same channel, and each names which run it was.
@@ -832,6 +832,28 @@ already gone wrong:
   send" branch above unreachable in the case it most obviously describes: a
   machine with no configuration at all. The fault has to be written down to be
   noticed.
+
+**And each of them has to write the record belonging to the run that called
+it.** Those same two paths were then the two that ignored the split above: both
+wrote `data/last_delivery.json` whoever invoked them, because they had no report
+path to infer the run from and nothing supplied one. So a pre-market pass dying
+at 14:30 stamped `{"run": "daily", "session_date": null, "ok": true}` over the
+morning run's verdict — and `ok: true`, because the *failure notification* had
+delivered perfectly. The heartbeat then read a healthy desk from a record
+written by a run that had just died, which is precisely the shared-record blind
+spot the two files exist to prevent, reopened through the one path with nothing
+downstream of it to notice.
+
+`notify.py` therefore takes **`--run daily|premarket`**, `delivery_log_for()` is
+the single place that maps it to a file, and `lib/run_preamble.sh` requires a
+**`RUN_KIND`** from each entry point and passes it to `--failure`. `RUN_KIND` is
+deliberately not derived from `RUN_LABEL`: one is prose for a human and the
+other is a key the heartbeat reads back, and inferring either from the other is
+how the two records merged in the first place. The preamble refuses to be
+sourced without it, so a third entry point fails loudly at the top rather than
+silently recording as the desk. `test_a_failure_notice_records_against_the_run_that_failed`
+asks the function which file it picks; the older test only grepped `notify.py`
+for the pre-market filename, which stayed true throughout and caught none of it.
 
 ## Market regime
 
@@ -1114,49 +1136,79 @@ project rather than driving it — nothing in the pipeline reads them.
 
 ## Schedule
 
-Three units. `pharma-desk.timer` / `com.pharma.desk` **Tue–Sat 01:30** local is
+Three units. `pharma-desk.timer` / `com.pharma.desk` **Tue–Sat 09:00** local is
 the nightly report; `pharma-premarket.timer` / `com.pharma.premarket` **Mon–Fri
 14:30** is the pre-market news pass; `pharma-heartbeat.timer` /
 `com.pharma.heartbeat` Mon–Fri 10:23 notices when the first one stops. On Linux
 the desk's `Persistent=true` catches up a miss; launchd only coalesces across
 sleep, not shutdown — the heartbeat covers the gap.
 
-**The desk runs at 01:30 the morning after its session, which is why its days
-are Tue–Sat.** It used to be Mon–Fri 23:18, 18 minutes after the 16:00 ET close,
-and this file used to argue that the resulting race with the price provider "is
-fine and needs no adjustment: losing the race costs a day of latency rather than
-a day of wrong dates". That reasoning assumed losing was occasional. Measured
-over every scheduled run after `fetch.session_date()` landed, it lost **every
-time** — 3 for 3:
+**The desk runs at 09:00 the morning after its session, which is why its days
+are Tue–Sat.** The hour is now **measured, not derived from the close**, because
+deriving it from the close has been wrong twice.
+
+It was first Mon–Fri 23:18, 18 minutes after the 16:00 ET close, and this file
+used to argue that the resulting race with the price provider "is fine and needs
+no adjustment: losing the race costs a day of latency rather than a day of wrong
+dates". That reasoning assumed losing was occasional. It lost **every time** —
+3 for 3. So it moved to Tue–Sat 01:30, on the argument reproduced in the next
+paragraph, and that lost every time too — also 3 for 3:
 
 ```
 2026-08-17 23:27  session is 2026-08-14, not today
 2026-08-18 23:25  session is 2026-08-17, not today
 2026-08-19 23:26  session is 2026-08-18, not today
+2026-08-22 01:33  session is 2026-08-20, not 2026-08-21
+2026-08-25 01:32  session is 2026-08-21, not 2026-08-24
+2026-08-26 01:34  session is 2026-08-24, not 2026-08-25
 ```
 
-Nasdaq's historical endpoint had not published the day's row 25 minutes after
-the close; by the following morning it had. So it was not a race, it was a
-schedule that ran before the data existed. Every report was named for the
-previous session and delivered a full session stale: the close it was built on
-was already 3½ hours old at send time, and the close that had just happened was
-invisible to it. The staleness predates the fix — runs before `session_date()`
-took their date from `date.today()`, so they *looked* current while carrying
-yesterday's prices, and one of them stamped a Saturday. The fix made the lag
-visible; moving the clock is what removes it.
+The argument that produced 01:30 was: the close lands at 22:00–23:00 Sofia in
+every DST alignment, so 01:30 is 2½–3½ hours after the closing print, which is
+surely enough. It is not, and the mistake was reasoning about the provider
+rather than reading what the desk had already recorded about it. **The `runs`
+table is a log of exactly this** — `(run_at, session_date)` for every fetch that
+ever persisted, which is a direct record of whether a given session's bar had
+been published at a given moment:
 
-The close lands at 22:00–23:00 Sofia in every DST alignment, so 01:30 is 2½–3½
-hours after the closing print. **The day-of-week spec has to move with the
-hour**: at 01:30 the run analyses the *previous* calendar day, so Mon–Fri would
-leave Monday's session analysed by nothing and Friday's analysed twice, which
-looks like a quiet Monday rather than a scheduling bug.
+```
+ABSENT   16:25 ET  16:27 ET  18:36 ET  18:37 ET  18:40 ET
+PRESENT  01:52 ET  01:59 ET  02:33 ET  03:07 ET  03:11 ET  03:55 ET
+```
+
+Nasdaq's historical endpoint does not have the day's row in the evening at all.
+It has it by the small hours of the following morning, ET. 01:30 Sofia is 18:30
+ET, which sits inside the ABSENT band: the move from 23:18 bought 2 hours 12
+minutes and needed about seven. The earliest confirmed sighting is 01:52 ET =
+08:52 Sofia, so **09:00 Sofia is the first clock time this desk has evidence
+for**, and the 14:30 pre-market pass is the ceiling — 09:00 leaves 5½ hours
+against a run bounded at 107 minutes worst case.
+
+Every report under both wrong schedules was named for the session *before* the
+one that had just closed. The staleness predates the fix — runs before
+`session_date()` took their date from `date.today()`, so they *looked* current
+while carrying yesterday's prices, and one of them stamped a Saturday. The fix
+made the lag visible; moving the clock to a measured hour is what removes it.
+
+**And a stale nightly session breaks the pre-market pass outright**, which is
+how the second wrong schedule was noticed at all rather than being read as a day
+of latency. `premarket_delta.py` refuses when the baseline and the morning name
+different sessions, and once the nightly run was a session behind they always
+did. From 2026-08-22 the 14:30 pass failed every weekday, wrote no report and
+sent no note; the only thing the desk delivered each morning was its own failure
+notice. Latency in one run is a bug in the other run's preconditions.
+
+**The day-of-week spec has to move with the hour**: at 09:00 the run still
+analyses the *previous* calendar day, so Mon–Fri would leave Monday's session
+analysed by nothing and Friday's analysed twice, which looks like a quiet Monday
+rather than a scheduling bug.
 `test_the_desk_day_spec_matches_the_side_of_midnight_it_runs_on` pins the two
 together in both directions.
 
-**It also costs a collision, which is not the same as latency.** Whichever way
-each run goes is decided 18 minutes after the close, so a run that wins the race
-and the next run that loses it name their report for the *same* session — and
-that pair of outcomes is ordinary, not a corner case. It happened on the second
+**A schedule that straddles the publish time also costs a collision, which is
+not the same as latency.** When the outcome of each run is decided by a race, a
+run that wins it and the next run that loses it name their report for the *same*
+session — and that pair of outcomes is ordinary, not a corner case. It happened on the second
 week the desk was live: Friday's run won and wrote `reports/2026-08-14.md` at
 23:39, Monday's run found no Monday bar, analysed the same Friday session, and
 wrote straight over it. `reports/` and `data/` are gitignored, so Friday's

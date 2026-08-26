@@ -7,13 +7,14 @@ launchd/install-launchd.sh              # install or reinstall; idempotent
 launchd/install-launchd.sh --uninstall  # remove both jobs
 ```
 
-- **com.pharma.desk** — **Tue–Sat 01:30** local, analysing the session that
-  closed the previous evening. The US close (16:00 ET) lands at 22:00–23:00
-  Europe/Sofia in every daylight-saving alignment, so this is 2½–3½ hours after
-  the closing print and the price provider has published the daily bar. At the
-  old Mon–Fri 23:18 it had not, on every scheduled run. The day spec moves with
-  the hour: at 01:30 the run covers the previous calendar day, so Mon–Fri would
-  skip Monday's session and analyse Friday's twice.
+- **com.pharma.desk** — **Tue–Sat 09:00** local, analysing the session that
+  closed the previous evening. The hour is measured, not derived from the close:
+  Nasdaq had not published the day's bar at any evening hour observed
+  (16:25–18:40 ET) and had published it by 01:52 ET the next morning = 08:52
+  Sofia. Mon–Fri 23:18 and then Tue–Sat 01:30 both lost on every scheduled run.
+  The day spec moves with the hour: at 09:00 the run still covers the previous
+  calendar day, so Mon–Fri would skip Monday's session and analyse Friday's
+  twice.
 - **com.pharma.premarket** — Mon–Fri 14:30 local (07:30 ET), roughly two hours
   before the US open. The overnight news and filings pass; see "The pre-market
   pass" in `CLAUDE.md`. Optional.
@@ -74,7 +75,7 @@ binary moves.
 
 | systemd | launchd |
 |---|---|
-| `OnCalendar=Tue-Sat 01:30` (desk) | `StartCalendarInterval` array, `Weekday` 2–6 |
+| `OnCalendar=Tue-Sat 09:00` (desk) | `StartCalendarInterval` array, `Weekday` 2–6 |
 | `OnCalendar=Mon-Fri 14:30` (pre-market) | `StartCalendarInterval` array, `Weekday` 1–5 |
 | `RandomizedDelaySec=` | `sleep $((RANDOM % n))` inside the job |
 | `TimeoutStartSec=` | no equivalent key — every stage is bounded inside `lib/run_preamble.sh` (`run_with_timeout`), which both runs source |

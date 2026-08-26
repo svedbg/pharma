@@ -11,7 +11,7 @@
 # cheap way to tell the two apart, and to notice before the difference matters.
 #
 # The launchd equivalent of systemd/. Same two jobs, same schedule:
-#   com.pharma.desk       Tue-Sat 01:30  the daily run (the prior session)
+#   com.pharma.desk       Tue-Sat 09:00  the daily run (the prior session)
 #   com.pharma.premarket  Mon-Fri 14:30  the pre-market news pass
 #   com.pharma.heartbeat  Mon-Fri 10:23  alerts if no report for three weekdays
 #
@@ -304,10 +304,12 @@ def job(label: str, cmd: str, days: str, hour: int, minute: int, log: str) -> di
         "Label": label,
         "ProgramArguments": ["/bin/zsh", "-lc", cmd],
         "EnvironmentVariables": env,
-        # The desk runs 01:30 Tue-Sat: the US close (16:00 ET) lands at
-        # 22:00-23:00 Sofia in every DST alignment, so that is 2.5-3.5h after
-        # the closing print, and the price provider has published the daily bar
-        # by then. At the old 23:18 it had not -- see pharma-desk.timer.
+        # The desk runs 09:00 Tue-Sat, the morning after its session. The hour
+        # is taken from the `runs` table rather than argued from the close:
+        # Nasdaq had not published the day's bar at any evening hour measured
+        # (16:25-18:40 ET) and had published it by 01:52 ET the next morning.
+        # 23:18 and then 01:30 were both derived from the close, and both lost
+        # on every scheduled run -- see pharma-desk.timer for the log.
         # launchd coalesces calendar events missed during SLEEP into one run at
         # wake; a machine powered OFF over the trigger skips that day.
         "StartCalendarInterval": on_days(days, hour, minute),
@@ -321,7 +323,7 @@ def job(label: str, cmd: str, days: str, hour: int, minute: int, log: str) -> di
 
 jobs = {
     "com.pharma.desk": job(
-        "com.pharma.desk", desk_cmd, "Tue-Sat", 1, 30, desk_log),
+        "com.pharma.desk", desk_cmd, "Tue-Sat", 9, 0, desk_log),
     "com.pharma.premarket": job(
         "com.pharma.premarket", premarket_cmd, "Mon-Fri", 14, 30, premarket_log),
     "com.pharma.heartbeat": job(
@@ -410,7 +412,7 @@ done
 
 cat <<EOF
 
-  desk:       Tue-Sat 01:30 (2.5-3.5h after the US close, so the bar exists)
+  desk:       Tue-Sat 09:00 (the first hour the bar is measurably published)
   premarket:  Mon-Fri 14:30 (07:30 ET, ~2h before the open)
   heartbeat:  Mon-Fri 10:23
 

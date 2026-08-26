@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 REPORTS = ROOT / "reports"
 # Both runs record separately, and both are checked. A single shared record let
-# the pre-market pass at 14:30 overwrite the nightly run's verdict from 01:30, so
+# the pre-market pass at 14:30 overwrite the nightly run's verdict from 09:00, so
 # a report that never reached anyone read as a healthy desk. Named here so the
 # alarm can say which run could not deliver.
 DELIVERY_LOGS = (
@@ -39,10 +39,11 @@ DELIVERY_LOGS = (
 # fault -- plus one for the gap between a session and the day it is checked on.
 #
 # That last day is structural, not slack. Reports are named for the *session*
-# they analyse, not the day the run fired, and the desk fires at 01:30 on the
-# day after its session so the price provider has actually published the daily
-# bar. So this check, running at 10:23, always finds a newest report dated
-# yesterday: a perfectly healthy desk sits at one weekday stale, permanently.
+# they analyse, not the day the run fired, and the desk fires at 09:00 on the
+# day after its session, because that is when the price provider has actually
+# published the daily bar. So this check, running at 10:23, always finds a newest
+# report dated yesterday: a perfectly healthy desk sits at one weekday stale,
+# permanently.
 # At a threshold of 2 that left a single weekday of real slack, so the first
 # holiday would look like the second consecutive miss.
 MAX_WEEKDAYS_STALE = 3
