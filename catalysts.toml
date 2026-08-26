@@ -15,11 +15,11 @@
 
 [[catalyst]]
 symbol = "CAPR"
-date = "2026-08-22"
+date = "2026-11-22"
 kind = "PDUFA"
 confidence = "confirmed"
-description = "Deramiocel BLA action date. THREE-WAY, not binary: FDA agreed on 2026-08-14 to assess 24-month HOPE-3 extension data, so the date may be extended rather than acted on. Outcomes: approval / extension / CRL. Precedent on this watchlist: PRAX and SVRA were both extended 3 months on a major amendment."
-source = "https://www.sec.gov/Archives/edgar/data/0001133869/000110465926095908/capr-20260813xex99d1.htm"
+description = "Deramiocel BLA action date, EXTENDED three months from 2026-08-22 (company PR 2026-08-24): FDA classified the 24-month HOPE-3 open-label extension data plus robustness analyses as a major amendment. Capricor also asked FDA to review a REFINED indication focused on upper limb function (HOPE-3's primary endpoint) rather than cardiomyopathy, on which the AdCom voted 3-9 against. Outcomes: approval (narrowed label) / CRL."
+source = "https://www.capricor.com/investors/news-events/press-releases/detail/354/capricor-therapeutics-announces-extension-of-pdufa-target ; 8-K item 8.01 filed 2026-08-24 https://www.sec.gov/Archives/edgar/data/1133869/000110465926100071/capr-20260824x8k.htm"
 
 [[catalyst]]
 symbol = "COGT"
@@ -159,11 +159,11 @@ source = "Edgewise 2026 pipeline guidance"
 
 [[catalyst]]
 symbol = "SPRY"
-date = "2026-10-01"
+date = "2027-01-01"
 kind = "readout"
 confidence = "expected"
-description = "Phase 2b interim data, intranasal epinephrine for acute chronic spontaneous urticaria flares; guided to fiscal Q4 2026 (note: fiscal, may not equal calendar)"
-source = "ARS Pharmaceuticals Q2 2026 business update"
+description = "Phase 2b interim data, intranasal epinephrine for acute chronic spontaneous urticaria flares. MOVED to Q1 2027 (previously Q4 2026) in the 2026-08-13 Q2 release: interim enrollment is complete but each patient must experience and log three separate flare episodes before the data are valid"
+source = "https://www.globenewswire.com/news-release/2026/08/13/3344888/0/en/ars-pharmaceuticals-outlines-strategic-priorities-including-a-focused-commercial-strategy-and-reports-second-quarter-2026-financial-results.html"
 
 [[catalyst]]
 symbol = "VRDN"
@@ -236,8 +236,8 @@ symbol = "JUNS"
 date = "2026-08-25"
 kind = "other"
 confidence = "confirmed"
-description = "Nasdaq compliance deadline (minimum bid price + market value of listed securities, notices dated 2026-02-26); 1-for-75 reverse split effective 2026-08-06 was the cure attempt -- delisting determination possible if not regained"
-source = "Jupiter Neurosciences reverse-split PR 2026-08-05; Feb 2026 deficiency notices coverage"
+description = "Nasdaq compliance deadline (minimum bid price + market value of listed securities, notices dated 2026-02-26); 1-for-75 reverse split effective 2026-08-06 was the cure attempt -- delisting determination possible if not regained. UPDATE 2026-08-24 8-K: after a $2.0M registered direct at $6.50 the company 'believes' stockholders' equity now exceeds the $2.5M requirement and is awaiting Nasdaq's formal determination; Nasdaq will re-test at the next periodic report"
+source = "Jupiter Neurosciences reverse-split PR 2026-08-05; Feb 2026 deficiency notices coverage; 8-K item 8.01 2026-08-24 https://www.sec.gov/Archives/edgar/data/1679628/000149315226039886/form8-k.htm"
 
 [[catalyst]]
 symbol = "COLL"
@@ -324,3 +324,65 @@ kind = "readout"
 confidence = "expected"
 description = "LUCIA, the second pivotal Phase 3 of DURAVYU 2.7mg in wet AMD, topline guided to Q4 2026 with an NDA planned for 1H 2027. After LUGANO missed non-inferiority on visual acuity in the full analysis set (2026-08-17), this is the entire remaining thesis"
 source = "https://www.globenewswire.com/news-release/2026/08/17/3345965/0/en/eyepoint-announces-topline-data-from-lugano-the-first-of-two-pivotal-phase-3-clinical-trials-for-duravyu-2-7mg-in-wet-amd.html"
+
+
+# --- appended by the second 2026-08-18 run (Tuesday bars, executed 2026-08-19) ---
+
+[[catalyst]]
+symbol = "OTLK"
+date = "2026-10-01"
+kind = "other"
+confidence = "expected"
+description = "LYTENAVA US commercial launch, company-guided 'by year-end 2026'; first-year US net revenue guided $50-75M. FDA approval already granted 2026-07-24 (first ophthalmic bevacizumab for wet AMD, 12y exclusivity) after three CRLs and a granted appeal"
+source = "https://www.globenewswire.com/news-release/2026/08/14/3345250/0/en/outlook-therapeutics-reports-third-quarter-fiscal-year-2026-financial-results-and-provides-business-update-highlighting-fda-approval-of-lytenava.html"
+
+
+# --- appended by the 2026-08-24 run (executed 2026-08-25) ---
+
+[[catalyst]]
+symbol = "NGEN"
+date = "2026-09-01"
+kind = "other"
+confidence = "expected"
+description = "RESTORE Phase 3 registrational study of NVG-291 in chronic spinal cord injury: site activation and screening guided to begin September 2026, first participant dosed shortly after. Topline guided to 1H 2028; C$86.8M (US$61.1M) cash at 2026-06-30 guided to fund through that readout"
+source = "https://www.sec.gov/Archives/edgar/data/1751912/000110465926095467/tm2623069d1_ex99-3.htm (Q2 2026 results, 2026-08-13)"
+
+[[catalyst]]
+symbol = "NGEN"
+date = "2028-01-01"
+kind = "readout"
+confidence = "expected"
+description = "RESTORE Phase 3 topline data in chronic SCI, company-guided 1H 2028"
+source = "https://www.sec.gov/Archives/edgar/data/1751912/000110465926095467/tm2623069d1_ex99-3.htm (Q2 2026 results, 2026-08-13)"
+
+[[catalyst]]
+symbol = "ADCT"
+date = "2026-12-01"
+kind = "conference"
+confidence = "expected"
+description = "Full LOTIS-5 (ZYNLONTA + rituximab vs R-GemOx, r/r DLBCL) and LOTIS-7 (ZYNLONTA + glofitamab) data submitted to the 68th ASH Annual Meeting, Q4 2026. Context: at the pre-sBLA meeting FDA 'noted substantial concerns regarding the benefit-risk' given the Grade 5 imbalance (13.2% vs 4.6%) against a marginal PFS benefit (HR 0.73, 6.1 vs 4.7 mo); company 'assessing the best regulatory path forward'"
+source = "https://www.sec.gov/Archives/edgar/data/1771910/000162828026056711/adc-20260630.htm (10-Q filed 2026-08-13)"
+
+[[catalyst]]
+symbol = "CRDF"
+date = "2027-01-01"
+kind = "other"
+confidence = "expected"
+description = "Onvansertib registrational trial initiation in first-line RAS-mutated mCRC (30 mg + FOLFIRI/bev), guided to Q1 2027 'subject to securing additional financing' after the End-of-Phase 2 meeting; Q2 10-Q carries a going-concern statement on $34.5M"
+source = "Cardiff Oncology Q2 2026 results release 2026-08-11 (https://www.biospace.com/press-releases/cardiff-oncology-reports-second-quarter-2026-results-and-provides-business-update); 8-K 2.02 https://www.sec.gov/Archives/edgar/data/1213037/000119312526344645/crdf-20260811.htm"
+
+[[catalyst]]
+symbol = "MBRX"
+date = "2026-10-09"
+kind = "other"
+confidence = "confirmed"
+description = "Annual meeting (record date 2026-08-19): Proposal 6 grants the board authority for a reverse stock split of 1-for-2 to 1-for-20 within one year; also equity-plan increase and removal of supermajority charter-amendment voting"
+source = "https://www.sec.gov/Archives/edgar/data/1659617/000143774926028835/mbrx20260817_def14a.htm"
+
+[[catalyst]]
+symbol = "CNTX"
+date = "2027-01-25"
+kind = "other"
+confidence = "confirmed"
+description = "Nasdaq minimum bid price cure deadline (Rule 5550(a)(2) notice 2026-07-29): needs 10 consecutive closes at or above $1.00 by this date; reverse-split mechanics already in the 2026-06-26 charter amendment"
+source = "https://www.sec.gov/Archives/edgar/data/1842952/000162828026051399/cntx-20260729.htm"
