@@ -35,14 +35,29 @@ CATALYSTS = ROOT / "catalysts.toml"
 @pytest.fixture(scope="module")
 def entries() -> list[dict]:
     """The real file, parsed. Fails loudly rather than degrading to {}."""
+    assert CATALYSTS.exists(), (
+        f"{CATALYSTS.name} is missing. load_catalysts returns {{}} for an absent "
+        f"file without even the WARNING a malformed one gets, so this is the "
+        f"quietest way of all for the calendar to die.")
     try:
         raw = tomllib.loads(CATALYSTS.read_text())
     except tomllib.TOMLDecodeError as e:
-        pytest.fail(f"{CATALYSTS.name} does not parse: {e}. Every name would "
-                    f"lose its catalyst clock at once and the report would read "
-                    f"as 'nothing scheduled'.")
+        # Raised rather than pytest.fail'd: both stop the fixture with the same
+        # message, but only a raise is terminal to a reader and to static
+        # analysis. pytest.fail is `-> NoReturn`, so `raw` below can never
+        # really be unbound; CodeQL does not model that and read it as a use
+        # before assignment.
+        raise AssertionError(
+            f"{CATALYSTS.name} does not parse: {e}. Every name would lose its "
+            f"catalyst clock at once and the report would read as 'nothing "
+            f"scheduled'.") from e
     found = raw.get("catalyst", [])
     assert found, "no [[catalyst]] entries -- the calendar would be empty"
+    # `[catalyst]` instead of `[[catalyst]]` parses fine and yields a truthy
+    # dict; iterating it then hands each test a key string and an AttributeError
+    # that points nowhere near the actual mistake.
+    assert isinstance(found, list), (
+        "catalyst must be a table ARRAY -- write [[catalyst]], not [catalyst]")
     return found
 
 
