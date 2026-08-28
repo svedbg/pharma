@@ -51,8 +51,8 @@ scripts/heartbeat.py                              alert when reports stop appear
 An LLM must never be the source of a price, a share count or a cash balance.
 Those come from `data/latest.json` or they do not appear in the report.
 
-**Never read `data/latest.json` wholesale during analysis** — at 60+ names it is
-several megabytes. **And `data/signals.json` is no longer small enough either.**
+**Never read `data/latest.json` wholesale during analysis** — it is several
+megabytes at any realistic watchlist size. **And `data/signals.json` is no longer small enough either.**
 Run `python3 scripts/brief.py` for the list-wide view and
 `python3 scripts/detail.py TICKER` for the few names that warrant a close look.
 The triage rules in `prompts/daily.md` cap deep-dives at 12 per run.
@@ -487,8 +487,8 @@ Consequences, encoded in the code:
 
 Every name is scored against **XBI** (equal-weighted small/mid-cap biotech — the
 honest comparison; IBB is cap-weighted and behaves like large-cap pharma) at
-5/20/60 sessions. Without it, one sector drawdown flags all 60+ names at once and
-reads as 60 signals when it is really one.
+5/20/60 sessions. Without it, one sector drawdown flags every name on the
+watchlist at once and reads as dozens of signals when it is really one.
 
 - `idiosyncratic: true` — 10pp+ behind XBI over 20d while the sector held up.
   Company-specific; find the cause before doing anything.
@@ -537,9 +537,10 @@ gives float shares. Two corrections proved essential:
    today's short interest read as 93% of float short.
 2. **Reject inconsistent inputs.** A derived float below 5% or above 100% of
    shares outstanding means filer error or an unadjusted split — PTCT reports a
-   $3.35M float on 83M shares, which produced 15,401% of float short. 14 of 63
-   names are rejected this way; they report `unusable` with the reason rather
-   than a wrong number.
+   $3.35M float on 83M shares, which produced 15,401% of float short. Enough
+   names fail this to plan for it — 14 of the 63 on the watchlist when the rule
+   was written, 5 of 38 at the last re-measurement — and they report `unusable`
+   with the reason rather than a wrong number.
 
 ## Exits
 
@@ -876,8 +877,11 @@ exact opposite. Counting A/M is the standard way to manufacture a fake signal.
   evidence for refuting a veto**: people with the fullest picture committing
   their own money while the tape says broken.
 - `net_selling` — deliberately set at ≥$25M and 10× buys. At a $250k bar it
-  fired on 34 of 63 names, which is wallpaper. Selling is far less informative
-  than buying (10b5-1 plans, RSU vesting, tax, diversification).
+  fired on 34 of the 63 names then on the watchlist, which is wallpaper. Note
+  the count is composition-dependent and argues less than it did: the same bar
+  fires on 7 of the current 38. What holds regardless is the asymmetry —
+  selling is far less informative than buying (10b5-1 plans, RSU vesting, tax,
+  diversification) — and that is what the severe threshold rests on.
 
 ## Short interest
 
@@ -886,9 +890,10 @@ FINRA Reg SHO daily short volume — one file covers every symbol, so it is a fe
 requests for the whole watchlist rather than one per name.
 
 `crowded_short` is set at **10** days-to-cover and `extreme_short` at **15**. At
-the obvious 5 it flagged 47 of 63 names: above 5 is simply normal for small-cap
-biotech and discriminates nothing. Thresholds have to sit where the distribution
-actually thins out.
+the obvious 5 it flagged 47 of the 63 names then on the watchlist, and still
+more than half of the current 38: above 5 is simply normal for small-cap biotech
+and discriminates nothing, where 10 selects about a quarter. Thresholds have to
+sit where the distribution actually thins out.
 
 ## Email delivery
 

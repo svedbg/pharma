@@ -864,9 +864,11 @@ def insider_signal(ins: dict):
         "notable_buy": bool(buyers >= 1 and buy_v >= 100_000),
         # Buys and sells are wildly asymmetric in information content. An
         # insider buys for one reason; they sell for a dozen (10b5-1 plans, RSU
-        # vesting, tax, diversification). Selling fired on 34 of 63 names at a
-        # $250k bar -- wallpaper, not signal -- so the threshold is deliberately
-        # severe and it is still reported as context rather than a flag.
+        # vesting, tax, diversification). Selling fired on 34 of the 63 names
+        # then on the watchlist at a $250k bar -- wallpaper, not signal. That
+        # count is composition-dependent (7 of the current 38), so it is the
+        # asymmetry above, not the tally, that keeps the threshold deliberately
+        # severe and the result reported as context rather than a flag.
         "net_selling": bool(sell_v >= 25_000_000 and sell_v > buy_v * 10),
     }
     return out
@@ -887,9 +889,10 @@ def short_signal(short_interest: list[dict], short_volume: list[dict]):
             )
         # Days-to-cover is the squeeze metric: it is how many normal sessions of
         # buying it would take shorts to get out, so a catalyst is the fuse.
-        # Days-to-cover above 5 describes most of small-cap biotech (47 of 63
-        # names here), so it discriminates nothing. The bar has to sit where the
-        # distribution actually thins out.
+        # Days-to-cover above 5 describes most of small-cap biotech (47 of the
+        # 63 names on the watchlist when this was measured, still more than half
+        # of the current 38), so it discriminates nothing. The bar has to sit
+        # where the distribution actually thins out.
         d2c = latest.get("days_to_cover") or 0
         out["crowded_short"] = bool(d2c >= 10.0)
         out["extreme_short"] = bool(d2c >= 15.0)
