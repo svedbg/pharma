@@ -386,3 +386,81 @@ kind = "other"
 confidence = "confirmed"
 description = "Nasdaq minimum bid price cure deadline (Rule 5550(a)(2) notice 2026-07-29): needs 10 consecutive closes at or above $1.00 by this date; reverse-split mechanics already in the 2026-06-26 charter amendment"
 source = "https://www.sec.gov/Archives/edgar/data/1842952/000162828026051399/cntx-20260729.htm"
+
+
+# --- appended by the 2026-08-26 run (executed 2026-08-27) ---
+
+[[catalyst]]
+symbol = "CRDF"
+date = "2026-10-22"
+kind = "other"
+confidence = "confirmed"
+description = "Special meeting of stockholders, 8:00 a.m. PT (record date 2026-08-26; 77,795,249 shares outstanding). Proposal 1 doubles authorized common stock from 150,000,000 to 300,000,000 (capital stock 170,000,000 to 320,000,000); Proposal 2 is adjournment. No reverse split on the ballot. This is the issuance capacity for the financing the Q1 2027 registrational trial is 'subject to'"
+source = "https://www.sec.gov/Archives/edgar/data/1213037/000119312526368249/crdf_def_14a_special_pro.htm (DEF 14A filed 2026-08-26)"
+
+[[catalyst]]
+symbol = "CNTX"
+date = "2027-04-01"
+kind = "readout"
+confidence = "expected"
+description = "CTIM-76 (CLDN6xCD3 T-cell engager) 'Phase 1a initial safety, tolerability and efficacy data with Q3W dosing in PROC patients', company-guided Q2 2027. Same 2026-08-05 release discontinued CT-95 (mesothelinxCD3), guided CT-202 (Nectin-4xCD3) first patient dosed 3Q 2026, and guided $43.0M cash at 2026-06-30 'into the fourth quarter of 2027'. The Nasdaq bid-price cure (2027-01-25) falls BEFORE this readout"
+source = "Context Therapeutics Q2 2026 release 2026-08-05, https://www.biospace.com/press-releases/context-therapeutics-reports-second-quarter-2026-operating-and-pipeline-progress ; 8-K 7.01 https://www.sec.gov/Archives/edgar/data/1842952/000162828026053378/cntx-20260805.htm"
+
+[[catalyst]]
+symbol = "MBRX"
+date = "2026-12-01"
+kind = "readout"
+confidence = "expected"
+description = "MIRACLE pivotal Phase 2b/3 (annamycin + cytarabine, r/r AML) Part A readout at the 90-patient milestone, company-guided to the 'December 2026 to February 2027 timeframe'; the 90-patient enrollment milestone itself guided September 2026. Date is the first day of the guided window. Cash: ~$7.3M at 2026-06-30 plus $9.3M raised 2026-08-03 guided 'into the first quarter of 2027' -- the readout and cash exhaustion coincide"
+source = "https://www.globenewswire.com/news-release/2026/08/14/3345316/0/en/moleculin-biotech-reports-second-quarter-2026-financial-results-and-highlights-continued-advancement-of-pivotal-miracle-trial.html (Q2 2026 results, 2026-08-14)"
+
+[[catalyst]]
+symbol = "KPTI"
+date = "2026-09-10"
+kind = "other"
+confidence = "confirmed"
+description = "$15.8M principal payment due under the senior secured term loan. Per the Q2 10-Q: paying it without new financing or a lender waiver drops cash below the $10.0M minimum-liquidity covenant (default) and leaves insufficient resources to operate; ~$10.1M of interest due 2026-09-30 across the term loan, 2028 Notes and 2029 Notes; liquidity $65.4M at 2026-06-30 guided 'into September 2026'; substantial doubt about going concern; Centerview engaged on 'financing opportunities and strategic alternatives'; bankruptcy protection explicitly contemplated. Negative event, not a binary to own into. XPORT-EC-042 (endometrial maintenance) missed PFS on 2026-07-30; myelofibrosis sNDA submission guided August 2026"
+source = "https://www.sec.gov/Archives/edgar/data/1503802/000119312526347906/kpti-20260630.htm (10-Q filed 2026-08-13, 'Liquidity, Capital Resources, and Going Concern')"
+
+
+# --- appended by the 2026-08-27 run (executed 2026-08-28) ---
+
+[[catalyst]]
+symbol = "CHRS"
+date = "2026-09-30"
+kind = "other"
+confidence = "confirmed"
+description = "Record date (5:00 p.m. ET) for the special dividend of contingent value rights: one non-transferable CVR per share, paying net cash proceeds from sale, licence or royalties of the Legacy BioSim Assets during the CVR term 2026-10-07 to 2028-10-07; an investment bank is retained for the sale process. Owning the stock at the close on this date is what captures the CVR"
+source = "https://www.sec.gov/Archives/edgar/data/1512762/000110465926097951/chrs-20260817x8k.htm (8-K items 7.01/8.01 filed 2026-08-17)"
+
+[[catalyst]]
+symbol = "PHAT"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "pHalcon-EoE-201 Phase 2 topline (VOQUEZNA 20 mg vs placebo, 12 weeks, in adult eosinophilic esophagitis with dysphagia): enrollment complete at 95 patients across 41 US sites, 'topline results are anticipated in the fourth quarter 2026'. Date is the first day of the guided quarter"
+source = "https://www.sec.gov/Archives/edgar/data/1783183/000119312526278533/d166684d8k.htm (8-K item 8.01 filed 2026-06-23)"
+
+[[catalyst]]
+symbol = "ALDX"
+date = "2026-09-01"
+kind = "other"
+confidence = "expected"
+description = "Type D meeting with FDA on potential resubmission of the reproxalap NDA in dry eye disease, 'expected to be held by the end of the third quarter of 2026'; follows a Type A meeting on 2026-06-10 whose minutes (received 2026-07-14) the company asked FDA to clarify on 2026-07-15. Date is the first day of the last month of the guided window; the outcome arrives by 8-K after the meeting"
+source = "https://www.sec.gov/Archives/edgar/data/1341235/000119312526304880/aldx-20260714.htm (8-K item 8.01 filed 2026-07-15)"
+
+[[catalyst]]
+symbol = "NMRA"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "NMRA-898 (M4 positive allosteric modulator, schizophrenia) multiple-ascending-dose data in healthy volunteers and patients with stable schizophrenia, 'expects to report data from the study in the second half of 2026'. First dated item since navacaprant failed KOASTAL-2 and KOASTAL-3 on 2026-06-15 and was discontinued; date is the file's convention for a 2H guide"
+source = "https://www.globenewswire.com/news-release/2026/08/14/3345232/0/en/neumora-therapeutics-reports-second-quarter-2026-financial-results-and-provides-business-update.html (Q2 2026 results, 2026-08-14)"
+
+[[catalyst]]
+symbol = "NMRA"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "NMRA-511 (vasopressin 1a antagonist, Alzheimer's disease agitation) MAD expansion-cohort data at higher doses in healthy elderly participants, guided to 'the fourth quarter of 2026', with a Phase 2 start 'by the end of 2026'. Cash $116.8M at 2026-06-30 guided 'into the third quarter of 2027'. Date is the first day of the guided quarter"
+source = "https://www.globenewswire.com/news-release/2026/08/14/3345232/0/en/neumora-therapeutics-reports-second-quarter-2026-financial-results-and-provides-business-update.html (Q2 2026 results, 2026-08-14)"
