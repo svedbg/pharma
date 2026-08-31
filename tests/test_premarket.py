@@ -423,3 +423,69 @@ def test_the_attached_markdown_is_named_distinguishably(tmp_path, monkeypatch):
     name = sent["email"][0][2]
     assert name and name != report.name, "the attachment kept the ambiguous name"
     assert "premarket" in name
+
+
+# --- a newly added ticker must not buzz the phone with its own history -------
+
+def test_a_newly_added_ticker_does_not_fire_urgent_on_its_own_back_catalogue():
+    """The MRNA case, found 2026-08-21 and unfixed until now.
+
+    `new_filings_since_last_run` means "not in the filings table". For a name
+    added since the last run there are no rows at all, so its ENTIRE filing
+    history comes back as new -- MRNA returned 119 filings, 13 of them 8-Ks
+    whose newest was three weeks old. `_filing_is_urgent` fired on them, so the
+    phone buzzed at 07:30 ET about an 8-K from another month, and whatever
+    actually happened that morning was buried underneath it.
+
+    Harmless to the nightly run, which is why it went unnoticed for ten days.
+    """
+    old_8k = {"form": "8-K", "filed": "2026-08-03", "items": "8.01",
+              "item_meanings": ["Other Events"]}
+    baseline = _sig("2026-08-28")                       # MRNA absent entirely
+    current = _sig("2026-08-28", _name("MRNA", new_filings_since_last_run=[old_8k]))
+
+    out = pd.build(date(2026, 8, 31), baseline, current)
+
+    assert out["counts"]["urgent"] == 0, (
+        "a three-week-old 8-K arriving as backfill must not wake anyone: "
+        f"{[c['urgent_because'] for c in out['urgent']]}")
+    assert out["watchlist_added"] == ["MRNA"]
+    # ...but it is still reported, and the suppression is stated rather than silent
+    assert out["counts"]["backfilled_filings"] == 1
+    assert out["changes"][0]["new_filings"], "the filing must still be reported"
+    assert "predate the 2026-08-28 session" in pd.render(out)
+
+
+def test_a_genuinely_new_material_filing_still_fires():
+    """The counterpart, and the more important direction: the filter may only
+    ever remove urgency, so an 8-K filed this morning must be untouched by it."""
+    fresh = {"form": "8-K", "filed": "2026-08-31", "items": "8.01",
+             "item_meanings": ["Other Events"]}
+    baseline = _sig("2026-08-28", _name("AAA"))
+    current = _sig("2026-08-28", _name("AAA", new_filings_since_last_run=[fresh]))
+
+    out = pd.build(date(2026, 8, 31), baseline, current)
+    assert out["counts"]["urgent"] == 1
+    assert out["counts"]["backfilled_filings"] == 0
+
+
+def test_a_filing_on_the_baseline_session_itself_still_counts():
+    """The bound is inclusive on purpose. The filter exists to drop backfill,
+    not to second-guess `new_filings_since_last_run` about the boundary day --
+    a filing the nightly run already recorded is not in this list at all."""
+    same_day = {"form": "8-K", "filed": "2026-08-28", "items": "8.01",
+                "item_meanings": ["Other Events"]}
+    baseline = _sig("2026-08-28", _name("AAA"))
+    current = _sig("2026-08-28", _name("AAA", new_filings_since_last_run=[same_day]))
+    assert pd.build(date(2026, 8, 31), baseline, current)["counts"]["urgent"] == 1
+
+
+def test_the_filter_fails_open_when_the_baseline_cannot_name_its_session():
+    """main() already refuses when the two sides name different sessions, so a
+    missing baseline session means something upstream is wrong. Losing a real
+    8-K to it would be worse than an extra buzz."""
+    old_8k = {"form": "8-K", "filed": "2026-08-03", "items": "8.01",
+              "item_meanings": ["Other Events"]}
+    baseline = {"signals": [_name("AAA")]}                # no session_date
+    current = _sig("2026-08-28", _name("AAA", new_filings_since_last_run=[old_8k]))
+    assert pd.build(date(2026, 8, 31), baseline, current)["counts"]["urgent"] == 1

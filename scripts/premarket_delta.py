@@ -138,7 +138,41 @@ def _filing_is_urgent(f: dict) -> str | None:
     return None
 
 
-def diff_symbol(asof: date, base: dict, cur: dict) -> dict | None:
+def _filed_since(f: dict, baseline_session: str | None) -> bool:
+    """Is this filing actually new, or is it backfill from an empty history?
+
+    `new_filings_since_last_run` means "not in the filings table", which is the
+    right question for a name the desk has been following and the wrong one for
+    a name added since the last run: that name has no rows at all, so its ENTIRE
+    filing history comes back as new. MRNA was added on 2026-08-21 and returned
+    119 filings, 13 of them 8-Ks whose newest was three weeks old -- and
+    `_filing_is_urgent` fired on them, so the phone buzzed at 07:30 ET about an
+    8-K from another month and buried whatever actually happened that morning.
+
+    A filing that is genuinely new since the nightly run cannot predate the
+    session that run analysed. Comparing against the baseline session is
+    deliberately looser than comparing against the nightly fetch's own clock --
+    it lets through a filing dated on the session itself -- because this filter
+    may only ever *remove* urgency, never add it, and a filing the nightly run
+    already recorded is not in this list to begin with. In the ordinary case it
+    changes nothing at all; it bites only on the backfill.
+
+    Fails open. A filing with no date, or a baseline that cannot name its
+    session, is treated as urgent: `main()` already refuses to run when the two
+    sides name different sessions, so a missing baseline session here means
+    something upstream is wrong, and losing a real 8-K to it would be worse than
+    an extra buzz.
+    """
+    if not baseline_session:
+        return True
+    filed = f.get("filed")
+    if not filed:
+        return True
+    return str(filed) >= str(baseline_session)
+
+
+def diff_symbol(asof: date, base: dict, cur: dict,
+                baseline_session: str | None = None) -> dict | None:
     """What changed for one name. None when nothing did."""
     out: dict = {
         "symbol": cur["symbol"],
@@ -154,6 +188,8 @@ def diff_symbol(asof: date, base: dict, cur: dict) -> dict | None:
         "imminent_catalysts": [],
         "tier_change": None,
         "urgent_because": [],
+        # Reported, but deliberately not pushed. See _filed_since().
+        "backfilled_filings": [],
     }
 
     # Filings the pre-market fetch saw and the nightly one had not. This is only
@@ -192,8 +228,14 @@ def diff_symbol(asof: date, base: dict, cur: dict) -> dict | None:
 
     for f in out["new_filings"]:
         why = _filing_is_urgent(f)
-        if why:
+        if not why:
+            continue
+        if _filed_since(f, baseline_session):
             out["urgent_because"].append(why)
+        else:
+            # Still reported in new_filings -- it is real, it is simply not news
+            # from this morning, and the phone is for this morning.
+            out["backfilled_filings"].append(_filing_note(f))
     for v in out["new_hard_vetoes"]:
         out["urgent_because"].append(f"new hard veto: {v.get('reason', '')}")
     for f in out["new_exit_flags"]:
@@ -217,7 +259,8 @@ def build(asof: date, baseline: dict, current: dict) -> dict:
 
     changes = []
     for sym in sorted(cur_by):
-        d = diff_symbol(asof, base_by.get(sym, {}), cur_by[sym])
+        d = diff_symbol(asof, base_by.get(sym, {}), cur_by[sym],
+                        baseline.get("session_date"))
         if d:
             changes.append(d)
 
@@ -246,6 +289,7 @@ def build(asof: date, baseline: dict, current: dict) -> dict:
             "urgent": len(urgent),
             "new_filings": sum(len(c["new_filings"]) for c in changes),
             "new_hard_vetoes": sum(len(c["new_hard_vetoes"]) for c in changes),
+            "backfilled_filings": sum(len(c["backfilled_filings"]) for c in changes),
         },
     }
 
@@ -289,6 +333,15 @@ def render(delta: dict) -> str:
 
     if delta["watchlist_added"]:
         lines.append(f"added to the watchlist since: {', '.join(delta['watchlist_added'])}")
+    # A suppressed backlog must be visible. Otherwise a name whose whole filing
+    # history just arrived reads as a quiet morning, which is the same silence
+    # the false urgent was drowning out -- just in the other direction.
+    n_back = delta["counts"].get("backfilled_filings") or 0
+    if n_back:
+        lines.append(
+            f"{n_back} material filing(s) predate the {delta['baseline_session']} "
+            f"session and are reported without pushing -- backfill from a name "
+            f"with no filing history yet, not news from this morning")
     if delta["watchlist_dropped"]:
         lines.append(f"no longer on the watchlist: {', '.join(delta['watchlist_dropped'])}")
 

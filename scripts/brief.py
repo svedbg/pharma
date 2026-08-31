@@ -316,6 +316,89 @@ def _block(sig: dict, rec: dict) -> list[str]:
     return out
 
 
+# --- size, which is the whole reason this file exists ------------------------
+#
+# brief.py replaced "read signals.json whole" because that read had grown to
+# 487KB, about 122,000 tokens, fifteen times the report it produced. CLAUDE.md
+# says plainly what happens next: "It will need moving again: the file grows
+# with the watchlist, and nothing in the pipeline notices."
+#
+# This is the pipeline noticing. The output is measured against a budget and the
+# run says so on stderr when it goes over -- stderr, so it lands in the run log
+# without being read as part of the brief by whatever is consuming stdout.
+#
+# The budget is generous on purpose. At 62 names the brief is around 18-25k
+# tokens depending on how much is live, so 40,000 is roughly double the current
+# cost and still a third of the read it replaced. A bar set just above today's
+# figure would fire on an ordinary busy session and be silenced; one set here
+# fires when the shape of the problem has come back.
+CHARS_PER_TOKEN = 4        # the ratio CLAUDE.md's own 487KB -> 122,000 figure uses
+BRIEF_TOKEN_BUDGET = 40_000
+# What the read this file replaced actually cost. The budget has to stay well
+# under it, or the guard would permit the exact regression it is watching for.
+SUPERSEDED_READ_TOKENS = 122_000
+
+
+def oversize_warning(chars: int, budget: int | None = None) -> str | None:
+    """The message to print when the brief has grown past its budget, or None.
+
+    Kept separate from the printing so the threshold can be tested without
+    generating a watchlist large enough to trip it.
+
+    `budget` resolves at call time rather than defaulting to the constant in the
+    signature: a default argument binds once at import, so the budget would be
+    frozen at whatever it was then and could not be overridden by a test, a
+    future --budget flag, or a setting. The test that drives run() end to end
+    caught exactly that.
+    """
+    budget = BRIEF_TOKEN_BUDGET if budget is None else budget
+    tokens = chars // CHARS_PER_TOKEN
+    if tokens <= budget:
+        return None
+    return (f"[brief] WARNING: this brief is ~{tokens:,} tokens ({chars:,} chars), "
+            f"over the {budget:,}-token budget. That is the same shape as the "
+            f"122,000-token signals.json read brief.py was written to replace. "
+            f"Move material to detail.py, or raise the triage bar in "
+            f"prompts/daily.md so fewer names get a full block.")
+
+
+class _CountingStream:
+    """Forwards everything, and remembers how much went through.
+
+    A wrapper rather than a refactor: main() prints as it goes, in about a
+    hundred places, and rebuilding it around a list of lines to get a length
+    would be a large change to working code for a diagnostic.
+    """
+
+    def __init__(self, stream):
+        self._stream = stream
+        self.chars = 0
+
+    def write(self, s: str) -> int:
+        self.chars += len(s)
+        return self._stream.write(s)
+
+    def flush(self) -> None:
+        self._stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+def run() -> int:
+    """main(), with its output measured. This is the entry point."""
+    counter = _CountingStream(sys.stdout)
+    real, sys.stdout = sys.stdout, counter
+    try:
+        rc = main()
+    finally:
+        sys.stdout = real
+    warning = oversize_warning(counter.chars)
+    if warning:
+        print(warning, file=sys.stderr)
+    return rc
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="The list-wide view of a run, without reading signals.json whole")
@@ -422,4 +505,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run())
