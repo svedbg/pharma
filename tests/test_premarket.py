@@ -264,7 +264,16 @@ def _delta_file(tmp_path, urgent, changed=0, session="2026-08-19"):
 
 
 class _Args:
+    """A stand-in for notify.py's parsed arguments.
+
+    Every default argparse supplies is set here first, so a flag added to
+    notify.py reaches send_premarket() as its default rather than as a missing
+    attribute -- the failure would be an AttributeError in the tests only, which
+    says nothing about the flag it is actually about.
+    """
+
     def __init__(self, **kw):
+        self.no_email = False
         self.__dict__.update(kw)
 
 

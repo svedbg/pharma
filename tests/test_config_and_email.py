@@ -589,6 +589,32 @@ def test_the_entry_points_declare_which_run_they_are():
         assert f'RUN_KIND="{kind}"' in text, f"{script} does not set RUN_KIND={kind}"
 
 
+def test_both_entry_points_can_run_without_sending_mail():
+    """--no-email has to reach notify.py from both runs, and it has to be set
+    BEFORE the shared prologue is sourced.
+
+    The prologue defines the failure notice, which is the one send that fires
+    when the run has already died -- it can only honour the flag if it was told
+    at the top. A flag parsed after the source would be silently ignored on
+    exactly the path where the mail is least wanted and least expected.
+    """
+    preamble = (ROOT / "lib" / "run_preamble.sh").read_text()
+    assert "${NO_EMAIL_FLAG:-}" in preamble, \
+        "the failure notice does not honour --no-email"
+
+    for entry in ("run_daily.sh", "run_premarket.sh"):
+        script = (ROOT / entry).read_text()
+        assert "--no-email) NO_EMAIL=1" in script, f"{entry} does not accept --no-email"
+        assert 'NO_EMAIL_FLAG="--no-email"' in script, \
+            f"{entry} parses --no-email but passes it nowhere"
+        assert script.index('NO_EMAIL_FLAG="--no-email"') < \
+            script.index('source "$ROOT/lib/run_preamble.sh"'), \
+            f"{entry} sets the flag after sourcing the prologue, so a failure " \
+            f"notice would still be emailed"
+        assert re.search(r"scripts/notify\.py.*?\$NO_EMAIL_FLAG", script, re.S), \
+            f"{entry} does not pass --no-email on to notify.py"
+
+
 def test_the_premarket_run_cannot_write_the_desks_shared_state():
     """The pre-market pass runs over a session the nightly run has already
     recorded, so every shared artefact has to be isolated or it corrupts the

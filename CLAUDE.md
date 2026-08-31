@@ -822,7 +822,8 @@ which is why the heartbeat also exits non-zero: when the fault *is* delivery,
 the scheduler's journal may be the only record that survives.
 
 **Every path out of `notify.main()` writes the record, including the two that
-send nothing worth celebrating.** Because a missing file is deliberately not a
+send nothing worth celebrating** — every path, that is, except the one below
+that was told not to send at all. Because a missing file is deliberately not a
 fault, any path that returns without writing one is a path whose outcome cannot
 be observed — and both of them were exactly the paths where something had
 already gone wrong:
@@ -855,6 +856,28 @@ sourced without it, so a third entry point fails loudly at the top rather than
 silently recording as the desk. `test_a_failure_notice_records_against_the_run_that_failed`
 asks the function which file it picks; the older test only grepped `notify.py`
 for the pre-market filename, which stayed true throughout and caught none of it.
+
+**`--no-email` is the one path that deliberately writes no record, and that is
+the point of it rather than an omission.** Both entry points take the flag
+(`./run_daily.sh --no-email`, `./run_premarket.sh --no-email`), for running the
+research by hand without filling the mailbox: everything else happens as usual —
+the report is written, archived and scored, and ntfy still fires on a new setup
+or an exit — but nothing is mailed, not the report and not a failure notice.
+`lib/run_preamble.sh` honours it on that last one because the entry points set
+`NO_EMAIL_FLAG` *before* sourcing the prologue; parsed afterwards it would be
+silently ignored on exactly the path where the mail is least expected. A run
+told not to mail is watched by whoever typed it, and its exit status and log say
+what happened; the scheduled runs, which nobody is watching, never pass the flag.
+
+The record is then left as the last run that actually tried to deliver wrote it.
+It answers "did the desk's last delivery arrive?", and a run with email switched
+off is not that delivery: writing it anyway would stamp `{"email": null,
+"ok": true}` over the 09:00 run's `{"email": false}`, and the broken SMTP
+password the heartbeat was about to raise would disappear — the same
+shared-record blind spot as above, reopened through a flag instead of through a
+second sender. A record that is missing, or one run old, is deliberately not a
+fault. A record that is wrong is. `record_delivery_for_run()` is the single
+place that decides this, so a future path cannot half-honour it.
 
 ## Market regime
 
@@ -1250,6 +1273,8 @@ tail -50 ~/Library/Logs/pharma-premarket.log
 # both
 ./run_daily.sh --no-llm            # data + signals only, fast and free
 ./run_premarket.sh --no-llm        # fetch + signals + delta only, no email
+./run_daily.sh --no-email          # the whole run, but nothing is mailed
+./run_premarket.sh --no-email      # likewise for the morning pass
 ```
 
 The two runs keep separate logs — `logs/<date>.log` and

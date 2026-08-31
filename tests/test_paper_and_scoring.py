@@ -510,6 +510,80 @@ def test_the_failure_notice_records_whether_it_was_delivered(tmp_path, monkeypat
     assert fault and "email" in fault
 
 
+def test_a_run_with_email_off_sends_none_and_leaves_the_record_alone(
+        tmp_path, monkeypatch):
+    """--no-email is for running the research by hand without filling the
+    mailbox, and the hazard is not the missing email -- it is the record such a
+    run would otherwise write.
+
+    The delivery record answers "did the desk's last delivery arrive?", and a
+    run with email switched off is not that delivery. Writing it anyway would
+    stamp `{"email": null, "ok": true}` over the 09:00 run's `{"email": false}`,
+    and the broken SMTP password the heartbeat was about to raise would vanish
+    -- the same blind spot the two separate records exist to close, arriving
+    through a flag instead of through a second sender.
+    """
+    import json
+
+    import heartbeat
+    import notify
+
+    log = tmp_path / "last_delivery.json"
+    log.write_text(json.dumps({
+        "at": "2026-08-15T09:20:00", "session_date": "2026-08-14",
+        "channels": {"ntfy": True, "email": False},
+        "configured": {"ntfy": True, "email": True}, "attempted": ["ntfy", "email"],
+    }))
+    before = log.read_text()
+
+    sig = tmp_path / "signals.json"
+    sig.write_text(json.dumps({"session_date": "2026-08-17", "notify": [],
+                               "notify_exits": [], "table_markdown": ""}))
+
+    sent = []
+    monkeypatch.setattr(notify, "DELIVERY_LOG", log)
+    monkeypatch.setattr(heartbeat, "DELIVERY_LOGS", (("nightly run", log),))
+    monkeypatch.setattr(notify, "load_config",
+                        lambda: {"NTFY_TOPIC": "t", "SMTP_HOST": "h", "EMAIL_TO": "a@b.org"})
+    monkeypatch.setattr(notify, "send_email", lambda *a, **k: sent.append("email") or True)
+    monkeypatch.setattr(notify, "send_ntfy", lambda *a, **k: sent.append("ntfy") or True)
+    monkeypatch.setattr(notify.sys, "argv",
+                        ["notify.py", "--signals", str(sig), "--no-email"])
+
+    assert notify.main() == 0
+    assert "email" not in sent, "--no-email still sent an email"
+    assert log.read_text() == before, \
+        "a run that sent no email overwrote the last real delivery record"
+    fault = heartbeat.delivery_fault()
+    assert fault and "email" in fault, \
+        "the broken channel the previous run recorded stopped being a fault"
+
+
+def test_a_failure_notice_honours_email_off_too(tmp_path, monkeypatch):
+    """The one send that would otherwise ignore the flag.
+
+    A hand run told not to mail must not mail its own death: its operator is
+    watching the terminal it failed in, and the exit status and the log say so
+    there. The scheduled runs, which nobody is watching, never pass the flag --
+    so the failure notice they depend on is untouched.
+    """
+    import notify
+
+    log = tmp_path / "last_delivery.json"
+    sent = []
+    monkeypatch.setattr(notify, "DELIVERY_LOG", log)
+    monkeypatch.setattr(notify, "load_config",
+                        lambda: {"NTFY_TOPIC": "t", "SMTP_HOST": "h", "EMAIL_TO": "a@b.org"})
+    monkeypatch.setattr(notify, "send_email", lambda *a, **k: sent.append("email") or True)
+    monkeypatch.setattr(notify, "send_ntfy", lambda *a, **k: sent.append("ntfy") or True)
+    monkeypatch.setattr(notify.sys, "argv",
+                        ["notify.py", "--failure", "fetch.py died", "--no-email"])
+
+    assert notify.main() == 0
+    assert sent == ["ntfy"], "the failure notice ignored --no-email"
+    assert not log.exists(), "a suppressed run wrote a delivery record anyway"
+
+
 def test_a_desk_with_no_config_at_all_records_that_it_has_nowhere_to_send(
         tmp_path, monkeypatch):
     """delivery_fault()'s "nowhere to send" branch reads the record, and a

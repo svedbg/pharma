@@ -25,8 +25,9 @@
 #     archive and the heartbeat use -- a pre-market note must not be able to
 #     satisfy the check that asks whether the desk still produces reports.
 #
-#   ./run_premarket.sh            full pass
-#   ./run_premarket.sh --no-llm   fetch + signals + delta only (fast, free)
+#   ./run_premarket.sh              full pass
+#   ./run_premarket.sh --no-llm     fetch + signals + delta only (fast, free)
+#   ./run_premarket.sh --no-email   full pass, but nothing goes to the mailbox
 #
 set -uo pipefail
 
@@ -47,22 +48,34 @@ echo "=== premarket $(date +%Y-%m-%dT%H:%M:%S%z) ==="
 
 usage() {
     cat <<'EOF'
-usage: run_premarket.sh [--no-llm]
+usage: run_premarket.sh [--no-llm] [--no-email]
 
   --no-llm    fetch + signals + delta only. Skips the analysis pass and the
               email. Fast, free, no API usage.
+  --no-email  run everything, write the note, send no email -- not the note and
+              not a failure notice. ntfy is unaffected and still buzzes when the
+              delta says something is urgent. For running the pass by hand
+              without filling the mailbox; it writes no delivery record either,
+              so it cannot overwrite the scheduled pass's verdict.
   -h, --help  this message.
 EOF
 }
 
 NO_LLM=0
+NO_EMAIL=0
 for arg in "$@"; do
     case "$arg" in
         --no-llm)   NO_LLM=1 ;;
+        --no-email) NO_EMAIL=1 ;;
         -h|--help)  usage; exit 0 ;;
         *)          echo "unknown argument: $arg" >&2; usage >&2; exit 2 ;;
     esac
 done
+
+# Set before the preamble is sourced, so its failure notice honours it too. See
+# run_daily.sh for why this is a scalar and why it is expanded unquoted.
+NO_EMAIL_FLAG=""
+[[ $NO_EMAIL -eq 1 ]] && NO_EMAIL_FLAG="--no-email"
 
 # --- shared prologue ------------------------------------------------------
 # Same lock as run_daily.sh, deliberately. This pass reads history.sqlite and
@@ -202,10 +215,12 @@ echo "--- report: $REPORT ($(wc -l < "$REPORT") lines)"
 
 # --- 5. delivery ----------------------------------------------------------
 echo "--- notify"
+# shellcheck disable=SC2086  # deliberately unquoted; see NO_EMAIL_FLAG above
 run_with_timeout 300 "$PY" "$ROOT/scripts/notify.py" \
     --premarket "$REPORT" \
     --signals "$PM/signals.json" \
     --delta "$PM/delta.json" \
+    $NO_EMAIL_FLAG \
     || echo "WARNING: notify failed"
 
 echo "=== done $(date +%Y-%m-%dT%H:%M:%S%z) ==="

@@ -119,10 +119,17 @@ to [Claude Code](https://claude.com/claude-code):
 
 ```bash
 ./run_daily.sh              # full run: fetch, signals, analysis, notify
+./run_daily.sh --no-email   # same, but nothing goes to the mailbox
 ```
 
-Without it you still get every signal, veto and alert — just no written
-analysis. Swap the `claude -p` line in `run_daily.sh` for any other CLI that
+`--no-email` is for running the research by hand: the report is written and
+archived as usual and ntfy still fires, but no mail is sent — not the report and
+not a failure notice. Such a run also writes no delivery record, so it cannot
+overwrite the scheduled run's verdict with one where email was never attempted.
+`run_premarket.sh` takes the same flag.
+
+Without the analysis pass you still get every signal, veto and alert — just no
+written analysis. Swap the `claude -p` line in `run_daily.sh` for any other CLI that
 accepts a prompt and can write files.
 
 ### 6. Schedule it
@@ -176,6 +183,7 @@ lead: a thesis breaking outranks an idea appearing.
 
 ```bash
 ./run_daily.sh --no-llm                      # data + signals, no analysis
+./run_daily.sh --no-email                    # full run, but send no email
 python3 scripts/detail.py CAPR               # everything known about one name
 python3 scripts/propose_zones.py             # entry zones from each name's range
 python3 scripts/backtest.py                  # score the rules against a baseline
