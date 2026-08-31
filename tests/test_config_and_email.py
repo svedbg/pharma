@@ -604,7 +604,11 @@ def test_both_entry_points_can_run_without_sending_mail():
 
     for entry in ("run_daily.sh", "run_premarket.sh"):
         script = (ROOT / entry).read_text()
-        assert "--no-email) NO_EMAIL=1" in script, f"{entry} does not accept --no-email"
+        # Whitespace-tolerant: adding a flag to the case block realigns the
+        # arms, and that reformatting should not fail a test about email.
+        # Adding --force-late to run_premarket.sh did exactly that.
+        assert re.search(r"--no-email\)\s+NO_EMAIL=1", script), \
+            f"{entry} does not accept --no-email"
         assert 'NO_EMAIL_FLAG="--no-email"' in script, \
             f"{entry} parses --no-email but passes it nowhere"
         assert script.index('NO_EMAIL_FLAG="--no-email"') < \
