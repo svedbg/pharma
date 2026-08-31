@@ -507,6 +507,29 @@ The daily run appends catalysts it establishes from filings, with sources. An
 invented date would silently distort every later run, so unsourced dates are
 forbidden.
 
+**It is gitignored, and `catalysts.example.toml` is committed in its place**,
+on the same rule as `watchlist.toml` and for a sharper version of the same
+reason. The calendar names the companies the desk follows and adds what it
+thinks each binary is worth, and unlike the watchlist it is written *by the
+run*, not by hand — so a tracked calendar publishes every name the desk
+establishes a date for, on the schedule of an unattended job rather than on
+anyone's decision. It had reached 41 names that way before the split.
+
+The split leaves the file the checks exist to protect invisible to CI, so
+`test_catalyst_file.py` reads both, with different absence rules: the example
+is committed and always required, and the live file is checked wherever it
+exists and skipped where it does not. The desk's own `make check` is the run
+that matters, because the desk is the only place a nightly append can land.
+
+One protection is genuinely gone and is worth naming rather than discovering:
+a `catalysts.toml` that vanishes outright now reads as a skip rather than a
+failure, since `load_catalysts` treats an absent file as an empty calendar by
+design. What replaces it is that the file is no longer shared, so it can no
+longer arrive missing from someone else's checkout.
+
+Gitignoring stops the next name from being published; it does not retract the
+ones already in the history of a public repo.
+
 **Write every date as a quoted ISO string — `date = "2026-09-15"`.** This is the
 one hand-edited file the pipeline reads, and `_catalyst_date()` now normalises
 it because both ways of getting it slightly wrong reached a report:

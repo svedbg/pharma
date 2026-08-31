@@ -82,6 +82,23 @@ invalidation = "what would prove this wrong"
 `watchlist.example.toml` carries three names so the repo runs out of the box.
 Replace them with your own.
 
+Seed the catalyst calendar the same way:
+
+```bash
+cp catalysts.example.toml catalysts.toml
+```
+
+`catalysts.toml` is gitignored for the same reason as the watchlist: it names
+the companies you follow and what you think their binaries are worth. It is
+also the one file the daily run appends to unattended, so tracking it would
+publish every name the desk establishes a date for, on its own schedule rather
+than on yours.
+
+The run works fine without it — an absent calendar is an empty one, not an
+error — but the catalyst clock is one of the three layers the desk is actually
+for, so it is worth seeding. `catalysts.example.toml` shows the format and the
+vocabulary; delete its entries once you have your own.
+
 ### 3. Describe your strategy
 
 ```bash
@@ -260,7 +277,7 @@ past a 3.11 floor.
 ```
 watchlist.toml     your names, buckets, entry zones, invalidation levels (gitignored)
 STRATEGY.local.md  your objective, risk posture, brokers (gitignored)
-catalysts.toml     dated binaries (PDUFA, AdCom, readouts) with sources
+catalysts.toml     dated binaries (PDUFA, AdCom, readouts) with sources (gitignored)
 scripts/           fetch, signals, helpers, notification, scoring, archive
 prompts/daily.md   the standing instruction for the analysis pass
 systemd/ launchd/  timer units — Linux and macOS

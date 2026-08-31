@@ -11,6 +11,12 @@ state/
 # levels. watchlist.example.toml is committed in its place so the repo runs.
 watchlist.toml
 
+# Your catalyst calendar names the same companies, and adds what you think each
+# binary is worth. The daily run appends to it unattended, so leaving it tracked
+# publishes every name the desk establishes a date for, on its own schedule.
+# catalysts.example.toml is committed in its place, and CI checks that instead.
+catalysts.toml
+
 # Screen output -- regenerate with `make screen`
 candidates.toml
 data/screen_candidates.toml

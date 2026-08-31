@@ -1,11 +1,11 @@
-"""The committed catalysts.toml itself, not a fixture.
+"""The real catalyst files themselves, not a fixture.
 
 Every other catalyst test builds its own TOML in tmp_path, so the file the desk
-actually reads has never been checked by anything. It is the one committed file
-an unattended LLM appends to nightly, and its failure mode is silent: a
-malformed append makes `load_catalysts` print one WARNING to a log nobody reads
-and return {}, so *every* name loses its catalyst clock at once and the report
-says nothing is scheduled -- indistinguishable from a quiet week, on the layer
+actually reads has never been checked by anything. It is the one file an
+unattended LLM appends to nightly, and its failure mode is silent: a malformed
+append makes `load_catalysts` print one WARNING to a log nobody reads and
+return {}, so *every* name loses its catalyst clock at once and the report says
+nothing is scheduled -- indistinguishable from a quiet week, on the layer
 CLAUDE.md calls one of the three the desk is actually for.
 
 A bad date is narrower but the same shape: that entry alone is dropped, and the
@@ -13,6 +13,30 @@ binary it described stops warning.
 
 So this asserts what the file's own header promises: every entry parses, is
 sourced, and uses the documented vocabulary.
+
+**Two files, because catalysts.toml is gitignored.** It names the companies the
+desk follows and what it thinks their binaries are worth, and the nightly run
+appends to it on its own schedule -- so tracking it published names unattended.
+That leaves the checks below in an odd position: the file they exist to protect
+is the one CI cannot see.
+
+Both are therefore checked, with deliberately different absence rules:
+
+- `catalysts.example.toml` is committed, so it is always required. It is what a
+  new clone copies, and an example that does not satisfy these rules teaches
+  the format wrongly and produces an unrunnable catalysts.toml on the first
+  `cp`.
+- `catalysts.toml` is checked whenever it exists and skipped when it does not.
+  On the desk's own machine -- the only place a nightly append can land, and so
+  the only place this can catch one -- it exists, and `make check` runs these
+  against it. In CI it does not, and skipping is the honest answer rather than
+  a green tick implying the live file was read.
+
+The skip is the cost of the split and worth naming: a catalysts.toml that goes
+missing outright now reads as a skip here rather than a failure. `load_catalysts`
+treats an absent file as an empty calendar by design, so the loud check that
+used to sit here is genuinely gone. What replaces it is that the file is no
+longer shared, and so no longer arrives missing from someone else's checkout.
 
 Each test collects every offending entry rather than stopping at the first.
 A machine appends here nightly and can introduce several problems in one pass;
@@ -35,17 +59,31 @@ KINDS = {"PDUFA", "AdCom", "readout", "conference", "other"}
 CONFIDENCES = {"confirmed", "expected", "rumored"}
 
 CATALYSTS = ROOT / "catalysts.toml"
+EXAMPLE = ROOT / "catalysts.example.toml"
 
 
-@pytest.fixture(scope="module")
-def entries() -> list[dict]:
-    """The real file, parsed. Fails loudly rather than degrading to {}."""
-    assert CATALYSTS.exists(), (
-        f"{CATALYSTS.name} is missing. load_catalysts returns {{}} for an absent "
-        f"file without even the WARNING a malformed one gets, so this is the "
-        f"quietest way of all for the calendar to die.")
+@pytest.fixture(scope="module", params=[EXAMPLE, CATALYSTS],
+                ids=["example", "live"])
+def entries(request) -> list[dict]:
+    """Each real file in turn, parsed. Fails loudly rather than degrading to {}.
+
+    The example is committed and never skipped. The live file is gitignored, so
+    it is absent in CI and present on the desk; skipping there beats asserting
+    on a file this checkout was never meant to have.
+    """
+    path = request.param
+    if not path.exists():
+        if path is EXAMPLE:
+            raise AssertionError(
+                f"{path.name} is committed and must exist: it is what `cp "
+                f"{path.name} catalysts.toml` copies, and it is the only "
+                f"catalyst file CI can see.")
+        pytest.skip(
+            f"{path.name} is gitignored and absent from this checkout -- "
+            f"expected in CI, where only {EXAMPLE.name} is visible. On the "
+            f"desk itself this file exists and is checked.")
     try:
-        raw = tomllib.loads(CATALYSTS.read_text())
+        raw = tomllib.loads(path.read_text())
     except tomllib.TOMLDecodeError as e:
         # Raised rather than pytest.fail'd: both stop the fixture with the same
         # message, but only a raise is terminal to a reader and to static
@@ -53,7 +91,7 @@ def entries() -> list[dict]:
         # really be unbound; CodeQL does not model that and read it as a use
         # before assignment.
         raise AssertionError(
-            f"{CATALYSTS.name} does not parse: {e}. Every name would lose its "
+            f"{path.name} does not parse: {e}. Every name would lose its "
             f"catalyst clock at once and the report would read as 'nothing "
             f"scheduled'.") from e
     found = raw.get("catalyst", [])
