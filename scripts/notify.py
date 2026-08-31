@@ -9,6 +9,12 @@ you the report, which is on disk either way.
 Default behaviour:
   ntfy   fires only on a NEW SETUP/ACT tier (set NTFY_ALWAYS=1 to get every run)
   email  sends the full report every run (set EMAIL_ALWAYS=0 for alerts only)
+
+`--no-email` suppresses the mail for one invocation -- the report, the
+pre-market note and the failure notice alike -- for a hand run of the research
+that should not land in the mailbox. It is a per-run flag rather than a config
+setting on purpose: EMAIL_ALWAYS=0 describes the machine, this describes one
+run. Such a run also writes no delivery record; see record_delivery_for_run().
 """
 
 from __future__ import annotations
@@ -111,6 +117,32 @@ def record_delivery(session_date: str, channels: dict[str, bool | None],
         }, indent=2))
     except OSError as e:
         print(f"[notify] could not record delivery state: {e}", file=sys.stderr)
+
+
+def record_delivery_for_run(args, session_date: str,
+                            channels: dict[str, bool | None],
+                            configured: dict[str, bool] | None = None,
+                            path: Path | None = None) -> None:
+    """Write the delivery record -- unless this run deliberately sent no email.
+
+    Every other path through main() records, because a path that returns without
+    writing one is a path whose outcome nothing downstream can observe. This one
+    is the exception, and for the opposite reason: the record answers "did the
+    desk's last delivery arrive?", and a run with email switched off is not that
+    delivery.
+
+    Writing it anyway would stamp `{"email": null, "ok": true}` over the 09:00
+    run's `{"email": false}`, and the broken SMTP password heartbeat.py was
+    about to raise would disappear -- the same blind spot the two separate
+    records exist to close, arriving through a flag instead of through a second
+    sender. A record that is missing, or one run old, is deliberately not a
+    fault. A record that is wrong is.
+    """
+    if args.no_email:
+        print(f"[notify] --no-email: leaving {(path or DELIVERY_LOG).name} as the "
+              f"last run that actually tried to deliver wrote it", file=sys.stderr)
+        return
+    record_delivery(session_date, channels, configured, path=path)
 
 
 def send_ntfy(cfg: dict, title: str, body: str, priority: str = "default", tags: str = "pill") -> bool:
@@ -318,8 +350,8 @@ def send_premarket(cfg: dict, configured: dict[str, bool], args) -> int:
     if not delta_path.exists():
         print(f"[notify] no delta at {delta_path}; refusing to guess whether "
               f"anything is urgent", file=sys.stderr)
-        record_delivery("", {"ntfy": None, "email": None}, configured,
-                        path=PREMARKET_DELIVERY_LOG)
+        record_delivery_for_run(args, "", {"ntfy": None, "email": None}, configured,
+                                path=PREMARKET_DELIVERY_LOG)
         return 1
     delta = json.loads(delta_path.read_text())
 
@@ -337,7 +369,10 @@ def send_premarket(cfg: dict, configured: dict[str, bool], args) -> int:
             channels["ntfy"] = ok
         print(f"[notify] premarket ntfy sent={ok}", file=sys.stderr)
 
-    if cfg.get("EMAIL_ALWAYS", "1") == "1" or priority == "high":
+    if args.no_email:
+        print("[notify] --no-email: the pre-market note was not emailed",
+              file=sys.stderr)
+    elif cfg.get("EMAIL_ALWAYS", "1") == "1" or priority == "high":
         report_md = report.read_text() if report.exists() else body
         html_body = None
         try:
@@ -357,7 +392,8 @@ def send_premarket(cfg: dict, configured: dict[str, bool], args) -> int:
 
     # Keyed by the session the delta was measured against, so the record says
     # which day's numbers this morning's note was compared with.
-    record_delivery(session, channels, configured, path=PREMARKET_DELIVERY_LOG)
+    record_delivery_for_run(args, session, channels, configured,
+                            path=PREMARKET_DELIVERY_LOG)
     failed = [name for name, ok in channels.items() if ok is False]
     if failed:
         print(f"[notify] WARNING: premarket {', '.join(failed)} did not deliver; "
@@ -380,6 +416,13 @@ def main() -> int:
                          "names the run in a failure notice. --premarket implies "
                          "it; a failure notice has no report to imply it from, "
                          "which is why the flag exists at all")
+    ap.add_argument("--no-email", action="store_true",
+                    help="send no email at all this run -- not the report, not "
+                         "the pre-market note, not a failure notice. ntfy is "
+                         "unaffected. For a hand run of the research that should "
+                         "not land in the mailbox; it writes no delivery record "
+                         "either, so it cannot overwrite the scheduled run's "
+                         "verdict with one where email was never attempted")
     args = ap.parse_args()
 
     # --premarket names a report, so it settles the question on its own. --run
@@ -400,8 +443,8 @@ def main() -> int:
         # without writing it made that branch unreachable in the one case it
         # most obviously describes: a machine with no config at all. A missing
         # record is correctly not a fault, so the fault has to be written down.
-        record_delivery("", {"ntfy": None, "email": None}, {"ntfy": False, "email": False},
-                        path=record_log)
+        record_delivery_for_run(args, "", {"ntfy": None, "email": None},
+                                {"ntfy": False, "email": False}, path=record_log)
         return 0
 
     configured = configured_channels(cfg)
@@ -422,11 +465,22 @@ def main() -> int:
                             priority="high", tags="warning")
         if configured["ntfy"]:
             channels["ntfy"] = ok_push
-        ok_mail = send_email(cfg, f"[biotech desk] run failed{which}", args.failure)
-        if configured["email"]:
-            channels["email"] = ok_mail
-        record_delivery("", channels, configured, path=record_log)
-        print(f"[notify] ntfy sent={ok_push} email sent={ok_mail}", file=sys.stderr)
+        # Suppressed here too. A hand run asked not to mail, and mailing its
+        # failure would be the one email it was told not to send -- the run that
+        # failed is the one whose operator is watching the terminal it failed
+        # in. The exit status and the log still say so, and the scheduled runs,
+        # which nobody is watching, never pass the flag.
+        ok_mail: bool | None = None
+        if args.no_email:
+            print("[notify] --no-email: the failure notice was not emailed",
+                  file=sys.stderr)
+        else:
+            ok_mail = send_email(cfg, f"[biotech desk] run failed{which}", args.failure)
+            if configured["email"]:
+                channels["email"] = ok_mail
+        record_delivery_for_run(args, "", channels, configured, path=record_log)
+        mail_said = "suppressed" if args.no_email else f"sent={ok_mail}"
+        print(f"[notify] ntfy sent={ok_push} email {mail_said}", file=sys.stderr)
         return 0
 
     if args.premarket:
@@ -447,7 +501,9 @@ def main() -> int:
             channels["ntfy"] = ok
         print(f"[notify] ntfy sent={ok}", file=sys.stderr)
 
-    if cfg.get("EMAIL_ALWAYS", "1") == "1" or has_alerts:
+    if args.no_email:
+        print("[notify] --no-email: the report was not emailed", file=sys.stderr)
+    elif cfg.get("EMAIL_ALWAYS", "1") == "1" or has_alerts:
         report_path = Path(args.report) if args.report else None
         if report_path and report_path.exists():
             report_md = report_path.read_text()
@@ -469,7 +525,7 @@ def main() -> int:
         print(f"[notify] email sent={ok} (html={bool(html_body)}, "
               f"attached={bool(report_path)})", file=sys.stderr)
 
-    record_delivery(session_date, channels, configured)
+    record_delivery_for_run(args, session_date, channels, configured, path=record_log)
 
     # Still 0 when a channel fails: the report is on disk either way, and taking
     # the run down over a delivery problem would cost the archive and the

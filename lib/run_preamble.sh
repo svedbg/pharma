@@ -28,6 +28,13 @@
 #              dead nightly run read as healthy, because the morning's failure
 #              had delivered successfully into the nightly run's slot.
 #
+# Optionally:
+#   NO_EMAIL_FLAG  `--no-email`, when the caller was asked to send no mail. It
+#              reaches the failure notice below as well as the report: a hand
+#              run told not to mail must not mail its own death, and the only
+#              way it can honour that is to be told before the run starts, which
+#              is why the entry points set it before sourcing this file.
+#
 # It defines busy/notify_failure/fail/run_with_timeout/capture_if_ok, and then
 # ACQUIRES THE LOCK, picks $PY and waits for the network -- in that order, as
 # executed code. Sourcing it is entering the run, not preparing to. It also
@@ -59,7 +66,11 @@ notify_failure() {
     for c in "${PY:-}" "${PHARMA_PYTHON:-}" python3 "$HOME/.local/bin/python3"; do
         [[ -n "$c" ]] || continue
         command -v "$c" >/dev/null 2>&1 || continue
-        "$c" "$ROOT/scripts/notify.py" --failure "$1" --run "$RUN_KIND" && return 0
+        # $NO_EMAIL_FLAG unquoted on purpose: a fixed literal that must expand
+        # to no argument at all when it is empty. See run_daily.sh.
+        # shellcheck disable=SC2086
+        "$c" "$ROOT/scripts/notify.py" --failure "$1" --run "$RUN_KIND" \
+            ${NO_EMAIL_FLAG:-} && return 0
     done
     echo "WARNING: could not send the failure notification" >&2
     return 1

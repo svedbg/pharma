@@ -13,8 +13,9 @@
 # since and records nothing. Both source lib/run_preamble.sh for the lock, the
 # interpreter probe, run_with_timeout and the network wait.
 #
-#   ./run_daily.sh            full run
-#   ./run_daily.sh --no-llm   fetch + signals only (fast, free, no API usage)
+#   ./run_daily.sh              full run
+#   ./run_daily.sh --no-llm     fetch + signals only (fast, free, no API usage)
+#   ./run_daily.sh --no-email   full run, but nothing goes to the mailbox
 #
 #   PHARMA_PYTHON=/path/to/python3   try this interpreter first; it is probed
 #                                    for tomllib + pyexpat like the rest, and a
@@ -44,10 +45,16 @@ echo "=== run $(date +%Y-%m-%dT%H:%M:%S%z) ==="
 
 usage() {
     cat <<'EOF'
-usage: run_daily.sh [--no-llm]
+usage: run_daily.sh [--no-llm] [--no-email]
 
   --no-llm    fetch + signals only. Skips the analysis pass, the archive build
               and notification. Fast, free, no API usage.
+  --no-email  run everything, write the report, send no email -- not the report
+              and not a failure notice. ntfy is unaffected and still fires on a
+              new setup or an exit. For running the research by hand without
+              filling the mailbox. Such a run also writes no delivery record, so
+              it cannot overwrite the scheduled run's verdict with one where
+              email was never attempted.
   -h, --help  this message.
 EOF
 }
@@ -63,13 +70,24 @@ EOF
 # report the heartbeat picks up within three weekdays. A typo should not buzz the
 # phone; a broken unit still gets caught.
 NO_LLM=0
+NO_EMAIL=0
 for arg in "$@"; do
     case "$arg" in
         --no-llm)   NO_LLM=1 ;;
+        --no-email) NO_EMAIL=1 ;;
         -h|--help)  usage; exit 0 ;;
         *)          echo "unknown argument: $arg" >&2; usage >&2; exit 2 ;;
     esac
 done
+
+# Set before the preamble is sourced, because the preamble's own failure notice
+# has to honour it: a hand run told not to mail must not mail its own death.
+# A scalar rather than an array -- `"${arr[@]}"` on an empty array is an unbound
+# variable under `set -u` in bash 3.2, which is what macOS ships. Unquoted
+# expansion is safe for a fixed literal with no spaces and no glob characters,
+# and expands to nothing at all when it is empty.
+NO_EMAIL_FLAG=""
+[[ $NO_EMAIL -eq 1 ]] && NO_EMAIL_FLAG="--no-email"
 
 # --- shared prologue ------------------------------------------------------
 # The lock, the interpreter probe, run_with_timeout, capture_if_ok and the
@@ -247,6 +265,8 @@ run_with_timeout 600 "$PY" "$ROOT/scripts/publish.py" || echo "WARNING: publish.
 
 # --- 4. delivery ----------------------------------------------------------
 echo "--- notify"
-run_with_timeout 300 "$PY" "$ROOT/scripts/notify.py" --report "$REPORT" || echo "WARNING: notify failed"
+# shellcheck disable=SC2086  # deliberately unquoted; see NO_EMAIL_FLAG above
+run_with_timeout 300 "$PY" "$ROOT/scripts/notify.py" --report "$REPORT" $NO_EMAIL_FLAG \
+    || echo "WARNING: notify failed"
 
 echo "=== done $(date +%Y-%m-%dT%H:%M:%S%z) ==="
