@@ -1,0 +1,65 @@
+# Example catalyst calendar. Copy to catalysts.toml and replace with your own.
+#
+#   cp catalysts.example.toml catalysts.toml
+#
+# catalysts.toml is gitignored: it names the companies you follow and what you
+# think their binaries are worth, which is your research, not shared code. This
+# file stands in its place so the repo runs out of the box, and so the format
+# below is checked by CI even though the real file is not visible to it.
+#
+# Known binary catalysts. These drive the "days until" warning in every report.
+#
+# The daily run appends to this file whenever it establishes a dated catalyst
+# from a filing or a company announcement. You can edit or delete freely.
+#
+#   date        ISO date, QUOTED. Use the first of the month for quarter-level
+#               guidance (e.g. "H2 2026" -> 2026-07-01) and set confidence
+#               accordingly. Unquoted is a TOML date literal, not a string, and
+#               an unpadded month ("2026-8-01") sorts wrong -- both have taken
+#               a run down.
+#   kind        PDUFA | AdCom | readout | conference | other
+#   confidence  confirmed  -- a specific date the company or FDA has stated
+#               expected   -- company guidance to a quarter or half
+#               rumored    -- inferred; treat with suspicion
+#
+# ONLY add dates you can source. An invented catalyst date is worse than none,
+# because it will silently gate position sizing in every future report.
+#
+# The four entries below are real and sourced, and cover every confidence level
+# and three of the five kinds. They are for the two names in
+# watchlist.example.toml that had catalysts when this file was written, so the
+# two examples describe the same desk. Their dates will fall into the past --
+# `load_catalysts` drops past entries, so a stale example goes quiet rather
+# than wrong. Delete them once you have your own.
+
+[[catalyst]]
+symbol = "OTLK"
+date = "2026-10-01"
+kind = "other"
+confidence = "expected"
+description = "LYTENAVA US commercial launch, company-guided 'by year-end 2026'; first-year US net revenue guided $50-75M. FDA approval already granted 2026-07-24 (first ophthalmic bevacizumab for wet AMD, 12y exclusivity) after three CRLs and a granted appeal"
+source = "https://www.globenewswire.com/news-release/2026/08/14/3345250/0/en/outlook-therapeutics-reports-third-quarter-fiscal-year-2026-financial-results-and-provides-business-update-highlighting-fda-approval-of-lytenava.html"
+
+[[catalyst]]
+symbol = "CYTK"
+date = "2026-08-28"
+kind = "conference"
+confidence = "confirmed"
+description = "ACACIA-HCM full results (aficamten in non-obstructive HCM, both primary endpoints met per topline) in an ESC Congress Hot Line session, Munich"
+source = "Cytokinetics Q2 2026 business update, 2026-08-06 (ESC Hot Line stated in release); ESC late-breaking abstract listing"
+
+[[catalyst]]
+symbol = "CYTK"
+date = "2026-10-01"
+kind = "other"
+confidence = "expected"
+description = "Aficamten sNDA submission in non-obstructive HCM, guided to Q4 2026 following positive ACACIA-HCM"
+source = "Cytokinetics Q2 2026 business update, 2026-08-06"
+
+[[catalyst]]
+symbol = "CYTK"
+date = "2026-11-14"
+kind = "PDUFA"
+confidence = "rumored"
+description = "Reported MAPLE-HCM sNDA target action date (aficamten monotherapy vs metoprolol, oHCM). NOT in the company's own Q2 2026 release (checked 2026-08-17) -- aggregator-sourced only, verify before trusting"
+source = "secondary aggregation only; absent from ir.cytokinetics.com Q2 2026 release"
