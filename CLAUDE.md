@@ -639,6 +639,37 @@ pre-market pass is worthless: catching it up at 17:00 would email a "pre-market"
 note about a session already three hours into trading, which is worse than
 silence because it reads as current.
 
+**That rule is now enforced by the run itself, not only by the schedule.**
+`Persistent=false` covers the scheduled path and says nothing about a hand run
+-- and the hand run is not the exotic case it sounds like. A machine that is off
+at 14:30 gets no pass at all, correctly, so the natural response is to run it by
+hand whenever the machine comes up. That happened on 2026-08-31: the machine was
+off from 23:35 to 15:19, systemd recorded no premarket service run, and the pass
+went out from a hand run at 15:42 Sofia -- 08:42 ET, inside the window by 48
+minutes of luck. An hour later a boot would have delivered a "pre-market" note
+after the bell.
+
+`scripts/premarket_window.py` holds the rule, and `run_premarket.sh` consults it
+before fetching anything. The cutoff is **09:00 ET**, half an hour before the
+open; both scheduled alignments clear it with room, since 14:30 Sofia is 07:30
+ET normally and 08:30 ET during the DST-mismatch fortnight. It lives in Python
+for the reason the urgency decision does: it is arithmetic, and arithmetic
+belongs where it can be tested rather than in a shell script nothing exercises.
+
+Three details are load-bearing, and all three are pinned by
+`tests/test_premarket_window.py`:
+
+- **It exits 0**, like a held lock. Not running is the correct outcome, and a
+  non-zero exit would fire the failure notice for a pass that was right to stop.
+- **It is skipped when the run cannot reach the mailbox** -- `--no-llm` writes no
+  report and `--no-email` sends nothing, so a late run of either is harmless and
+  refusing them would break the fast development path for no gain.
+  `--force-late` is the deliberate override.
+- **It fails open on a missing tzdata**, warning loudly. Refusing there would
+  stop the morning pass on every machine with an incomplete zone database, and
+  because silence is this desk's normal output that failure would be invisible
+  -- which is worse than the late note the guard exists to prevent.
+
 ### It runs over a day the nightly run has already recorded
 
 That is the whole difficulty. Three separate isolations, and all three are

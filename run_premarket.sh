@@ -57,18 +57,23 @@ usage: run_premarket.sh [--no-llm] [--no-email]
               delta says something is urgent. For running the pass by hand
               without filling the mailbox; it writes no delivery record either,
               so it cannot overwrite the scheduled pass's verdict.
+  --force-late  run even after the 09:00 ET cutoff. The pass is meant to land
+              before the 09:30 ET open; without this it refuses (exit 0) when
+              it is too late to be pre-market at all.
   -h, --help  this message.
 EOF
 }
 
 NO_LLM=0
 NO_EMAIL=0
+FORCE_LATE=0
 for arg in "$@"; do
     case "$arg" in
-        --no-llm)   NO_LLM=1 ;;
-        --no-email) NO_EMAIL=1 ;;
-        -h|--help)  usage; exit 0 ;;
-        *)          echo "unknown argument: $arg" >&2; usage >&2; exit 2 ;;
+        --no-llm)     NO_LLM=1 ;;
+        --no-email)   NO_EMAIL=1 ;;
+        --force-late) FORCE_LATE=1 ;;
+        -h|--help)    usage; exit 0 ;;
+        *)            echo "unknown argument: $arg" >&2; usage >&2; exit 2 ;;
     esac
 done
 
@@ -90,6 +95,31 @@ RUN_LABEL="Biotech desk pre-market pass"
 RUN_KIND="premarket"
 # shellcheck source=lib/run_preamble.sh
 source "$ROOT/lib/run_preamble.sh"
+
+# --- 0. is it still pre-market? -------------------------------------------
+# The schedule used to be the only thing enforcing this, and it only covers the
+# scheduled path. A machine that is off at 14:30 gets no pass (Persistent=false,
+# deliberately), so the natural response is a hand run whenever it comes up --
+# and a hand run had no clock check at all. On 2026-08-31 one went out at 15:42
+# Sofia, which was 08:42 ET and inside the window by 48 minutes of luck.
+#
+# Skipped when the run cannot reach the mailbox anyway: --no-llm writes no
+# report and sends nothing, and --no-email is the same promise for the send.
+# A late run of either is harmless, and refusing them would break the fast
+# development path for no gain. --force-late is the deliberate override.
+#
+# Exits 0, like a held lock: not running is the correct outcome here, not a
+# failure, and a non-zero exit would fire the failure notice for a pass that
+# was right to stop.
+if [[ $NO_LLM -eq 0 && $NO_EMAIL -eq 0 && $FORCE_LATE -eq 0 ]]; then
+    if ! "$PY" "$ROOT/scripts/premarket_window.py"; then
+        echo "Not running: a note headed 'pre-market' about a session already"
+        echo "trading reads as current, which is worse than sending nothing."
+        echo "Use --force-late to override, or --no-email to run without sending."
+        echo "=== skipped $(date -Iseconds) ==="
+        exit 0
+    fi
+fi
 
 # --- 1. facts, recorded nowhere -------------------------------------------
 echo "--- fetch (no-persist)"
