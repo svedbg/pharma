@@ -70,8 +70,22 @@ drill-down material `detail.py` already prints on request.
 
 The division is the one this file already drew between `latest.json` and
 `signals.json`, moved up a level now that the list has grown into the same
-shape. It will need moving again: the file grows with the watchlist, and nothing
-in the pipeline notices.
+shape. It will need moving again: the file grows with the watchlist -- and the
+pipeline now notices, which it did not when that sentence was first written.
+
+`brief.py` measures its own output and warns on **stderr** past
+`BRIEF_TOKEN_BUDGET` (40,000 tokens), naming the two remedies: move material to
+`detail.py`, or raise the triage bar in `prompts/daily.md` so fewer names get a
+full block. stderr rather than stdout, so the warning reaches the run log
+without being read as part of the brief.
+
+The budget is deliberately loose -- roughly double the 18-25k a 62-name list
+currently costs, and still a third of the 122,000-token read it replaced. A bar
+set just above today's figure would fire on an ordinary busy session and be
+silenced, and a silenced warning is not one. `test_the_budget_stays_well_under_
+the_read_it_replaced` pins the other end: raise the budget past half of
+`SUPERSEDED_READ_TOKENS` and the suite fails, because a guard that permits the
+regression it watches for is worse than none.
 
 `brief.py` prints three tiers, mirroring the report's own structure rather than
 inventing a second one:
@@ -723,6 +737,27 @@ source of "wake him up" either.** A name is urgent when:
 
 A Form 4 is reported without pushing. It matters, the insider layer reads it
 every night, and it is not a reason to look at a screen at 07:30 ET.
+
+**A filing that predates the baseline session cannot make a name urgent.**
+`new_filings_since_last_run` means "not in the filings table", which is the
+right question for a name the desk has been following and the wrong one for a
+name added since the last run: that name has no rows at all, so its *entire*
+filing history comes back as new. MRNA was added on 2026-08-21 and returned 119
+filings, 13 of them 8-Ks whose newest was three weeks old -- and the material-8-K
+rule fired on them, so the phone buzzed at 07:30 ET about an 8-K from another
+month and buried whatever actually happened that morning. Harmless to the
+nightly run, which is why it went unnoticed for ten days.
+
+`_filed_since()` compares the filing date against the baseline session. Three
+properties matter: it may only ever **remove** urgency and never add it, so the
+ordinary case is untouched; the bound is **inclusive**, because a filing the
+nightly run already recorded is not in this list to begin with and the filter is
+not there to second-guess the boundary day; and it **fails open** on a missing
+date or session, since `main()` already refuses when the two sides name
+different sessions, so losing a real 8-K to a missing field would be worse than
+an extra buzz. Suppressed filings are still reported, and the rendered note says
+how many and why -- a silently swallowed backlog is the same silence the false
+urgent was drowning out, just in the other direction.
 
 **Vetoes are compared by `(form, filed)`, never as whole dicts.** `days_ago` and
 the rendered `reason` both move with the clock, so a dict comparison would report
