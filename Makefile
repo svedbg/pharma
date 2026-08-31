@@ -1,4 +1,4 @@
-.PHONY: help setup lint fmt test check check-units run run-fast premarket premarket-fast briefing brief screen site
+.PHONY: help setup lint fmt test check check-units run run-fast premarket premarket-fast briefing brief screen site backup
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -53,3 +53,6 @@ screen:  ## monthly: look for candidates OUTSIDE the watchlist (slow, ~500 reque
 
 site:   ## build the local report archive and open it
 	python3 scripts/publish.py --open
+
+backup: ## snapshot the gitignored layer + history to ~/pharma-backups
+	python3 scripts/backup.py

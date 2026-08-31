@@ -278,11 +278,43 @@ past a 3.11 floor.
 watchlist.toml     your names, buckets, entry zones, invalidation levels (gitignored)
 STRATEGY.local.md  your objective, risk posture, brokers (gitignored)
 catalysts.toml     dated binaries (PDUFA, AdCom, readouts) with sources (gitignored)
-scripts/           fetch, signals, helpers, notification, scoring, archive
+scripts/           fetch, signals, helpers, notification, scoring, archive, backup
 prompts/daily.md   the standing instruction for the analysis pass
 systemd/ launchd/  timer units — Linux and macOS
 docs/              project briefings; `make brief` rebuilds the PDF
 data/ logs/ reports/ site/ state/    generated and personal — all gitignored
+```
+
+## Backups
+
+```bash
+make backup        # -> ~/pharma-backups/pharma-backup-<stamp>.tar.gz
+```
+
+`watchlist.toml`, `catalysts.toml`, `STRATEGY.local.md` and
+`data/history.sqlite` are gitignored or were never in git, so the repository is
+not their backup. The calendar is the sharpest case: the nightly run appends to
+it unattended, and its only copy is the file being appended to.
+
+The archive carries those, plus `state/alerts.json`, `data/summaries/`,
+`candidates.toml` and `reports/` — about 1.8 MB. Everything else in `data/` is
+rebuilt by the next run and is left out on purpose.
+
+The database is copied through sqlite's online-backup API rather than as a file,
+so a backup that fires while the desk is running still restores. `SMTP_PASS` is
+stubbed unless you pass `--with-secrets`. The newest 14 archives are kept;
+`--keep 0` keeps all.
+
+`docs/RESTORE-FOR-CLAUDE.md` is the other half: a runbook written for Claude
+Code, covering restoring from either a backup archive or a migration bundle,
+with the verification gates and the things it must ask about rather than decide.
+Point an agent at that file on the new machine.
+
+Run it from cron or a timer if you want it unattended:
+
+```bash
+# crontab -e  — 08:30 daily, before the 09:00 desk run
+30 8 * * * cd ~/projects/pharma && python3 scripts/backup.py >/dev/null
 ```
 
 `CLAUDE.md` documents the architecture, the veto rules, the measured thresholds,

@@ -1148,6 +1148,51 @@ session already recorded displaces the previous record into
 `data/summaries/superseded/` instead of overwriting it — see the collision note
 under Schedule for why two runs on different days share one session.
 
+## Backups
+
+`scripts/backup.py` (`make backup`) snapshots the layer that exists nowhere
+else, to `~/pharma-backups/pharma-backup-<stamp>.tar.gz`, keeping the newest 14.
+
+The list is short because it is defined by *provenance*, not importance:
+`watchlist.toml`, `catalysts.toml`, `STRATEGY.local.md`, `candidates.toml`,
+`state/alerts.json`, `data/summaries/`, `reports/` and `data/history.sqlite`.
+Everything else in `data/` is rebuilt by the next run and is deliberately left
+out -- carrying `latest.json` and the candidate files would make the archive
+twenty times larger, and a backup slow enough to skip protects nothing.
+
+Untracking the calendar is what made this necessary. Until then `catalysts.toml`
+was in git, so the repo was its backup; now the nightly run appends to a file
+whose only copy is the working file being appended to.
+
+Two things it does that `cp -r` does not, both of which fail silently rather
+than loudly:
+
+- **The database goes through sqlite's online-backup API**, never a file copy.
+  `data/history.sqlite` is written by the nightly run, and a plain copy of a
+  live database can capture a torn write -- an archive that restores to a
+  corrupt file, discovered on the one day it is needed.
+  `test_the_database_is_snapshotted_consistently_while_being_written` holds an
+  uncommitted write open across the backup and asserts the archived copy passes
+  `integrity_check` and does not contain the uncommitted row.
+- **Every TOML file is parsed before it is archived.** The run appends to
+  `catalysts.toml` while running, so a backup fired near it can catch half a
+  record. A file that does not parse is archived *anyway* -- a half-written file
+  beats none, and refusing would let the last good copy age out under `--keep`
+  -- but it warns, naming the file.
+
+`SMTP_PASS` is stubbed unless `--with-secrets` is passed. Backups get synced to
+places a Gmail app password should not go, and it is a credential to an account
+rather than desk data.
+
+**Restoring is documented for an agent, not just for a human.**
+`docs/RESTORE-FOR-CLAUDE.md` covers both directions -- a `make backup` archive
+and a migration bundle -- with a verification gate after each step and an
+explicit list of what to stop and ask about. Two of those are worth knowing
+even if you never read the file: `integrity_check` must return `ok` before a
+restored database is copied over a live one, and both machines must never run
+their timers at once, because `state/alerts.json` and the `runs` table are each
+machine's own record of what it has already seen and there is no merge for them.
+
 ## Briefing documents
 
 `docs/` holds two hand-written HTML briefings and the PDF built from one of them
