@@ -464,3 +464,48 @@ kind = "readout"
 confidence = "expected"
 description = "NMRA-511 (vasopressin 1a antagonist, Alzheimer's disease agitation) MAD expansion-cohort data at higher doses in healthy elderly participants, guided to 'the fourth quarter of 2026', with a Phase 2 start 'by the end of 2026'. Cash $116.8M at 2026-06-30 guided 'into the third quarter of 2027'. Date is the first day of the guided quarter"
 source = "https://www.globenewswire.com/news-release/2026/08/14/3345232/0/en/neumora-therapeutics-reports-second-quarter-2026-financial-results-and-provides-business-update.html (Q2 2026 results, 2026-08-14)"
+
+
+# --- recovered 2026-08-31 from a stash made 2026-08-30; sources dated 2026-08-24 to 2026-08-26.
+#     The stash also carried a CAPR PDUFA reset to 2026-11-22, dropped as a duplicate:
+#     the same reset is already applied in place on the CAPR entry above. ---
+
+[[catalyst]]
+symbol = "RGNX"
+date = "2026-09-30"
+kind = "other"
+confidence = "expected"
+description = "RGX-202 Biologics License Application submission in Duchenne muscular dystrophy, under the accelerated approval pathway, supporting potential approval in the second half of 2027. Company language on 2026-08-24 was 'the planned submission of the Duchenne BLA this quarter', so this is the last day of that quarter rather than a stated date. The BLA is to include safety from the AFFINITY DUCHENNE pivotal and confirmatory studies (n=63) and efficacy from the pivotal portion (n=30). RGX-202 uses a different capsid and route from RGX-121, which the FDA placed on clinical hold on 2026-08-24."
+source = "REGENXBIO regulatory update on RGX-121, 2026-08-24 -- http://www.prnewswire.com/news-releases/regenxbio-announces-regulatory-update-on-rgx-121-for-mps-ii-302858018.html; 8-K https://www.sec.gov/Archives/edgar/data/1590877/000119312526363786/rgnx-20260824.htm"
+
+[[catalyst]]
+symbol = "RGNX"
+date = "2026-12-01"
+kind = "readout"
+confidence = "expected"
+description = "RGX-314 pivotal topline in wet age-related macular degeneration. Company language on 2026-08-24 was 'the wet AMD topline pivotal data announcement in the fourth quarter', with no month given, so this is the first of that quarter and may fall later in it. Note the correlation risk: EYPT's LUGANO missed its primary endpoint in the same indication on 2026-08-17 and KOD's DAYBREAK reads out around 2026-09-01."
+source = "REGENXBIO regulatory update on RGX-121, 2026-08-24 -- http://www.prnewswire.com/news-releases/regenxbio-announces-regulatory-update-on-rgx-121-for-mps-ii-302858018.html"
+
+[[catalyst]]
+symbol = "LNTH"
+date = "2027-06-01"
+kind = "other"
+confidence = "expected"
+description = "Closing of the Curium US Holdings LLC merger. Each Lantheus share converts into $102.50 in cash plus one non-transferable contingent value right worth up to $12.00 (up to $8.00 on Global Prostate Cancer Diagnostics aggregate sales of $950M-$1,750M in FY2030, up to $3.00 on Global Neurology Diagnostics sales milestones, $1.00 on Global DEFINITY sales above $400M in FY2030), for total per-share consideration of up to $114.50 and a transaction value of up to approximately $8.0 billion. Merger agreement signed 2026-08-03; the board unanimously recommends it. Company language is 'expected to close in the first half of 2027' with no month given, so this is the first of that window's last month and may fall earlier or later in it. The special-meeting date is still blank in the preliminary proxy and should replace this entry once the definitive proxy sets it."
+source = "Lantheus PREM14A filed 2026-08-26 -- https://www.sec.gov/Archives/edgar/data/1521036/000119312526365886/d180727dprem14a.htm; merger announcement 2026-08-03 -- https://www.globenewswire.com/news-release/2026/08/03/3337411/0/en/curium-announces-definitive-agreement-to-merge-with-lantheus.html"
+
+[[catalyst]]
+symbol = "SYRE"
+date = "2026-09-01"
+kind = "readout"
+confidence = "expected"
+description = "SKYLINE Part A topline, SPY001 (long-acting anti-alpha-4-beta-7) in ulcerative colitis. Company guidance in the 2026-08-25 release is 'Sept 2026' with no day given, so this is the first of that month rather than a stated date. After SPY072 was deprioritised as an RA monotherapy on 2026-08-25, this is the next event that can reprice the company."
+source = "Spyre Therapeutics 8-K filed 2026-08-25, items 7.01/8.01/9.01 -- https://www.sec.gov/Archives/edgar/data/1636282/000163628226000105/syre-20260825.htm; press release 'Spyre Therapeutics Announces Topline Results from the Rheumatoid Arthritis Sub-study of the SKYWAY Phase 2 Trial of SPY072', 2026-08-25 -- https://www.biospace.com/press-releases/spyre-therapeutics-announces-topline-results-from-the-rheumatoid-arthritis-sub-study-of-the-skyway-phase-2-trial-of-spy072"
+
+[[catalyst]]
+symbol = "SYRE"
+date = "2026-10-01"
+kind = "readout"
+confidence = "expected"
+description = "SKYWAY Phase 2 topline in psoriatic arthritis and axial spondyloarthritis, the two remaining sub-studies of the SPY072 basket trial. Company guidance in the 2026-08-25 release is '4Q 2026' with no month given, so this is the first of that quarter and may fall later in it. The rheumatoid arthritis sub-study read out on 2026-08-25 with both doses statistically significant on at least one endpoint, but below the company's internal bar to advance SPY072 as an RA monotherapy."
+source = "Spyre Therapeutics 8-K filed 2026-08-25, items 7.01/8.01/9.01 -- https://www.sec.gov/Archives/edgar/data/1636282/000163628226000105/syre-20260825.htm; press release 'Spyre Therapeutics Announces Topline Results from the Rheumatoid Arthritis Sub-study of the SKYWAY Phase 2 Trial of SPY072', 2026-08-25 -- https://www.biospace.com/press-releases/spyre-therapeutics-announces-topline-results-from-the-rheumatoid-arthritis-sub-study-of-the-skyway-phase-2-trial-of-spy072"
