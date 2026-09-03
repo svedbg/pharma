@@ -228,7 +228,14 @@ ALLOWED_TOOLS="Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Skill,Bash(python3:*
 # nightly, until someone noticed the reports had stopped -- which is precisely
 # the failure the lock exists to avoid, arriving through the lock itself.
 # Harmless where fd 9 was never opened: the launchd path locks with a symlink.
+# Model and effort are pinned here, not left to whatever an interactive
+# session's /model or /effort last set in ~/.claude/settings.json -- that
+# ambient default drifts (it just did, via /model) and a scheduled run must
+# not silently change model or reasoning depth because someone tuned an
+# unrelated session.
 run_with_timeout 1800 claude -p "$PROMPT" \
+    --model claude-sonnet-5 \
+    --effort medium \
     --permission-mode acceptEdits \
     --allowedTools "$ALLOWED_TOOLS" \
     --add-dir "$ROOT" \

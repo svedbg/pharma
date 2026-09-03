@@ -217,7 +217,11 @@ ALLOWED_TOOLS="Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Skill,Bash(python3:*
 # the same reason run_daily.sh does it: a single surviving grandchild would hold
 # the lock forever and every later run -- nightly and pre-market alike -- would
 # exit 0 as "already in progress".
+# Model and effort pinned for the same reason as run_daily.sh: an interactive
+# /model or /effort must not silently retune an unattended run.
 run_with_timeout 1200 claude -p "$PROMPT" \
+    --model claude-sonnet-5 \
+    --effort medium \
     --permission-mode acceptEdits \
     --allowedTools "$ALLOWED_TOOLS" \
     --add-dir "$ROOT" \
