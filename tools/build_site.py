@@ -253,8 +253,8 @@ def write_robots_sitemap(out: Path, base: str) -> list[str]:
 
 
 def write_cname(out: Path, base: str) -> bool:
-    host = urlparse(base).hostname or ""
-    if host.endswith("github.io"):
+    host = (urlparse(base).hostname or "").lower()
+    if host == "github.io" or host.endswith(".github.io"):
         return False
     (out / "CNAME").write_text(host + "\n", encoding="utf-8")
     return True
