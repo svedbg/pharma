@@ -33,7 +33,7 @@ jobs:
       - name: Build site
         run: python3 tools/build_site.py --out _site
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
