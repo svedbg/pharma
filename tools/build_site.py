@@ -195,8 +195,37 @@ def wrap_brief(out: Path, base: str) -> bool:
      (A4 less its 15mm margins) and centres it. Screen only -- `make brief`
      renders the committed PDF from the same file, and that must not move. */
   body {{
-    max-width: 190mm; margin: 0 auto; padding: 10px 20px 64px;
+    max-width: 175mm; margin: 0 auto; padding: 10px 20px 64px;
   }}
+  /* Typography for a screen rather than for paper. The document is set at
+     10.4pt because A4 is 210mm wide and ink is cheap; in a browser that is
+     about 14px, which is small for reading a 5,000-word piece. Everything is
+     scaled by the same ~1.19, rather than the body alone: bumping only the
+     paragraphs would leave h3 (11pt) smaller than the text under it and the
+     second deck paragraph smaller than the body it introduces. Screen only --
+     `make brief` prints the PDF from this same file and it must not move. */
+  body {{ font-size: 12.4pt; line-height: 1.65; }}
+  .kicker {{ font-size: 9pt; }}
+  .deck {{ font-size: 15pt; }}
+  .deck.sub {{ font-size: 13pt; }}
+  .byline {{ font-size: 10.5pt; }}
+  h2 {{ font-size: 19pt; }}
+  h3 {{ font-size: 13.4pt; }}
+  .lede::first-letter {{ font-size: 40pt; }}
+  .pull {{ font-size: 16.5pt; }}
+  .stats .n {{ font-size: 22pt; }}
+  .stats .l {{ font-size: 8.6pt; }}
+  .box-title {{ font-size: 9pt; }}
+  table {{ font-size: 10.2pt; }}
+  th {{ font-size: 8.6pt; }}
+  .pipeline .t {{ font-size: 11pt; }}
+  .pipeline .d {{ font-size: 9.4pt; }}
+  .cta .t {{ font-size: 17.5pt; }}
+  .cta .u {{ font-size: 14pt; }}
+  .cta p {{ font-size: 11.2pt; }}
+  .cta .fine {{ font-size: 10.5pt; }}
+  footer {{ font-size: 9pt; }}
+  a:hover {{ border-bottom-color: currentColor; }}
   @media (max-width: 600px) {{
     body {{ padding: 8px 16px 40px; }}
     /* Data tables are sized in pt for A4; on a phone they are read by scrolling

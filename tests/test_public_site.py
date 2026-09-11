@@ -132,3 +132,23 @@ def test_the_brief_counts_its_tests_rather_than_quoting_a_number(tmp_path):
     assert "brief-build/brief.html" in brief_target, (
         "make brief prints from the raw source again: the PDF cover would read {{tests}}"
     )
+
+
+def test_the_brief_links_its_own_site_and_keeps_its_sizes_reachable():
+    """Two things the screen typography depends on.
+
+    The author's site was printed as plain text in three places — a byline, a
+    call to action and a footer — on a page whose whole purpose is to be read by
+    someone deciding whether to get in touch. And every font size has to live in
+    the stylesheet: the screen rules scale the document by ~1.19, and a size set
+    inline beats them, so an inline one comes out smaller than the body text
+    around it while looking perfectly correct in the PDF.
+    """
+    src = (ROOT / "docs" / "capability-brief.html").read_text(encoding="utf-8")
+    assert src.count('href="https://sved.net"') == 3, "a sved.net mention is back to plain text"
+    assert 'href="https://github.com/svedbg/pharma"' in src
+
+    body = src.split("<body>")[1]
+    assert "font-size" not in body, (
+        "an inline font size is out of reach of the screen-only scale"
+    )
