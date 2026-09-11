@@ -58,3 +58,10 @@ notify.env
 !.env.example
 __pycache__/
 *.pyc
+
+# OFL fonts fetched for the share-card generator; see tools/make_og.py
+tools/fonts/
+
+# public site build output (make www / pages workflow)
+_site/
+.www-preview/

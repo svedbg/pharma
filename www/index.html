@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Biotech desk — nightly small-cap biotech research, open source</title>
+<meta name="description" content="Open-source nightly research desk for small-cap biotech: reads SEC filings, insider trades and short interest, then vetoes false dips. Python, MIT.">
+<meta name="author" content="Svetoslav Rankov">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<meta name="theme-color" content="#1a1c20">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="https://svedbg.github.io/pharma/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a1c20'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%2334e0a1'/%3E%3C/svg%3E">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Biotech desk">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="59 names scanned. Nothing to do tonight.">
+<meta property="og:description" content="An open-source nightly research desk for small-cap biotech that reads the filings before it calls a collapse a bargain. Most nights it reports nothing — that is the feature.">
+<meta property="og:url" content="https://svedbg.github.io/pharma/">
+<meta property="og:image" content="https://svedbg.github.io/pharma/og.png">
+<meta property="og:image:secure_url" content="https://svedbg.github.io/pharma/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Dark trading-terminal card reading: 59 names scanned. Nothing to do tonight. Beside it, tonight's tape lists SION and OTLK as vetoed, CAPR as setup and SMMT as insider buying.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="59 names scanned. Nothing to do tonight.">
+<meta name="twitter:description" content="An open-source nightly research desk for small-cap biotech that reads the filings before it calls a collapse a bargain.">
+<meta name="twitter:image" content="https://svedbg.github.io/pharma/og.png">
+<meta name="twitter:image:alt" content="Biotech desk share card: 59 names scanned, nothing to do tonight, with vetoed and setup rows.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://svedbg.github.io/pharma/#website",
+      "url": "https://svedbg.github.io/pharma/",
+      "name": "Biotech desk",
+      "inLanguage": "en",
+      "publisher": { "@id": "https://svedbg.github.io/pharma/#author" }
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://svedbg.github.io/pharma/#webpage",
+      "url": "https://svedbg.github.io/pharma/",
+      "name": "Biotech desk — nightly small-cap biotech research, open source",
+      "description": "Open-source nightly research desk for small-cap biotech traders: reads the filings behind every drawdown, vetoes offerings, delistings and cash-runway traps, and alerts only when a setup survives.",
+      "isPartOf": { "@id": "https://svedbg.github.io/pharma/#website" },
+      "about": { "@id": "https://svedbg.github.io/pharma/#software" },
+      "primaryImageOfPage": { "@type": "ImageObject", "url": "https://svedbg.github.io/pharma/og.png", "width": 1200, "height": 630 },
+      "dateModified": "2026-09-09",
+      "inLanguage": "en"
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": "https://svedbg.github.io/pharma/#software",
+      "name": "Biotech desk",
+      "alternateName": "pharma",
+      "url": "https://svedbg.github.io/pharma/",
+      "codeRepository": "https://github.com/svedbg/pharma",
+      "programmingLanguage": "Python",
+      "runtimePlatform": "Python 3.11+, systemd or launchd",
+      "license": "https://opensource.org/license/mit",
+      "isAccessibleForFree": true,
+      "applicationCategory": "FinanceApplication",
+      "operatingSystem": "Linux, macOS",
+      "description": "An unattended nightly research desk for small-cap pharma and biotech stocks. It pulls SEC EDGAR filings, prices, Form 4 insider trades, FINRA short volume and ClinicalTrials.gov records for a watchlist, computes deterministic signals, applies a veto layer that blocks buy signals sitting on priced offerings, delisting notices, auditor changes or thin cash, and notifies only on tier changes. Thresholds are measured against the XBI sector ETF rather than chosen.",
+      "keywords": ["small-cap biotech", "SEC EDGAR", "Form 4 insider trades", "short interest", "PDUFA", "oversold screener", "veto layer", "XBI benchmark", "open source", "Python stdlib"],
+      "author": { "@id": "https://svedbg.github.io/pharma/#author" },
+      "dateModified": "2026-09-09"
+    },
+    {
+      "@type": "Person",
+      "@id": "https://svedbg.github.io/pharma/#author",
+      "name": "Svetoslav Rankov",
+      "jobTitle": "Senior Director of Software Engineering",
+      "url": "https://sved.net",
+      "sameAs": ["https://github.com/svedbg"]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://svedbg.github.io/pharma/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is Biotech desk?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Biotech desk is an open-source, unattended research system for small-cap biotech stocks. Every weeknight it reads SEC filings, prices, insider trades and short interest for a watchlist, computes signals, writes a report, and sends a phone alert only when a name changes tier. It is written in Python with no third-party dependencies and is released under the MIT licence." }
+        },
+        {
+          "@type": "Question",
+          "name": "How is it different from a stock screener?",
+          "acceptedAnswer": { "@type": "Answer", "text": "A screener reports what is cheap. Biotech desk also checks why. A veto layer reads the company's filings and blocks any buy signal sitting on top of a priced share offering, a delisting notice, an auditor change, a recent collapse, or a balance sheet with under 1.5 quarters of cash, until that veto is refuted with evidence." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it beat the market?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Measured against the XBI biotech ETF, the plain oversold signal did not beat simply owning the fund. Only oversold confirmed by capitulation volume did, at +1.72% over three months, so the actionable tier now requires that confirmation. The backtests carry survivorship bias and model no transaction costs; they are a smoke test, not proof of edge." }
+        },
+        {
+          "@type": "Question",
+          "name": "What does it cost to run?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Nothing. Every data source — SEC EDGAR, FINRA Reg SHO, Nasdaq, ClinicalTrials.gov — is free and keyless. The runtime uses only the Python standard library. A full sweep of about 60 names takes two to four minutes." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is it financial advice?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. It is research support for your own decisions. It places no orders, it is not a product, and it was built for one person and published so the reasoning can be examined. Your trades are yours." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+<link rel="preload" href="fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/jetbrains-mono-400.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+  @font-face {
+    font-family: "Inter"; font-style: normal; font-weight: 300 800; font-display: swap;
+    src: url("fonts/inter-var.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "JetBrains Mono"; font-style: normal; font-weight: 400; font-display: swap;
+    src: url("fonts/jetbrains-mono-400.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "JetBrains Mono"; font-style: normal; font-weight: 500; font-display: swap;
+    src: url("fonts/jetbrains-mono-500.woff2") format("woff2");
+  }
+  :root {
+    color-scheme: dark;
+    --bg: #1a1c20;
+    --bg-soft: #202226;
+    --surface: #2b2e35;
+    --surface-2: #35383f;
+    --border: #454851;
+    --border-strong: #585b65;
+    --fg: #f5f6f7;
+    --fg-2: #d2d3d8;
+    --fg-3: #a8a9b0;
+    --fg-4: #7d7e87;
+    --mint: #34e0a1;
+    --mint-strong: #5cf0b8;
+    --mint-ink: #052919;
+    --violet: #8b7bff;
+    --red: #ff6b70;
+    --red-ink: #2c0e10;
+    --sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --radius: 16px;
+    --radius-sm: 10px;
+    --shadow: 0 20px 50px -20px rgba(0,0,0,.6);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg-3);
+    font-family: var(--sans);
+    font-size: 1.0625rem;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--mint); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:hover { color: var(--fg); }
+  :focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; border-radius: 2px; }
+
+  .wrap { max-width: 72rem; margin: 0 auto; padding: 0 2rem; }
+
+  /* ---------- background glow ---------- */
+  .glow {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(60rem 34rem at 18% -8%, rgba(52,224,161,.14), transparent 60%),
+      radial-gradient(46rem 30rem at 100% 10%, rgba(139,123,255,.10), transparent 60%);
+  }
+
+  /* ---------- nav ---------- */
+  .nav {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(8,9,12,.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav .inner {
+    display: flex; align-items: center; gap: 1.5rem;
+    max-width: 72rem; margin: 0 auto; padding: 0.85rem 2rem;
+  }
+  .brand { display: flex; align-items: center; gap: 0.55rem; color: var(--fg); font-weight: 600; text-decoration: none; letter-spacing: -0.01em; }
+  .brand:hover { color: var(--fg); }
+  .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px rgba(52,224,161,.16); flex: none; }
+  .nav-links { margin-left: auto; display: flex; align-items: center; gap: 1.6rem; }
+  .nav-links a { color: var(--fg-3); text-decoration: none; font-size: 0.9rem; }
+  .nav-links a:hover { color: var(--fg); }
+  @media (max-width: 46rem) { .nav-links a:not(.nav-cta) { display: none; } }
+  .nav-cta {
+    font-size: 0.85rem !important; font-weight: 600; color: var(--mint-ink) !important;
+    background: var(--mint); padding: 0.5rem 1rem; border-radius: 999px;
+  }
+  .nav-cta:hover { background: var(--mint-strong); color: var(--mint-ink) !important; }
+
+  /* ---------- type ---------- */
+  h1, h2, h3 { color: var(--fg); font-weight: 600; letter-spacing: -0.025em; }
+  h1 {
+    font-size: clamp(2.3rem, 5.2vw, 3.4rem); line-height: 1.08;
+    letter-spacing: -0.035em; margin: 0 0 1.15rem;
+  }
+  h2 { font-size: clamp(1.55rem, 3.1vw, 2.15rem); line-height: 1.18; margin: 0 0 0.9rem; max-width: 30ch; }
+  h3 { font-size: 1.125rem; line-height: 1.4; margin: 0 0 0.5rem; font-weight: 600; }
+  p { margin: 0 0 1.1rem; max-width: 62ch; }
+  p:last-child { margin-bottom: 0; }
+  .lede { font-size: 1.1875rem; line-height: 1.62; color: var(--fg-2); max-width: 46ch; }
+  strong { color: var(--fg); font-weight: 600; }
+  em { color: var(--fg-2); font-style: italic; }
+  code {
+    font-family: var(--mono); font-size: 0.85em;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 0.08em 0.4em; border-radius: 5px; color: var(--fg-2);
+  }
+
+  .kicker {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-size: 0.8rem; font-weight: 600; color: var(--mint);
+    background: rgba(52,224,161,.09); border: 1px solid rgba(52,224,161,.24);
+    padding: 0.4rem 0.85rem; border-radius: 999px; margin: 0 0 1.25rem;
+  }
+  .eyebrow {
+    font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--fg-4); margin: 0 0 0.75rem;
+  }
+  .eyebrow a { color: var(--fg-4); text-decoration: underline dotted; text-underline-offset: 3px; }
+  .eyebrow a:hover { color: var(--mint); }
+  .src { font-family: var(--mono); font-size: 0.8125em; color: var(--fg-3); text-decoration: underline dotted; text-underline-offset: 3px; }
+  .src:hover { color: var(--mint); }
+
+  .arch { display: block; width: 100%; height: auto; margin: 0; }
+  .arch-tall { display: none; }
+  @media (max-width: 46rem) { .arch-wide { display: none; } .arch-tall { display: block; max-width: 24rem; margin: 0 auto; } }
+
+  section { padding: 2.5rem 0; border-top: 1px solid var(--border); }
+  section:first-of-type { border-top: 0; }
+  section.tight { padding: 1.5rem 0; }
+  section.alt { background: var(--bg-soft); padding: 1em 1em; }
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 25rem); gap: 3rem; align-items: start; }
+  @media (max-width: 54rem) { .split { grid-template-columns: minmax(0, 1fr); gap: 2rem; } }
+  .split.rev { grid-template-columns: minmax(0, 25rem) minmax(0, 1fr); }
+  @media (max-width: 54rem) { .split.rev { grid-template-columns: minmax(0, 1fr); } .split.rev > *:first-child { order: 2; } }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 4.5rem 0 4rem; }
+  .hero .split { align-items: center; gap: 3.5rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 2rem; }
+  .btn {
+    font-family: var(--sans); font-size: 0.9375rem; font-weight: 600;
+    padding: 0.82rem 1.4rem; border-radius: 999px; text-decoration: none; text-align: center;
+    background: var(--mint); color: var(--mint-ink); border: 1px solid var(--mint);
+    box-shadow: 0 10px 24px -12px rgba(52,224,161,.55);
+  }
+  .btn:hover { background: var(--mint-strong); border-color: var(--mint-strong); color: var(--mint-ink); }
+  .btn.ghost { background: transparent; color: var(--fg-2); border-color: var(--border-strong); box-shadow: none; }
+  .btn.ghost:hover { background: var(--surface); color: var(--fg); border-color: var(--fg-4); }
+  .byline {
+    margin-top: 2.5rem; padding-top: 1.1rem; border-top: 1px solid var(--border);
+    font-size: 0.9375rem; color: var(--fg-4); max-width: 48ch;
+  }
+
+  /* ---------- hero visual: phone-ish report card ---------- */
+  .hero-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .hero-card .ph {
+    display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    padding: 0.95rem 1.1rem; border-bottom: 1px solid var(--border);
+    background: var(--surface-2); font-size: 0.8125rem; color: var(--fg-4);
+  }
+  .hero-card .ph b { color: var(--fg-2); font-weight: 600; }
+  .hero-card .ph .r { margin-left: auto; }
+  .quote { padding: 1.4rem 1.1rem; border-bottom: 1px solid var(--border); }
+  .quote .big { font-size: 1.375rem; line-height: 1.25; color: var(--fg); margin: 0 0 0.4rem; max-width: none; font-weight: 600; }
+  .quote .sub { font-size: 0.8125rem; color: var(--fg-4); margin: 0; max-width: none; }
+  .rows { margin: 0; padding: 0; list-style: none; }
+  .rows li { padding: 0.95rem 1.1rem; border-bottom: 1px solid var(--border); }
+  .rows li:last-child { border-bottom: 0; }
+  .rows .top { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.3rem; }
+  .rows .tk { font-family: var(--mono); font-size: 0.8125rem; color: var(--fg); font-weight: 500; }
+  .rows .px { font-family: var(--mono); font-size: 0.8125rem; }
+  .rows .why { margin: 0; font-size: 0.875rem; line-height: 1.55; color: var(--fg-3); max-width: none; }
+  .pill {
+    margin-left: auto; font-size: 0.6875rem; font-weight: 700;
+    padding: 0.2rem 0.55rem; border-radius: 999px; letter-spacing: 0.02em; flex: none;
+    text-transform: uppercase;
+  }
+  .pill.veto { background: rgba(255,107,112,.14); color: var(--red); border: 1px solid rgba(255,107,112,.35); }
+  .pill.setup { background: var(--surface-2); color: var(--fg-2); border: 1px solid var(--border-strong); }
+  .pill.buy { background: rgba(52,224,161,.14); color: var(--mint); border: 1px solid rgba(52,224,161,.35); }
+  .dn { color: var(--red); }
+  .up { color: var(--mint); }
+  .hero-card .pf {
+    padding: 0.9rem 1.1rem; border-top: 1px solid var(--border); background: var(--surface-2);
+    font-size: 0.75rem; color: var(--fg-4); line-height: 1.6;
+  }
+
+  /* ---------- stat rail ---------- */
+  .stats-band { padding: 2.75rem 0; }
+  .stats {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+    background: var(--surface);
+  }
+  .stats div { padding: 1.35rem 1.4rem; border-right: 1px solid var(--border); }
+  .stats div:last-child { border-right: 0; }
+  .stats .n { font-family: var(--sans); font-weight: 700; font-size: 1.7rem; color: var(--fg); display: block; line-height: 1.2; letter-spacing: -0.02em; }
+  .stats .l { font-size: 0.8125rem; color: var(--fg-4); display: block; margin-top: 0.3rem; line-height: 1.45; }
+  @media (max-width: 46rem) {
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stats div:nth-child(2) { border-right: 0; }
+    .stats div:nth-child(1), .stats div:nth-child(2) { border-bottom: 1px solid var(--border); }
+  }
+  .record-note { text-align: center; font-size: 0.8125rem; color: var(--fg-4); margin: 0 auto 1.1rem; max-width: none; }
+  .record-note a { color: var(--fg-4); }
+  .record-note a:hover { color: var(--mint); }
+
+  /* ---------- ladder ---------- */
+  .ladder {
+    display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 4px; margin: 0 0 1.5rem;
+  }
+  .ladder span {
+    flex: 1; text-align: center; font-size: 0.8125rem; font-weight: 600;
+    padding: 0.6rem 0.2rem; border-radius: 7px; color: var(--fg-4);
+  }
+  .ladder span.on { background: var(--mint); color: var(--mint-ink); }
+  .ladder span.near { color: var(--fg-2); }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
+  th, td { text-align: left; padding: 0.85rem 0.9rem 0.85rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  thead th { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-4); }
+  tbody td { color: var(--fg-2); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { font-family: var(--mono); font-size: 0.9375rem; font-weight: 500; text-align: right; white-space: nowrap; padding-right: 0; }
+  td.tier { font-weight: 600; color: var(--fg); white-space: nowrap; }
+  .table-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.4rem 1.35rem; }
+
+  /* ---------- blocked callout ---------- */
+  .flag {
+    background: linear-gradient(180deg, rgba(255,107,112,.08), transparent 60%), var(--surface);
+    border: 1px solid rgba(255,107,112,.28);
+    border-radius: var(--radius); padding: 1.25rem 1.4rem; margin-top: 1.75rem;
+  }
+  .flag .t { font-size: 0.8125rem; font-weight: 700; color: var(--red); margin: 0 0 0.5rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .flag p { font-size: 0.9375rem; margin: 0; color: var(--fg-2); }
+
+  /* ---------- pull quote / testimonial-style callout ---------- */
+  .testimonial {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 2rem 2.1rem; position: relative;
+  }
+  .testimonial .mark { font-family: var(--sans); font-size: 3.5rem; line-height: 1; color: var(--mint); opacity: .5; margin: 0 0 0.25rem; }
+  .testimonial p.big {
+    font-size: clamp(1.15rem, 2.4vw, 1.4rem); line-height: 1.42; color: var(--fg); max-width: none;
+    font-weight: 500; margin: 0 0 1rem;
+  }
+  .testimonial .who { font-size: 0.8125rem; color: var(--fg-4); }
+
+  /* ---------- steps ---------- */
+  ol.steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+  ol.steps li {
+    counter-increment: s; position: relative;
+    padding: 0 0 1.5rem 3.1rem; margin-left: 0.6rem; border-left: 1px solid var(--border);
+  }
+  ol.steps li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  ol.steps li::before {
+    content: counter(s); position: absolute; left: -0.65rem; top: 0.1rem;
+    width: 1.3rem; height: 1.3rem; border-radius: 50%;
+    background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--fg-2);
+    font-size: 0.7rem; font-weight: 700; line-height: 1.28rem; text-align: center;
+  }
+  ol.steps h3 { font-size: 1rem; margin: 0 0 0.3rem; }
+  ol.steps p { margin: 0; font-size: 0.9375rem; }
+
+  .code-window {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    overflow: hidden; margin: 0 0 1.5rem;
+  }
+  .code-window .bar { display: flex; gap: 0.4rem; padding: 0.8rem 1rem; border-bottom: 1px solid var(--border); }
+  .code-window .bar span { width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); }
+  pre {
+    margin: 0; padding: 1.2rem 1.35rem; overflow-x: auto; font-family: var(--mono);
+    font-size: 0.8125rem; line-height: 1.8; color: var(--fg-2);
+  }
+  pre .c { color: var(--fg-4); }
+
+  ul.plain { margin: 0 0 1.25rem; padding-left: 1.15rem; }
+  ul.plain li { margin-bottom: 0.55rem; }
+  ul.plain li::marker { color: var(--mint); }
+
+  ul.checks { list-style: none; margin: 1.5rem 0 0; padding: 0; display: grid; gap: 0.6rem; }
+  ul.checks li {
+    display: flex; align-items: flex-start; gap: 0.75rem;
+    font-size: 0.9375rem; color: var(--fg-2); background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.85rem 1rem;
+  }
+  ul.checks li::before {
+    content: "×"; flex: none; width: 1.35rem; height: 1.35rem; border-radius: 50%;
+    background: rgba(255,107,112,.16); color: var(--red); font-weight: 700;
+    display: flex; align-items: center; justify-content: center; font-size: 0.8125rem; margin-top: 0.05rem;
+  }
+  ul.checks li .dim { color: var(--fg-4); }
+
+  .fit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; margin-top: 0.5rem; }
+  @media (max-width: 42rem) { .fit { grid-template-columns: minmax(0, 1fr); } }
+  .fit .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem 1.6rem; }
+  .fit .card.yes { border-color: rgba(52,224,161,.35); box-shadow: 0 0 0 1px rgba(52,224,161,.08) inset; }
+  .fit h3 { margin: 0 0 0.9rem; font-size: 1.0625rem; display: flex; align-items: center; gap: 0.55rem; }
+  .fit h3::before { content: ""; width: 0.6rem; height: 0.6rem; border-radius: 50%; flex: none; }
+  .fit .card.yes h3::before { background: var(--mint); }
+  .fit .card.no h3::before { background: var(--fg-4); }
+  .fit ul { margin: 0; padding-left: 1.1rem; font-size: 0.9375rem; }
+  .fit li { margin-bottom: 0.55rem; color: var(--fg-3); }
+  .fit li::marker { color: var(--fg-4); }
+
+  .feature-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; margin-top: 1.75rem; }
+  @media (max-width: 42rem) { .feature-grid { grid-template-columns: minmax(0, 1fr); } }
+  .feature-grid .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem 1.6rem; }
+  .feature-grid .card:hover { border-color: var(--border-strong); }
+
+  .kit { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.1rem; margin-top: 1.75rem; }
+  @media (max-width: 54rem) { .kit { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 34rem) { .kit { grid-template-columns: minmax(0, 1fr); } }
+  .kit .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.35rem; height: 100%; }
+  .kit .k { font-size: 0.8125rem; font-weight: 700; color: var(--mint); display: block; margin-bottom: 0.5rem; }
+  .kit .k a { color: inherit; text-decoration: none; }
+  .kit .k a:hover { text-decoration: underline; }
+  .kit p { font-size: 0.9375rem; margin: 0; }
+
+  .disclaim { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.4rem; }
+  .disclaim p { font-size: 0.875rem; color: var(--fg-4); max-width: 64ch; }
+
+  /* ---------- FAQ accordion ---------- */
+  .faq-list { max-width: 44rem; margin: 0 auto; display: grid; gap: 0.75rem; }
+  details.faq-item {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 1.1rem 1.3rem;
+  }
+  details.faq-item[open] { border-color: var(--border-strong); }
+  details.faq-item summary {
+    cursor: pointer; list-style: none; color: var(--fg); font-weight: 600; font-size: 1rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  }
+  details.faq-item summary::-webkit-details-marker { display: none; }
+  details.faq-item summary::after {
+    content: "+"; color: var(--fg-4); font-size: 1.25rem; font-weight: 400; flex: none;
+    transition: transform .15s ease;
+  }
+  details.faq-item[open] summary::after { content: "–"; }
+  details.faq-item p { margin: 0.85rem 0 0; font-size: 0.9375rem; }
+
+  /* ---------- final CTA band ---------- */
+  .cta-band {
+    background: linear-gradient(135deg, rgba(52,224,161,.10), rgba(139,123,255,.08));
+    border: 1px solid var(--border); border-radius: 20px;
+    padding: 3rem 2.5rem; text-align: center;
+  }
+  .cta-band h2 { max-width: none; }
+  .cta-band p { margin: 0 auto 0; max-width: 46ch; }
+  .cta-band .actions { justify-content: center; }
+
+  footer.end { border-top: 1px solid var(--border); padding: 3rem 0 4rem; }
+  footer.end p { font-size: 0.9375rem; color: var(--fg-4); }
+  footer.end .lic { font-family: var(--mono); font-size: 0.75rem; margin-top: 1.5rem; }
+
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="glow" aria-hidden="true"></div>
+
+<div class="nav">
+  <div class="inner">
+    <a class="brand" href="#top"><span class="dot" aria-hidden="true"></span>Biotech desk</a>
+    <div class="nav-links">
+      <a href="#veto">Veto layer</a>
+      <a href="#measured">Proof</a>
+      <a href="#fit">Who it's for</a>
+      <a href="#faq">FAQ</a>
+      <a class="nav-cta" href="https://github.com/svedbg/pharma">GitHub</a>
+    </div>
+  </div>
+</div>
+
+<main class="wrap" id="top">
+
+  <article itemscope itemtype="https://schema.org/SoftwareSourceCode">
+
+  <header class="hero">
+    <div class="split">
+      <div>
+        <span class="kicker">Open source · $0/mo · Python stdlib</span>
+        <h1>Screeners tell you what's cheap. This one tells you why.</h1>
+        <p class="lede">A nightly desk for small-cap biotech. It reads the filings behind every drawdown on your watchlist, vetoes the offerings, delistings and cash-runway traps, and pings your phone only when a setup survives. Free data, no API keys, runs while you sleep.</p>
+        <div class="actions">
+          <a class="btn" href="https://github.com/svedbg/pharma">Get the desk</a>
+          <a class="btn ghost" href="brief.html">Why a −91% day isn't a dip</a>
+        </div>
+        <p class="byline"><strong>{{author:name}}</strong> — {{author:title}}. {{author:blurb}} <a href="{{author:url}}">{{author:url_label}}</a><!-- linkedin:start --> · <a href="{{author:linkedin}}" rel="me">LinkedIn</a><!-- linkedin:end --> · <a href="https://github.com/svedbg">GitHub</a></p>
+      </div>
+      <div class="hero-card">
+        <div class="ph"><b>Nightly report</b><span>59 names</span><span class="r">0 actionable</span></div>
+        <div class="quote">
+          <p class="big">Nothing to do today.</p>
+          <p class="sub">2 names entered setup · 1 signal blocked before it reached you</p>
+        </div>
+        <ul class="rows">
+          <li>
+            <div class="top"><span class="tk">SION</span><span class="px dn">−91.0%</span><span class="pill veto">Vetoed</span></div>
+            <p class="why">8-K filed the same session ties the fall to a trial failure. Signal suppressed.</p>
+          </li>
+          <li>
+            <div class="top"><span class="tk">OTLK</span><span class="px dn">−19.2%</span><span class="pill veto">Vetoed</span></div>
+            <p class="why">Two share sales in 48 hours, roughly seven weeks of cash. Dilution incoming, not a dip.</p>
+          </li>
+          <li>
+            <div class="top"><span class="tk">CAPR</span><span class="px">rsi 31</span><span class="pill setup">Setup</span></div>
+            <p class="why">Oversold, no hard veto, above entry zone. Research it — don't chase it.</p>
+          </li>
+          <li>
+            <div class="top"><span class="tk">SMMT</span><span class="px up">+6.4%</span><span class="pill buy">Insider</span></div>
+            <p class="why">Both CEOs bought $103.6M on the open market. Real money, not options.</p>
+          </li>
+        </ul>
+        <div class="pf">Illustrative night assembled from real first-week catches. <a href="sample-report.html">See a real one, redacted →</a></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Terminal demo. Record it with tools/record-demo.sh, which writes www/demo.svg,
+       then remove this comment wrapper. Left out of the live page until the recording
+       is real: a fabricated run would contradict everything the page says. -->
+  <!--
+  <section>
+    <p class="eyebrow">./run_daily.sh --no-llm — a real sweep, unedited</p>
+    <img src="demo.svg" alt="Terminal recording of the nightly run: fetching filings and prices for the watchlist, computing signals, and printing the tier table." style="width:100%;border:1px solid var(--border);border-radius:var(--radius);display:block">
+  </section>
+  -->
+
+  <section class="stats-band tight">
+    <div class="stats">
+      <div><span class="n">59</span><span class="l">watchlist names, read nightly</span></div>
+      <div><span class="n">$0</span><span class="l">paid data feeds</span></div>
+      <div><span class="n">3m51s</span><span class="l">per full sweep</span></div>
+      <div><span class="n">{{tests}}</span><span class="l">tests, counted at build time</span></div>
+    </div>
+  </section>
+
+  <!-- stats:start -->
+  <section class="stats-band tight">
+    <p class="record-note">Operating record — computed by <a href="https://github.com/svedbg/pharma/blob/main/tools/site_stats.py">tools/site_stats.py</a> from reports/, not typed</p>
+    <div class="stats">
+      <div><span class="n">{{stat:since}}</span><span class="l">running unattended since</span></div>
+      <div><span class="n">{{stat:nights}}</span><span class="l">nightly reports written</span></div>
+      <div><span class="n">{{stat:missed}}</span><span class="l">weeknights without a report, incl. US market holidays</span></div>
+      <div><span class="n">{{stat:latest}}</span><span class="l">latest report</span></div>
+    </div>
+  </section>
+  <!-- stats:end -->
+
+  <section id="veto">
+    <p class="eyebrow">The veto layer — <a href="https://github.com/svedbg/pharma/blob/main/scripts/signals.py">financial_vetoes() and exit_signals() in signals.py</a></p>
+    <h2>Five reasons a biotech is cheap, checked before you ever see a signal</h2>
+    <p>In this sector most large drawdowns are the market being right. The drug failed, the FDA said no, or the company is about to print discounted shares to survive. Every indicator in your broker app lights up green on exactly those names, because RSI measures how far a price moved — never why.</p>
+    <p>So the desk reads the filings first. Any of these blocks a buy signal outright until it's refuted with evidence from the source document:</p>
+    <div class="split">
+      <ul class="checks">
+        <li><span>A priced or announced offering <span class="dim">— the dilution is already on its way</span></span></li>
+        <li><span>A delisting or deficiency notice <span class="dim">— exchange risk before thesis risk</span></span></li>
+        <li><span>An auditor change <span class="dim">— rarely good news, never a coincidence</span></span></li>
+        <li><span>A recent collapse <span class="dim">— a −91% day is a verdict, not an entry</span></span></li>
+        <li><span>Under 1.5 quarters of cash <span class="dim">— they will raise, and it will be below you</span></span></li>
+      </ul>
+      <div class="flag">
+        <p class="t">SION — first week live</p>
+        <p>Fell 91% in one session. Textbook oversold on every indicator. The desk found the 8-K published that same day, tied it to the collapse, and produced no signal. A screener would have handed you the knife.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt">
+    <p class="eyebrow">Form 4, read properly — <a href="https://github.com/svedbg/pharma/blob/main/scripts/signals.py">insider_signal() in signals.py</a> · <a href="https://github.com/svedbg/pharma/blob/main/tests/fixtures">real filings as test fixtures</a></p>
+    <div class="split">
+      <div>
+        <h2>Insider buying that means something — and the kind that doesn't</h2>
+        <p>Most "insider buying" alerts are noise, because a Form 4 shows several kinds of acquisition and only one carries signal: an open-market purchase with the executive's own money. Grants and option exercises both show as "acquired" and both are worthless as a tell.</p>
+        <p>One real filing showed an executive exercising at $0.99 and selling at $5.06 minutes later. Counted carelessly, that reads as insider buying. It is precisely the opposite. The desk parses the transaction codes so it never makes that mistake for you.</p>
+        <p>Selling gets weighted down hard. When measured, it flagged more than half the watchlist, which makes it useless as a signal — people sell for a dozen innocent reasons and buy for one.</p>
+      </div>
+      <div class="hero-card">
+        <div class="ph"><b>Two filings, six weeks apart</b></div>
+        <ul class="rows">
+          <li>
+            <div class="top"><span class="tk">CAPR</span><span class="px dn">$30.38 → $4.21</span></div>
+            <p class="why">Executives sold $3.1M in late June. Six weeks later the shares traded at $4.21. It was in the filing the whole time.</p>
+          </li>
+          <li>
+            <div class="top"><span class="tk">SMMT</span><span class="px up">$103.6M bought</span><span class="pill buy">Open market</span></div>
+            <p class="why">Both chief executives buying their own stock with their own cash. The only Form 4 line that ever matters.</p>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Tier ladder — thresholds in <a href="https://github.com/svedbg/pharma/blob/main/watchlist.example.toml">watchlist.toml [settings]</a>, applied in <a href="https://github.com/svedbg/pharma/blob/main/scripts/signals.py">signals.py</a></p>
+    <h2>Four tiers. One of them is a trade.</h2>
+    <p>The gap between setup and act is where most oversold systems bleed. Oversold without volume confirmation underperformed XBI by 2.7 percentage points median over 60 sessions — you'd have done better buying the ETF and going to bed. So act requires capitulation volume, a price inside your entry zone, and a clean financing and catalyst backdrop. Setup means the filter passed. It does not mean buy.</p>
+    <div class="ladder" aria-hidden="true">
+      <span>none</span><span>watch</span><span class="near">setup</span><span class="on">act</span>
+    </div>
+    <div class="table-card">
+      <table>
+        <caption class="sr">Signal tiers and what each one means</caption>
+        <thead><tr><th scope="col">Tier</th><th scope="col">What it means for you</th></tr></thead>
+        <tbody>
+          <tr><td class="tier">None</td><td>Nothing. Most names, most nights.</td></tr>
+          <tr><td class="tier">Watch</td><td>Approaching oversold (RSI under 40, %B under 0.25). No alert.</td></tr>
+          <tr><td class="tier">Setup</td><td>Oversold (RSI under 35, %B under 0.15) and no hard veto. Open the filings, not the order ticket.</td></tr>
+          <tr><td class="tier">Act</td><td>Setup, at or below your entry zone, confirmed by capitulation volume, financing and catalyst backdrop acceptable. Now it's your call.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="alt">
+    <p class="eyebrow">Built around how you actually trade — <a href="https://github.com/svedbg/pharma/blob/main/STRATEGY.example.md">STRATEGY.local.md</a> is read before any sizing or routing suggestion</p>
+    <h2>Your plan is the config. The desk enforces it.</h2>
+    <p>Your watchlist, strategy and catalyst calendar live outside the repository, gitignored. They are your trading plan, not shared code — and the desk reads them before it sizes or routes anything.</p>
+    <div class="kit">
+      <div class="card"><span class="k"><a href="https://github.com/svedbg/pharma/blob/main/watchlist.example.toml">watchlist.toml</a></span><p>Tier each name A, B or lottery. Tiers set the position-size ceiling, so a lottery ticket can never be sized like a conviction position.</p></div>
+      <div class="card"><span class="k"><a href="https://github.com/svedbg/pharma/blob/main/scripts/propose_zones.py">Entry zones</a></span><p>Proposed from each name's own trading range, not a round number you liked. Review the dry run, then apply.</p></div>
+      <div class="card"><span class="k"><a href="https://github.com/svedbg/pharma/blob/main/scripts/signals.py">Invalidation</a></span><p>Every name carries a price and a sentence: what would prove this wrong. Exit signals fire when it happens.</p></div>
+      <div class="card"><span class="k"><a href="https://github.com/svedbg/pharma/blob/main/catalysts.example.toml">Catalyst clock</a></span><p>PDUFA dates, AdComs and readouts with sources. Binary events are the sector; the desk keeps the calendar so you don't.</p></div>
+      <div class="card"><span class="k"><a href="https://github.com/svedbg/pharma/blob/main/scripts/paper.py">paper.py</a></span><p>Log the intended trade, and it grades you live against XBI — and tells you plainly when the sample is too small to mean anything.</p></div>
+      <div class="card"><span class="k"><a href="https://github.com/svedbg/pharma/blob/main/scripts/screen.py">Monthly screen</a></span><p>Widen the aperture once a month: ~500 biotech registrants outside your list, ranked by the same rules. A research list, not a buy list.</p></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <p class="eyebrow"><a href="https://github.com/svedbg/pharma/blob/main/scripts/fetch.py">fetch.py</a> and <a href="https://github.com/svedbg/pharma/blob/main/scripts/signals.py">signals.py</a> are deterministic — <a href="https://github.com/svedbg/pharma/blob/main/prompts/daily.md">prompts/daily.md</a> holds the judgement pass and never supplies a number</p>
+    <h2>Your night, automated</h2>
+    <div class="split">
+      <div>
+        <ol class="steps">
+          <li><h3>Read</h3><p>Prices, filings, 8-K item codes, Form 4 insider trades, XBRL financials, short volume and trial records — from SEC EDGAR, FINRA, Nasdaq and ClinicalTrials.gov.</p></li>
+          <li><h3>Check</h3><p>Fixed arithmetic, no guesswork, then the veto layer runs over every name that moved.</p></li>
+          <li><h3>Investigate</h3><p>A reasoning pass researches what was flagged, confirms or refutes each veto against the source filing, and writes the analysis.</p></li>
+          <li><h3>Report</h3><p>A readable briefing in your inbox and a phone alert — only when something actually changed.</p></li>
+        </ol>
+      </div>
+      <div class="testimonial">
+        <p class="mark" aria-hidden="true">&ldquo;</p>
+        <p class="big">A language model is excellent at reading a legal document. It is unreliable at remembering a number. So it is never allowed to be the source of one.</p>
+        <p class="who">Every figure in your report traces back to a filing, or the report says the figure is unknown — the one rule the analysis pass can't break.</p>
+      </div>
+    </div>
+    <div style="margin-top:2.5rem">
+      <svg class="arch arch-wide" viewBox="0 0 880 236" role="img" aria-labelledby="arch-w-t arch-w-d">
+        <title id="arch-w-t">Architecture of the nightly run</title>
+        <desc id="arch-w-d">Public sources feed fetch.py, then signals.py with the veto layer, then a Claude Code analysis pass, then the report and phone alert. A separate heartbeat process watches the reports directory and alarms after three silent weeknights.</desc>
+        <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#7d7e87"/></marker></defs>
+        <g font-family="Inter, ui-sans-serif, sans-serif" font-size="13">
+          <rect x="8" y="40" width="152" height="64" rx="10" fill="#2b2e35" stroke="#454851"/>
+          <text x="84" y="66" text-anchor="middle" fill="#f5f6f7">public sources</text>
+          <text x="84" y="86" text-anchor="middle" fill="#7d7e87" font-size="11">EDGAR, FINRA, Nasdaq</text>
+          <line x1="160" y1="72" x2="188" y2="72" stroke="#7d7e87" marker-end="url(#ah)"/>
+          <rect x="190" y="40" width="152" height="64" rx="10" fill="#2b2e35" stroke="#454851"/>
+          <text x="266" y="66" text-anchor="middle" fill="#f5f6f7">fetch.py</text>
+          <text x="266" y="86" text-anchor="middle" fill="#7d7e87" font-size="11">no silent defaults</text>
+          <line x1="342" y1="72" x2="370" y2="72" stroke="#7d7e87" marker-end="url(#ah)"/>
+          <rect x="372" y="40" width="152" height="64" rx="10" fill="#2b2e35" stroke="#34e0a1"/>
+          <text x="448" y="66" text-anchor="middle" fill="#f5f6f7">signals.py</text>
+          <text x="448" y="86" text-anchor="middle" fill="#34e0a1" font-size="11">arithmetic + vetoes</text>
+          <line x1="524" y1="72" x2="552" y2="72" stroke="#7d7e87" marker-end="url(#ah)"/>
+          <rect x="554" y="40" width="152" height="64" rx="10" fill="#2b2e35" stroke="#454851"/>
+          <text x="630" y="66" text-anchor="middle" fill="#f5f6f7">analysis pass</text>
+          <text x="630" y="86" text-anchor="middle" fill="#7d7e87" font-size="11">claude -p, judgement</text>
+          <line x1="706" y1="72" x2="734" y2="72" stroke="#7d7e87" marker-end="url(#ah)"/>
+          <rect x="736" y="40" width="136" height="64" rx="10" fill="#2b2e35" stroke="#454851"/>
+          <text x="804" y="66" text-anchor="middle" fill="#f5f6f7">report + ntfy</text>
+          <text x="804" y="86" text-anchor="middle" fill="#7d7e87" font-size="11">only on tier change</text>
+          <text x="266" y="130" text-anchor="middle" fill="#a8a9b0" font-size="12">deterministic — the only place a number is born</text>
+          <line x1="190" y1="118" x2="524" y2="118" stroke="#454851"/>
+          <text x="630" y="130" text-anchor="middle" fill="#a8a9b0" font-size="12">judgement — argues with the numbers, never invents one</text>
+          <line x1="554" y1="118" x2="706" y2="118" stroke="#454851"/>
+          <rect x="736" y="164" width="136" height="56" rx="10" fill="#1a1c20" stroke="#454851" stroke-dasharray="4 3"/>
+          <text x="804" y="187" text-anchor="middle" fill="#d2d3d8">heartbeat.py</text>
+          <text x="804" y="206" text-anchor="middle" fill="#7d7e87" font-size="11">3 quiet weekdays</text>
+          <line x1="804" y1="164" x2="804" y2="110" stroke="#7d7e87" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+        </g>
+      </svg>
+      <svg class="arch arch-tall" viewBox="0 0 380 596" role="img" aria-labelledby="arch-t-t arch-t-d">
+        <title id="arch-t-t">Architecture of the nightly run</title>
+        <desc id="arch-t-d">Public sources feed fetch.py, then signals.py with the veto layer, then a Claude Code analysis pass, then the report and phone alert. A heartbeat process watches for silence.</desc>
+        <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#7d7e87"/></marker></defs>
+        <g font-family="Inter, ui-sans-serif, sans-serif" font-size="15">
+          <rect x="30" y="6" width="320" height="70" rx="10" fill="#2b2e35" stroke="#454851"/>
+          <text x="190" y="36" text-anchor="middle" fill="#f5f6f7">public sources</text>
+          <text x="190" y="58" text-anchor="middle" fill="#7d7e87" font-size="13">EDGAR · FINRA · Nasdaq · CT.gov</text>
+          <line x1="190" y1="76" x2="190" y2="104" stroke="#7d7e87" marker-end="url(#ah2)"/>
+          <rect x="30" y="106" width="320" height="70" rx="10" fill="#2b2e35" stroke="#454851"/>
+          <text x="190" y="136" text-anchor="middle" fill="#f5f6f7">fetch.py</text>
+          <text x="190" y="158" text-anchor="middle" fill="#7d7e87" font-size="13">records failures, never defaults</text>
+          <line x1="190" y1="176" x2="190" y2="204" stroke="#7d7e87" marker-end="url(#ah2)"/>
+          <rect x="30" y="206" width="320" height="70" rx="10" fill="#2b2e35" stroke="#34e0a1"/>
+          <text x="190" y="236" text-anchor="middle" fill="#f5f6f7">signals.py</text>
+          <text x="190" y="258" text-anchor="middle" fill="#34e0a1" font-size="13">arithmetic + veto layer</text>
+          <line x1="190" y1="276" x2="190" y2="304" stroke="#7d7e87" marker-end="url(#ah2)"/>
+          <rect x="30" y="306" width="320" height="70" rx="10" fill="#2b2e35" stroke="#454851"/>
+          <text x="190" y="336" text-anchor="middle" fill="#f5f6f7">analysis pass</text>
+          <text x="190" y="358" text-anchor="middle" fill="#7d7e87" font-size="13">claude -p · reads filings</text>
+          <line x1="190" y1="376" x2="190" y2="404" stroke="#7d7e87" marker-end="url(#ah2)"/>
+          <rect x="30" y="406" width="320" height="70" rx="10" fill="#2b2e35" stroke="#454851"/>
+          <text x="190" y="436" text-anchor="middle" fill="#f5f6f7">report + ntfy</text>
+          <text x="190" y="458" text-anchor="middle" fill="#7d7e87" font-size="13">only on tier change</text>
+          <line x1="190" y1="520" x2="190" y2="482" stroke="#7d7e87" stroke-dasharray="4 3" marker-end="url(#ah2)"/>
+          <rect x="30" y="522" width="320" height="66" rx="10" fill="#1a1c20" stroke="#454851" stroke-dasharray="4 3"/>
+          <text x="190" y="550" text-anchor="middle" fill="#d2d3d8">heartbeat.py</text>
+          <text x="190" y="572" text-anchor="middle" fill="#7d7e87" font-size="13">alarms after 3 silent weeknights</text>
+        </g>
+      </svg>
+    </div>
+  </section>
+
+  <section id="measured" class="alt">
+    <p class="eyebrow"><a href="https://github.com/svedbg/pharma/blob/main/scripts/score_alerts.py">score_alerts.py</a> grades live alerts, <a href="https://github.com/svedbg/pharma/blob/main/scripts/backtest.py">backtest.py</a> replays history — both against the ETF you could just buy</p>
+    <h2>We publish the rules that lost</h2>
+    <p>Every alert is scored against XBI, not against zero. Measuring against zero flatters every strategy ever devised; measuring against the fund you could hold instead is the only honest benchmark. Two of the three rules this started with failed it.</p>
+    <div class="table-card">
+      <table>
+        <caption class="sr">Common rules and their measured performance against the sector fund after three months</caption>
+        <thead><tr><th scope="col">Common rule</th><th scope="col" style="text-align:right">vs XBI, 3mo</th></tr></thead>
+        <tbody>
+          <tr><td>Buy stocks near their yearly low</td><td class="num dn">−2.68%</td></tr>
+          <tr><td>The more oversold, the better</td><td class="num dn">−9.59%</td></tr>
+          <tr><td>Oversold, confirmed by heavy selling volume</td><td class="num up">+1.72%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:1.75rem">Only the confirmed version survived, so the act tier demands it. The backtests carry survivorship bias, cover a bullish sample and model no spread — a smoke test of the thresholds, not proof of edge. The real answer arrives as live alerts age, which is exactly what the scoring script exists to measure.</p>
+  </section>
+
+  <section id="fit">
+    <p class="eyebrow">Who it's for</p>
+    <h2>Built for one kind of trader</h2>
+    <div class="fit">
+      <div class="card yes">
+        <h3>You'll get the most from it if</h3>
+        <ul>
+          <li>You swing or position trade small-cap biotech and hold through catalysts</li>
+          <li>You want a filter that keeps you out of bad names, not a service that hands you good ones</li>
+          <li>You'll open the filing before you open the ticket</li>
+          <li>You can run one shell script on a Linux box or a Mac that stays on</li>
+        </ul>
+      </div>
+      <div class="card no">
+        <h3>Look elsewhere if</h3>
+        <ul>
+          <li>You day trade — this runs once, after the close</li>
+          <li>You want buy signals without the "why"</li>
+          <li>You want it to place orders — it never will</li>
+          <li>You need proof of edge before you'll paper trade it</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt">
+    <p class="eyebrow">Why you can trust it at 3am — architecture, veto rules and the XBRL trap catalogue in <a href="https://github.com/svedbg/pharma/blob/main/CLAUDE.md">CLAUDE.md</a></p>
+    <h2>Engineered for the nights nobody is watching</h2>
+    <div class="feature-grid">
+      <div class="card">
+        <h3>Zero dependencies, zero rot</h3>
+        <p>The runtime uses only what ships with Python 3.11. Nothing to install, nothing that breaks because an unrelated package updated six months from now. <a class="src" href="https://github.com/svedbg/pharma/blob/main/tests/test_config_and_email.py">test_runtime_has_no_third_party_imports</a> fails the build if anything under <code>scripts/</code> grows an import.</p>
+      </div>
+      <div class="card">
+        <h3>Silence is checked, not assumed</h3>
+        <p>Since "nothing to report" is the normal output, a broken run and a quiet market look identical. A separate process, <a class="src" href="https://github.com/svedbg/pharma/blob/main/scripts/heartbeat.py">heartbeat.py</a>, raises an alarm if no report appears for three weekdays.</p>
+      </div>
+      <div class="card">
+        <h3>Every data trap gave a wrong answer once</h3>
+        <p>Cash counted without investments understated one balance sheet six-fold. A retired XBRL field returned a six-year-old $24.9M for a firm holding $816M. A company's own filing produced a float ratio of 15,401%. Each is now guarded, and each guard has a test — the catalogue is in <a class="src" href="https://github.com/svedbg/pharma/blob/main/CLAUDE.md">CLAUDE.md</a>.</p>
+      </div>
+      <div class="card">
+        <h3>Changes verified byte-for-byte</h3>
+        <p>Rewriting the signal engine meant capturing the exact output for all 59 names, making the change, and confirming the new output was identical. Not "looks fine". Identical.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="run">
+    <p class="eyebrow">Python 3.11+ · <a href="https://github.com/svedbg/pharma/blob/main/systemd">systemd</a> or <a href="https://github.com/svedbg/pharma/blob/main/launchd">launchd</a> units included · one contact email for SEC fair access · <a href="https://github.com/svedbg/pharma/blob/main/.github/workflows/ci.yml">CI on 3.11 and 3.12</a></p>
+    <div class="split">
+      <div>
+        <h2>From clone to first report</h2>
+        <p>If you already have Python 3.11, this is one sitting: clone, point it at your watchlist, run the free pass. The first sweep prints the signal table in a few minutes. Then let it propose entry zones from each name's own range and schedule the timers.</p>
+        <div class="code-window">
+          <div class="bar" aria-hidden="true"><span></span><span></span><span></span></div>
+          <pre><span class="c"># clone and configure</span>
+git clone https://github.com/svedbg/pharma.git ~/projects/pharma
+cd ~/projects/pharma
+cp pharma.env.example ~/.config/pharma/pharma.env
+
+<span class="c"># data and signals only: fast, free, no model calls</span>
+./run_daily.sh --no-llm
+
+<span class="c"># entry zones from each name's own trading range</span>
+python3 scripts/propose_zones.py --apply
+
+<span class="c"># schedule it — weekday timers ship for Linux and macOS</span>
+systemctl --user enable --now pharma-desk.timer pharma-heartbeat.timer</pre>
+        </div>
+        <div class="actions">
+          <a class="btn" href="https://github.com/svedbg/pharma#setup">Full setup guide</a>
+          <a class="btn ghost" href="https://github.com/svedbg/pharma#paper-trading">Paper trade it first</a>
+        </div>
+      </div>
+      <div>
+        <h3>What it will never do</h3>
+        <ul class="plain">
+          <li>Recommend a name carrying an unrefuted hard veto</li>
+          <li>Manufacture a trade to justify the run — "nothing to do today" is a valid and frequent output</li>
+          <li>Size a lottery-bucket name like a conviction position</li>
+          <li>Report a number it did not read from a primary source</li>
+          <li>Touch your broker. It places no orders, ever.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq" class="alt">
+    <p class="eyebrow">Questions traders ask</p>
+    <h2 style="text-align:center;max-width:none;margin-left:auto;margin-right:auto">Straight answers</h2>
+    <div class="faq-list">
+      <details class="faq-item" open>
+        <summary>What is Biotech desk?</summary>
+        <p>An open-source, unattended research system for small-cap biotech stocks. Every weeknight it reads SEC filings, prices, insider trades and short interest for your watchlist, computes signals, writes a report, and alerts only when a name changes tier. Python, no third-party dependencies, MIT licence.</p>
+      </details>
+      <details class="faq-item">
+        <summary>How is it different from a stock screener?</summary>
+        <p>A screener reports what's cheap. This also checks why. Its veto layer reads the filings and blocks any buy signal sitting on a priced offering, a delisting notice, an auditor change, a recent collapse, or under 1.5 quarters of cash — until that veto is refuted with evidence.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Does it beat the market?</summary>
+        <p>Measured against XBI, the plain oversold signal did not. Only oversold confirmed by capitulation volume did, at +1.72% over three months, so the act tier requires it. The backtests carry survivorship bias and model no transaction costs. Paper trade it before you fund it.</p>
+      </details>
+      <details class="faq-item">
+        <summary>What does it cost to run?</summary>
+        <p>Nothing. SEC EDGAR, FINRA Reg SHO, Nasdaq and ClinicalTrials.gov are all free and keyless, and the runtime is stdlib-only. A full sweep of about 60 names takes two to four minutes.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Which data does it read?</summary>
+        <p>Daily prices and short interest from Nasdaq with a Yahoo fallback; filings, 8-K item codes, Form 4 insider trades and XBRL financials from SEC EDGAR; daily short volume from FINRA; trial completion dates from ClinicalTrials.gov. News and PDUFA dates come from web search during the analysis pass.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Is it financial advice?</summary>
+        <p>No. It's research support for your own decisions. It places no orders and it isn't a product. Your trades are yours.</p>
+      </details>
+    </div>
+  </section>
+
+  <section>
+    <div class="cta-band">
+      <h2>Stop guessing which dip is real.</h2>
+      <p>Clone it, point it at your own watchlist, and run the free pass tonight — no API keys, no cost, no orders placed on your behalf.</p>
+      <div class="actions">
+        <a class="btn" href="https://github.com/svedbg/pharma">Get the desk on GitHub</a>
+        <a class="btn ghost" href="sample-report.html">Read a real report</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="disclaim">
+      <p>This is research support for your own decisions. It is not financial advice, it places no orders, and it is not a product — it is a tool built for one person and published so the reasoning can be examined. Small-company biotechnology has near-binary outcomes and any individual position can go to zero.</p>
+    </div>
+  </section>
+
+  </article>
+
+  <footer class="end">
+    <p><strong>{{author:name}}</strong> — {{author:title}}. {{author:blurb}} <a href="{{author:url}}">{{author:url_label}}</a><!-- linkedin:start --> · <a href="{{author:linkedin}}" rel="me">LinkedIn</a><!-- linkedin:end --></p>
+    <p>The same approach applies wherever information arrives constantly, most of it is noise, and the expensive mistake is acting confidently on something nobody checked.</p>
+    <p><a href="https://github.com/svedbg/pharma">github.com/svedbg/pharma</a></p>
+    <p class="lic">MIT. No warranty; you are responsible for your own trades. Updated <time datetime="2026-09-09">9 September 2026</time>.</p>
+  </footer>
+
+</main>
+
+</body>
+</html>
