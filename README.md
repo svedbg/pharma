@@ -1,5 +1,12 @@
 # Biotech desk
 
+[![ci](https://github.com/svedbg/pharma/actions/workflows/ci.yml/badge.svg)](https://github.com/svedbg/pharma/actions/workflows/ci.yml)
+[![codeql](https://github.com/svedbg/pharma/actions/workflows/codeql.yml/badge.svg)](https://github.com/svedbg/pharma/actions/workflows/codeql.yml)
+[![python 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-3776ab)](pyproject.toml)
+[![runtime dependencies: none](https://img.shields.io/badge/runtime%20dependencies-none-2bd98c)](tests/test_config_and_email.py)
+[![licence: MIT](https://img.shields.io/badge/licence-MIT-lightgrey)](LICENSE)
+[![site](https://img.shields.io/badge/site-svedbg.github.io%2Fpharma-0b0e12)](https://svedbg.github.io/pharma/)
+
 An unattended daily research desk for small-cap pharma. Every weekday evening it
 pulls SEC filings, prices, insider trades and short interest for a watchlist,
 computes signals, writes a report, and pushes a phone notification **only when

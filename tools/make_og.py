@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Render www/og.png — the 1200x630 share card LinkedIn, X and Slack unfurl.
+
+Dev-only. Needs Pillow (pip install pillow) and the two site fonts; pass their
+paths or drop them in tools/fonts/. Not part of the runtime and deliberately
+outside scripts/, which is tested to stay stdlib-only.
+
+    python3 tools/make_og.py --grotesk path/to/SpaceGrotesk[wght].ttf \
+                             --mono path/to/JetBrainsMono-Medium.ttf
+"""
+from __future__ import annotations
+
+import argparse
+import contextlib
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
+
+W, H = 1200, 630
+BG, PANEL, LINE = "#0b0e12", "#141a20", "#1e262e"
+FG, FG2, FG3, FG4 = "#f2f6fa", "#c3cfda", "#94a3b1", "#7a8a99"
+MINT, MINT_INK, RED, RED_INK = "#2bd98c", "#04301f", "#ff5a5f", "#2b0508"
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def font(path: Path, size: int, wght: int | None = None) -> ImageFont.FreeTypeFont:
+    f = ImageFont.truetype(str(path), size)
+    if wght is not None:
+        with contextlib.suppress(OSError):
+            f.set_variation_by_axes([wght])
+    return f
+
+
+def pill(d: ImageDraw.ImageDraw, x: int, y: int, text: str, f, bg: str, fg: str) -> int:
+    tw = d.textlength(text, font=f)
+    d.rounded_rectangle((x, y, x + tw + 22, y + 30), radius=6, fill=bg)
+    d.text((x + 11, y + 6), text, font=f, fill=fg)
+    return int(x + tw + 22)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--grotesk", type=Path, default=ROOT / "tools/fonts/SpaceGrotesk[wght].ttf")
+    ap.add_argument("--mono", type=Path, default=ROOT / "tools/fonts/JetBrainsMono-Medium.ttf")
+    ap.add_argument("--out", type=Path, default=ROOT / "www/og.png")
+    a = ap.parse_args()
+
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+
+    h1 = font(a.grotesk, 64, 500)
+    lede = font(a.grotesk, 27, 400)
+    m13 = font(a.mono, 20)
+    m11 = font(a.mono, 17)
+
+    # top bar
+    d.ellipse((56, 46, 68, 58), fill=MINT)
+    d.text((82, 38), "biotech desk", font=m13, fill=FG)
+    d.text((262, 38), "23:18 weeknights", font=m13, fill=FG4)
+    d.text((W - 56 - d.textlength("svedbg.github.io/pharma", font=m13), 38),
+           "svedbg.github.io/pharma", font=m13, fill=FG4)
+    d.line((0, 88, W, 88), fill=LINE, width=1)
+
+    # tape
+    x = 56
+    for t, c in (("SION", FG4), ("-91.0%", RED), ("   OTLK", FG4), ("-19.2%", RED),
+                 ("   CAPR", FG4), ("rsi 31", FG2), ("   SMMT", FG4), ("+6.4%", MINT),
+                 ("   XBI", FG4), ("+0.4%", MINT), ("   59 scanned", FG2), ("   0 actionable", FG4)):
+        d.text((x, 104), t, font=m11, fill=c)
+        x += int(d.textlength(t + " ", font=m11))
+    d.line((0, 138, W, 138), fill=LINE, width=1)
+
+    # headline
+    d.text((56, 182), "59 names scanned.", font=h1, fill=FG)
+    d.text((56, 254), "Nothing to do tonight.", font=h1, fill=FG)
+    for i, line in enumerate(("A nightly research desk for small-cap",
+                              "biotech that reads the filings before",
+                              "it calls a collapse a bargain.")):
+        d.text((56, 352 + i * 37), line, font=lede, fill=FG3)
+
+    # mini panel, right
+    px, py, pw, ph = 800, 180, 344, 274
+    d.rounded_rectangle((px, py, px + pw, py + ph), radius=10, fill=PANEL, outline=LINE)
+    d.text((px + 20, py + 16), "tonight's tape", font=m11, fill=FG4)
+    d.line((px, py + 48, px + pw, py + 48), fill=LINE, width=1)
+    rows = (("SION", "-91.0%", RED, "vetoed", RED, RED_INK),
+            ("OTLK", "-19.2%", RED, "vetoed", RED, RED_INK),
+            ("CAPR", "rsi 31", FG3, "setup", "#2c3742", FG),
+            ("SMMT", "+6.4%", MINT, "insider", MINT, MINT_INK))
+    ry = py + 66
+    for tk, chg, cc, label, pbg, pfg in rows:
+        d.text((px + 20, ry), tk, font=m13, fill=FG)
+        d.text((px + 108, ry), chg, font=m13, fill=cc)
+        tw = d.textlength(label, font=m11)
+        pill(d, int(px + pw - 20 - tw - 22), ry - 4, label, m11, pbg, pfg)
+        ry += 54
+        if ry < py + ph - 20:
+            d.line((px, ry - 12, px + pw, ry - 12), fill=LINE, width=1)
+
+    # footer
+    d.line((0, 540, W, 540), fill=LINE, width=1)
+    m15 = font(a.mono, 22)
+    d.text((56, 564), "Svetoslav Rankov", font=m15, fill=FG2)
+    d.text((286, 564), "open source · MIT · no API keys", font=m15, fill=FG4)
+    d.text((W - 56 - d.textlength("not financial advice", font=m15), 564),
+           "not financial advice", font=m15, fill=FG4)
+
+    a.out.parent.mkdir(parents=True, exist_ok=True)
+    img.save(a.out, optimize=True)
+    print(f"wrote {a.out.relative_to(ROOT)} ({a.out.stat().st_size // 1024} KB)")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,25 @@
+# Biotech desk
+
+> An open-source, unattended nightly research desk for small-cap biotech stocks, written in Python with no third-party dependencies and released under the MIT licence. Built by Svetoslav Rankov, Senior Director of Software Engineering at EDITED (https://sved.net). Source: https://github.com/svedbg/pharma
+
+Every weeknight it reads SEC EDGAR filings, prices, Form 4 insider trades, FINRA short volume and ClinicalTrials.gov records for a watchlist, computes deterministic signals, and notifies only when a name changes tier. A veto layer blocks any buy signal that sits on a priced share offering, a delisting notice, an auditor change, a recent collapse, or under 1.5 quarters of cash, until that veto is refuted with evidence from the filing.
+
+Key measured facts (against the XBI biotech ETF, three-month horizon):
+- "Buy near the yearly low" underperformed by 2.68%.
+- "More oversold is better" underperformed by 9.59%.
+- Oversold confirmed by heavy selling volume outperformed by 1.72%; this is the only rule that survived and the actionable tier requires it.
+- Oversold without volume confirmation underperformed XBI by 2.7 percentage points median over 60 sessions.
+
+Operating facts:
+- About 59 companies scanned per weeknight in roughly four minutes.
+- Data cost is zero; every source is free and keyless.
+- {{tests}} automated tests (counted at build time); one fails the build if the runtime gains a third-party import.
+- Signal tiers: none, watch, setup, act. Only act is actionable.
+- A separate heartbeat process alarms if no report appears for three weekdays, because silence is the system's normal output.
+
+It is research support for the user's own decisions. It is not financial advice, places no orders, and is not a product.
+
+## Pages
+- [Landing page](https://svedbg.github.io/pharma/): overview, veto layer, tier ladder, measured results, setup, FAQ
+- [The 91% question](https://svedbg.github.io/pharma/brief.html): long-form capability brief on why a 91% one-day fall is usually not a buying opportunity
+- [Source repository](https://github.com/svedbg/pharma): code, README, CLAUDE.md architecture notes

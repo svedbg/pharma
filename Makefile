@@ -1,4 +1,4 @@
-.PHONY: help setup lint fmt test check check-units run run-fast premarket premarket-fast briefing brief screen site backup
+.PHONY: help setup lint fmt test check check-units run run-fast premarket premarket-fast briefing brief screen site www og site-stats backup
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -50,6 +50,15 @@ briefing:  ## rebuild docs/biotech-desk-briefing.pdf from the HTML source
 
 screen:  ## monthly: look for candidates OUTSIDE the watchlist (slow, ~500 requests)
 	python3 scripts/screen.py --out data/screen_candidates.toml
+
+www:    ## build the public site to _site/ and serve it exactly as Pages will
+	python3 tools/build_site.py --serve
+
+site-stats:  ## recompute the operating record shown on the public site (www/stats.toml)
+	python3 tools/site_stats.py
+
+og:     ## rebuild www/og.png (dev-only: needs pillow + fonts in tools/fonts/)
+	python3 tools/make_og.py
 
 site:   ## build the local report archive and open it
 	python3 scripts/publish.py --open

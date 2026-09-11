@@ -1,0 +1,8 @@
+# Operating record, computed by tools/site_stats.py. Re-run before a release; do not hand-edit.
+since = "2026-08-14"
+latest = "2026-09-09"
+nights = 17
+weeknights_expected = 19
+weeknights_missed = 2   # includes US market holidays; see the note on the page
+tests = 267
+generated = "2026-09-10"

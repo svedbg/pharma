@@ -1,0 +1,18 @@
+# Public site settings, read by tools/build_site.py.
+#
+# To move to a custom domain (e.g. desk.sved.net):
+#   1. DNS: add a CNAME record   desk  ->  svedbg.github.io
+#   2. change base_url below and push; the build writes the CNAME file for Pages
+#   3. in the repo: Settings -> Pages -> Custom domain -> desk.sved.net, tick "Enforce HTTPS"
+#   4. update the canonical in Google Search Console and re-run LinkedIn's Post Inspector
+base_url = "https://svedbg.github.io/pharma/"
+
+[author]
+# Shown in the hero byline, the footer and the JSON-LD Person. Edit freely.
+name = "Svetoslav Rankov"
+title = "Senior Director of Software Engineering at EDITED"
+job_title = "Senior Director of Software Engineering"
+organization = "EDITED"
+blurb = "I lead a 20+ engineer office in Sofia. This is the side project where I still write the code myself, for my own book, and open-sourced so you can read every rule before you trust one."
+url = "https://sved.net"
+linkedin = ""    # paste your profile URL; the link and the schema entry appear once this is set
