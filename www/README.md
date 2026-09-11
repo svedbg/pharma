@@ -63,7 +63,7 @@ then remove the comment wrapper around the demo `<section>` in `index.html`. The
 
 ## Editing
 
-- The test count is counted from `tests/` at every build (`{{tests}}`); it was hard-coded at 87 from the brief and had drifted to 267. Don't type it again.
+- The test count is counted from `tests/` at every build (`{{tests}}`); it was hard-coded at 87 from the brief and had drifted to 267. The brief carries the same slot now, and `make brief` prints the PDF from the built page so both renderings count rather than quote. Don't type it again.
 - Every other number on the page traces to `README.md` or `docs/capability-brief.html`. If you re-run `score_alerts.py` and the −2.68 / −9.59 / +1.72 figures move, change them in three places: the measured table, the FAQ answer, and `llms.txt`. The JSON-LD FAQ answer in `<head>` is the fourth.
 - Dark palette and type live in `:root` at the top of `index.html`. Muted text is `--fg-4`; it sits at 4.9:1 on panels — don't take it darker.
 - The tape at the top is a CSS marquee. `prefers-reduced-motion` stops it; hover pauses it.
