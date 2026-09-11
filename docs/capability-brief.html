@@ -296,7 +296,7 @@ rules turned out to be worthless or harmful:</p>
 <h2 class="page-break">How it is built — and why that matters</h2>
 
 <p>A system that runs unattended every night, that nobody watches, has to be
-built differently from a script you run by hand. Four decisions shaped it:</p>
+built differently from a script you run by hand. Five decisions shaped it:</p>
 
 <h3>It has no dependencies</h3>
 <p>The entire thing uses only what ships with Python. Nothing to install, nothing
@@ -324,6 +324,15 @@ broken reality</strong> — and a system worth trusting proves which before acti
 <p>Restructuring the most complex part meant capturing the exact output for all
 59 companies beforehand, making the change, and confirming the new output was
 byte-for-byte identical. Not "it looks fine". Identical.</p>
+
+<h3>The code is written by an AI agent, under review</h3>
+<p>I specify, direct and review; an agent writes most of the code. That is the
+same split the system itself enforces — a model may read a filing and reason
+about it, but it is never the source of a number, and never the source of a
+decision. Everything above is what makes that safe: the dependency test, the
+second process watching the first, a guard and a test for every trap, and a
+refactor proved byte-for-byte rather than eyeballed. None of them assume the
+author was careful, which is the only way to review work you did not type.</p>
 
 <div class="box plain avoid">
   <div class="box-title">What this is not</div>
