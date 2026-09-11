@@ -5,7 +5,7 @@
 [![python 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-3776ab)](pyproject.toml)
 [![runtime dependencies: none](https://img.shields.io/badge/runtime%20dependencies-none-2bd98c)](tests/test_config_and_email.py)
 [![licence: MIT](https://img.shields.io/badge/licence-MIT-lightgrey)](LICENSE)
-[![site](https://img.shields.io/badge/site-svedbg.github.io%2Fpharma-0b0e12)](https://svedbg.github.io/pharma/)
+[![site](https://img.shields.io/badge/site-desk.sved.net-0b0e12)](https://desk.sved.net/)
 
 An unattended daily research desk for small-cap pharma. Every weekday evening it
 pulls SEC filings, prices, insider trades and short interest for a watchlist,
@@ -279,6 +279,24 @@ past a 3.11 floor.
 | Trials and completion dates | ClinicalTrials.gov v2 |
 | News, PDUFA dates | web search during the analysis pass |
 
+## The public site
+
+**[desk.sved.net](https://desk.sved.net/)** is where the documentation and the
+marketing page live — what the desk does, the veto layer, the tier ladder, the
+measured results, and a [sample report](https://desk.sved.net/sample-report.html)
+alongside the long-form brief, [The 91% question](https://desk.sved.net/brief.html).
+`make www` builds it from `www/` into `_site/` and serves it locally; GitHub
+Pages builds the same thing on every push that touches it. The older
+`svedbg.github.io/pharma` address redirects there.
+
+It also publishes **[llms.txt](https://desk.sved.net/llms.txt)** — the same facts
+as one plain-text file, in the [llmstxt.org](https://llmstxt.org/) format, so an
+AI answer engine can quote the project without inferring it from the page's
+markup. The source is `www/llms.txt`; the build fills in the test count and
+rewrites every self-URL from `base_url` in `www/site.toml`, so edit it there
+rather than in `_site/` — and change the domain in that one line, never in the
+files it generates.
+
 ## Layout
 
 ```
@@ -289,6 +307,7 @@ scripts/           fetch, signals, helpers, notification, scoring, archive, back
 prompts/daily.md   the standing instruction for the analysis pass
 systemd/ launchd/  timer units — Linux and macOS
 docs/              project briefings; `make brief` rebuilds the PDF
+www/               the public landing page and its llms.txt; `make www` builds both
 data/ logs/ reports/ site/ state/    generated and personal — all gitignored
 ```
 

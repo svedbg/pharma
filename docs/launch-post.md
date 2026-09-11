@@ -2,7 +2,7 @@
 
 Link for every post (UTM so the referrer survives LinkedIn's redirect):
 
-    https://svedbg.github.io/pharma/?utm_source=linkedin&utm_medium=social&utm_campaign=launch
+    https://desk.sved.net/?utm_source=linkedin&utm_medium=social&utm_campaign=launch
 
 If you move to a custom domain, swap the host — the UTM stays.
 
@@ -34,7 +34,7 @@ I published the losing numbers alongside the winning one, because a tool that on
 
 It's open source, MIT, Python standard library only, and every data source is free. It places no orders and it is not financial advice — it's the filter I wanted and couldn't buy.
 
-Site, source and the full write-up: https://svedbg.github.io/pharma/?utm_source=linkedin&utm_medium=social&utm_campaign=launch
+Site, source and the full write-up: https://desk.sved.net/?utm_source=linkedin&utm_medium=social&utm_campaign=launch
 
 #biotech #trading #python #opensource #sec #quant
 
@@ -48,7 +48,7 @@ So there are two processes. One does the work. The other only checks whether the
 
 Four more decisions like that — zero dependencies, byte-for-byte verified refactors, a test for every data trap that once produced a wrong number — are in the write-up. Same approach works for any pipeline where most of the input is noise.
 
-https://svedbg.github.io/pharma/brief.html?utm_source=linkedin&utm_medium=social&utm_campaign=launch-eng
+https://desk.sved.net/brief.html?utm_source=linkedin&utm_medium=social&utm_campaign=launch-eng
 
 ---
 
@@ -60,7 +60,7 @@ My nightly research desk read the 8-K, found the failed trial, and said nothing.
 
 Open source, stdlib Python, free data, publishes the rules that lost.
 
-https://svedbg.github.io/pharma/?utm_source=x&utm_medium=social&utm_campaign=launch
+https://desk.sved.net/?utm_source=x&utm_medium=social&utm_campaign=launch
 
 ---
 

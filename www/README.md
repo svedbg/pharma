@@ -13,7 +13,7 @@ that touches `www/`, the brief, or the workflow.
 |---|---|
 | `index.html` | the whole landing page: CSS inline, JSON-LD in `<head>` |
 | `og.png` | 1200x630 share card; LinkedIn renders nothing without one |
-| `llms.txt` | the same facts as the page, in one file for AI answer engines |
+| `llms.txt` | the same facts as the page, in one file for AI answer engines; `index.html` links it from `<link rel="alternate">` in the head and from the footer |
 | `fonts/` | Inter (variable) and JetBrains Mono, Latin subset, woff2, OFL licences alongside |
 | `site.toml` | canonical URL and the `[author]` block (title, blurb, LinkedIn) shown in byline, footer and schema |
 | `stats.toml` | operating record written by `tools/site_stats.py`; commit it — `reports/` is gitignored so CI cannot compute it. Band omitted when absent |
@@ -46,7 +46,7 @@ Commit the file: `reports/` never reaches GitHub, so the Pages build can only re
 
 **3. Enable Pages once.** Settings → Pages → Source: *GitHub Actions*. Then push.
 
-**4. Search Console.** After the first deploy, add the property, submit `https://svedbg.github.io/pharma/sitemap.xml`, and request indexing on the root URL. Without this a Pages site can wait weeks to be discovered.
+**4. Search Console.** After the first deploy, add the property, submit `https://desk.sved.net/sitemap.xml`, and request indexing on the root URL. Without this a Pages site can wait weeks to be discovered.
 
 **5. LinkedIn Post Inspector.** `https://www.linkedin.com/post-inspector/` — paste the URL *before* your first post; LinkedIn caches the card. Post copy with UTM links is in `docs/launch-post.md`.
 
@@ -57,7 +57,7 @@ Commit the file: `reports/` never reaches GitHub, so the Pages build can only re
 
 then remove the comment wrapper around the demo `<section>` in `index.html`. The slot is commented out on purpose: a fabricated run would contradict the page.
 
-**7. Custom domain** (e.g. `desk.sved.net`) — steps are in `site.toml`. The build rewrites every self-URL and writes `CNAME` from that one setting. Re-do steps 4 and 5 afterwards; the canonical changes.
+**7. Custom domain** — done: the site is on `desk.sved.net`, and `svedbg.github.io/pharma` 301s to it. `base_url` in `site.toml` is the only place the domain is spelled; the build rewrites every self-URL and writes `CNAME` from it. Move it again and re-do steps 4 and 5, because the canonical changes.
 
 **8. Analytics, if you want them.** Nothing is installed. If you want to know whether the LinkedIn post worked, the two privacy-respecting options that need no cookie banner in the EU are [GoatCounter](https://www.goatcounter.com) (free, one `<script>` tag) and [Plausible](https://plausible.io) (paid, one tag). Either goes just before `</body>` in `index.html`. The UTM parameters in the launch posts are already set up for whichever you pick.
 
