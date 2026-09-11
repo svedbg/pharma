@@ -7,10 +7,12 @@
 [![licence: MIT](https://img.shields.io/badge/licence-MIT-lightgrey)](LICENSE)
 [![site](https://img.shields.io/badge/site-desk.sved.net-0b0e12)](https://desk.sved.net/)
 
-An unattended daily research desk for small-cap pharma. Every weekday evening it
+An unattended daily research desk for small-cap pharma. Every weekday morning it
 pulls SEC filings, prices, insider trades and short interest for a watchlist,
-computes signals, writes a report, and pushes a phone notification **only when
-something is genuinely worth acting on** — which most days it isn't.
+computes signals over the session that just closed, writes a report, and pushes
+a phone notification **only when something is genuinely worth acting on** —
+which most days it isn't. A second, smaller pass runs two hours before the US
+open and reports only what has changed since.
 
 Research support for your own decisions. Not financial advice, and it places no
 orders.
@@ -161,20 +163,35 @@ accepts a prompt and can write files.
 ```bash
 cp systemd/pharma-*.service systemd/pharma-*.timer ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable --now pharma-desk.timer pharma-heartbeat.timer
+systemctl --user enable --now pharma-desk.timer pharma-premarket.timer pharma-heartbeat.timer
 loginctl enable-linger "$USER"     # so timers fire without a login session
 ```
 
-Two timers, both weekday-only:
+Three timers:
 
-- **pharma-desk** at 23:18 — after the US close, so the daily bar is settled.
-  Adjust `OnCalendar` for your timezone.
-- **pharma-heartbeat** at 10:23 — alerts if no report appeared for three weekdays.
-  Separate on purpose: **silence is this system's normal output**, so a broken
-  run and a quiet market look identical without it.
+- **pharma-desk** at **09:00, Tue–Sat** — the report on the session that closed
+  the previous evening. The hour is measured rather than reasoned about: the
+  price provider does not publish the day's bar until the small hours ET, so
+  two earlier schedules both named every report for the session *before* the
+  one that had just closed, 3 for 3 each time. Its days are Tue–Sat because it
+  runs the morning after its session. Adjust `OnCalendar` for your timezone,
+  and check `data/history.sqlite`'s `runs` table before choosing an hour.
+- **pharma-premarket** at **14:30, Mon–Fri** (07:30 ET) — what has happened
+  since that close, in the hours no daily bar reflects: an 8-K filed at 06:40
+  ET, a priced takedown, a catalyst dated today. It emails every weekday
+  morning and pushes only when something is urgent, and it refuses to run past
+  09:00 ET rather than deliver a "pre-market" note into an open market.
+- **pharma-heartbeat** at **10:23, Mon–Fri** — alerts if no report appeared for
+  three weekdays. Separate on purpose: **silence is this system's normal
+  output**, so a broken run and a quiet market look identical without it.
 
-On **macOS** there is no systemd. `launchd/` holds the equivalents — same two
-jobs, same times:
+Installed units drift from this checkout silently, and the drift presents as a
+bug in the code rather than in the install — `make check-units` diffs what is
+installed against what this checkout would write, for whichever scheduler is
+present. Run it after every upgrade.
+
+On **macOS** there is no systemd. `launchd/` holds the equivalents — the same
+three jobs at the same times:
 
 ```bash
 launchd/install-launchd.sh              # idempotent; --uninstall to remove
@@ -208,6 +225,7 @@ lead: a thesis breaking outranks an idea appearing.
 ```bash
 ./run_daily.sh --no-llm                      # data + signals, no analysis
 ./run_daily.sh --no-email                    # full run, but send no email
+./run_premarket.sh                           # the pre-market news pass, by hand
 python3 scripts/detail.py CAPR               # everything known about one name
 python3 scripts/propose_zones.py             # entry zones from each name's range
 python3 scripts/backtest.py                  # score the rules against a baseline
