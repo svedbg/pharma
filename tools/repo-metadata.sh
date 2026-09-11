@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPO="${1:-svedbg/pharma}"
-SITE="${SITE:-https://svedbg.github.io/pharma/}"
+SITE="${SITE:-https://desk.sved.net/}"
 
 command -v gh >/dev/null || { echo "needs the GitHub CLI: https://cli.github.com"; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "run: gh auth login"; exit 1; }
