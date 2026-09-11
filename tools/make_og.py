@@ -2,11 +2,20 @@
 """Render www/og.png — the 1200x630 share card LinkedIn, X and Slack unfurl.
 
 Dev-only. Needs Pillow (pip install pillow) and the two site fonts; pass their
-paths or drop them in tools/fonts/. Not part of the runtime and deliberately
-outside scripts/, which is tested to stay stdlib-only.
+paths or drop them in tools/fonts/, which is gitignored. Not part of the runtime
+and deliberately outside scripts/, which is tested to stay stdlib-only.
 
     python3 tools/make_og.py --grotesk path/to/SpaceGrotesk[wght].ttf \
                              --mono path/to/JetBrainsMono-Medium.ttf
+
+Both fonts are OFL. Where they came from, since finding them again is most of
+the work of a regeneration:
+
+    tools/fonts/SpaceGrotesk[wght].ttf
+        github.com/google/fonts/raw/main/ofl/spacegrotesk/SpaceGrotesk%5Bwght%5D.ttf
+    tools/fonts/JetBrainsMono-Medium.ttf
+        fonts/ttf/ inside github.com/JetBrains/JetBrainsMono/releases (v2.304)
+        -- the static Medium, not the variable file, which renders at 400 here
 """
 from __future__ import annotations
 
@@ -50,6 +59,22 @@ def site_label() -> str:
     return re.sub(r"^https?://(www\.)?", "", base).rstrip("/")
 
 
+def desk_schedule() -> str:
+    """The desk's own hours, read from the unit that fires it.
+
+    Typed in here as "23:18 weeknights", and left that way when the run moved to
+    a measured 09:00 the morning after its session — so the share card, which is
+    the first thing most people see of this project, went on advertising the one
+    schedule the desk had already proved wrong twice over.
+    """
+    unit = ROOT / "systemd" / "pharma-desk.timer"
+    m = re.search(r"^OnCalendar=(.+)$", unit.read_text(encoding="utf-8"), re.M) if unit.exists() else None
+    if not m:
+        return "09:00 Tue-Sat"
+    days, _, time = m.group(1).strip().rpartition(" ")
+    return f"{time} {days}".strip()
+
+
 def pill(d: ImageDraw.ImageDraw, x: int, y: int, text: str, f, bg: str, fg: str) -> int:
     tw = d.textlength(text, font=f)
     d.rounded_rectangle((x, y, x + tw + 22, y + 30), radius=6, fill=bg)
@@ -75,7 +100,7 @@ def main() -> None:
     # top bar
     d.ellipse((56, 46, 68, 58), fill=MINT)
     d.text((82, 38), "biotech desk", font=m13, fill=FG)
-    d.text((262, 38), "23:18 weeknights", font=m13, fill=FG4)
+    d.text((262, 38), desk_schedule(), font=m13, fill=FG4)
     label = site_label()
     d.text((W - 56 - d.textlength(label, font=m13), 38), label, font=m13, fill=FG4)
     d.line((0, 88, W, 88), fill=LINE, width=1)
