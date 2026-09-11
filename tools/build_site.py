@@ -204,7 +204,26 @@ def wrap_brief(out: Path, base: str) -> bool:
      paragraphs would leave h3 (11pt) smaller than the text under it and the
      second deck paragraph smaller than the body it introduces. Screen only --
      `make brief` prints the PDF from this same file and it must not move. */
-  body {{ font-size: 12.4pt; line-height: 1.65; }}
+  /* The document asks for Charter, then Georgia, then Times New Roman — none of
+     which is installed on a typical Linux desktop, so the text landed on
+     whatever generic serif the system had (DejaVu, Liberation), neither of them
+     drawn for reading on a screen. That, rather than the size alone, is what
+     made it hard going. The site already ships Inter for exactly this job, at
+     48KB and from its own origin, so the screen gets it and print keeps the
+     serif the PDF is typeset in. */
+  @font-face {{
+    font-family: "Inter"; font-style: normal; font-weight: 300 800; font-display: swap;
+    src: url("fonts/inter-var.woff2") format("woff2");
+  }}
+  body, h1, h2, h3, .kicker, .deck, .byline, .stats, table, .cta, .pull,
+  .lesson-n, .box-title, footer {{
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+  }}
+  /* Inter carries a much larger x-height than the serif it replaces, so the
+     same point size reads bigger; the measure is set from the result, not from
+     the number. */
+  body {{ font-size: 11.6pt; line-height: 1.72; letter-spacing: -0.004em; }}
   .kicker {{ font-size: 9pt; }}
   .deck {{ font-size: 15pt; }}
   .deck.sub {{ font-size: 13pt; }}

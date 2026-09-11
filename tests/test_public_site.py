@@ -99,6 +99,13 @@ def test_the_brief_is_given_a_screen_layout_without_touching_the_print_one(tmp_p
         "the brief no longer gets a centred column on screen"
     )
     assert "padding" in screen, "the brief no longer gets a gutter on screen"
+    assert 'url("fonts/inter-var.woff2")' in screen, (
+        "the brief no longer gets the site's own screen face"
+    )
+    assert "https://" not in screen.split("@font-face")[1].split("}")[0], (
+        "the brief's screen font is being fetched from somewhere else: the site "
+        "loads nothing from a third party, and a blocked font is a silent one"
+    )
 
     printed = doc.split('<style media="print">')[1].split("</style>")[0]
     assert "body" not in printed, (
