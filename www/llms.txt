@@ -1,6 +1,6 @@
 # Biotech desk
 
-> An open-source, unattended nightly research desk for small-cap biotech stocks, written in Python with no third-party dependencies and released under the MIT licence. Built by Svetoslav Rankov, Senior Director of Software Engineering at EDITED (https://sved.net). Source: https://github.com/svedbg/pharma
+> An open-source, unattended nightly research desk for small-cap biotech stocks, written in Python with no third-party dependencies and released under the MIT licence. Built by Svetoslav Rankov, Senior Director of Software Engineering at EDITED (https://sved.net), who specifies, directs and reviews it while an AI agent writes most of the code. Source: https://github.com/svedbg/pharma
 
 Every weeknight it reads SEC EDGAR filings, prices, Form 4 insider trades, FINRA short volume and ClinicalTrials.gov records for a watchlist, computes deterministic signals, and notifies only when a name changes tier. A veto layer blocks any buy signal that sits on a priced share offering, a delisting notice, an auditor change, a recent collapse, or under 1.5 quarters of cash, until that veto is refuted with evidence from the filing.
 
