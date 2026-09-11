@@ -7,8 +7,10 @@ Reads www/site.toml for the canonical base URL, then:
 
   1. copies www/ (minus site.toml and README.md) into --out
   2. wraps docs/capability-brief.html as brief.html — same content, plus a
-     screen-only nav bar back to the site and the meta/OG tags a print
-     stylesheet never needed
+     screen-only nav bar and column, the meta/OG tags a print stylesheet never
+     needed, and its {{tests}} slot filled. `make brief` prints the PDF from
+     this file rather than the raw source, so both renderings count the tests
+     rather than quoting a number typed once
   3. copies the brief PDF if it has been built
   4. rewrites every absolute self-URL in the copied pages from the default
      GitHub Pages address to base_url, so moving to a custom domain is a
@@ -227,6 +229,10 @@ def wrap_brief(out: Path, base: str) -> bool:
     nav = (f'<nav class="site-nav" aria-label="Site"><a class="home" href="./">Biotech desk</a>'
            f'<span>The 91% question — long-form brief</span>'
            f'<a href="https://github.com/svedbg/pharma">Source on GitHub</a>{pdf_link}</nav>\n')
+    # The brief types no count of its own: it said 87 from the day it was
+    # written, which was already 267 by the time anyone noticed, and it is the
+    # document the landing page took that number from in the first place.
+    doc = doc.replace("{{tests}}", str(count_tests()))
     doc = doc.replace("</head>", head_extra + "</head>", 1)
     doc = re.sub(r"(<body[^>]*>)", lambda m: m.group(1) + "\n" + nav, doc, count=1)
     (out / "brief.html").write_text(doc, encoding="utf-8")

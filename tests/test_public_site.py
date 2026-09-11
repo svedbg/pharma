@@ -84,8 +84,8 @@ def test_the_brief_is_given_a_screen_layout_without_touching_the_print_one(tmp_p
     docs/capability-brief.html is typeset for A4: every size is in pt and the
     body has no margin, so on screen it ran the full width of the viewport with
     no gutter. The wrapper adds a centred column for screens only — `make brief`
-    renders the committed PDF from the same source, and a layout rule that
-    reached print media would change a document that is already published.
+    prints the PDF from the same document, and a layout rule that reached print
+    media would change something that is already published.
     """
     build_site = _build_site()
 
@@ -103,4 +103,32 @@ def test_the_brief_is_given_a_screen_layout_without_touching_the_print_one(tmp_p
     printed = doc.split('<style media="print">')[1].split("</style>")[0]
     assert "body" not in printed, (
         "print media restyles the body: the committed PDF would move"
+    )
+
+
+def test_the_brief_counts_its_tests_rather_than_quoting_a_number(tmp_path):
+    """The number on the cover is counted at build time, in both renderings.
+
+    It was typed as 87 when the brief was written and was 267 by the time anyone
+    checked — and the landing page had taken its own figure from this document,
+    so one stale number became two. The slot is filled by the build now, which
+    means `make brief` has to print the PDF from the built page: pointed back at
+    the raw source it would print the literal "{{tests}}" on the cover of a
+    document that gets handed to people.
+    """
+    src = (ROOT / "docs" / "capability-brief.html").read_text(encoding="utf-8")
+    assert "{{tests}}" in src, "the brief has gone back to typing its own test count"
+
+    build_site = _build_site()
+    out = tmp_path / "site"
+    out.mkdir()
+    assert build_site.wrap_brief(out, "https://desk.example.net/") is True
+    doc = (out / "brief.html").read_text(encoding="utf-8")
+    assert "{{tests}}" not in doc, "the wrapper no longer fills the brief's test count"
+    assert f'<div class="n">{build_site.count_tests()}</div>' in doc
+
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    brief_target = makefile.split("\nbrief:")[1].split("\n\n")[0]
+    assert "brief-build/brief.html" in brief_target, (
+        "make brief prints from the raw source again: the PDF cover would read {{tests}}"
     )

@@ -36,9 +36,14 @@ premarket-fast:  ## pre-market fetch + signals + delta only, no LLM, no email
 
 brief:  ## rebuild the marketing/capability PDF from its HTML source
 	@command -v google-chrome >/dev/null || { echo "needs google-chrome"; exit 1; }
+	@# Printed from the built page, not the raw source: the build fills the
+	@# {{tests}} slot, and everything it adds -- nav, column, meta -- is
+	@# screen-only, so the printed result is the source document either way.
+	python3 tools/build_site.py --out .brief-build >/dev/null
 	google-chrome --headless --disable-gpu --no-sandbox --no-pdf-header-footer \
 		--print-to-pdf="$(PWD)/docs/the-91-percent-question.pdf" \
-		"file://$(PWD)/docs/capability-brief.html"
+		"file://$(PWD)/.brief-build/brief.html"
+	@rm -rf .brief-build
 	@echo "wrote docs/the-91-percent-question.pdf"
 
 briefing:  ## rebuild docs/biotech-desk-briefing.pdf from the HTML source
