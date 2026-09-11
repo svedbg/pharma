@@ -41,6 +41,7 @@
     font-size: 13pt; line-height: 1.45; color: var(--muted);
     max-width: 135mm; margin-bottom: 14pt;
   }
+  .deck.sub { font-size: 11pt; color: var(--body); max-width: 130mm; }
   .byline {
     font-size: 9pt; color: var(--muted); border-top: 1.5pt solid var(--ink);
     padding-top: 6pt; margin-top: 4pt;
@@ -52,6 +53,7 @@
     margin: 22pt 0 8pt; font-weight: 800;
   }
   h3 { font-size: 11pt; margin: 14pt 0 4pt; color: var(--ink); }
+  a { color: var(--accent); text-decoration: none; border-bottom: 0.5pt solid rgba(15, 76, 129, 0.35); }
   p { margin: 0 0 8pt; }
   .lede::first-letter {
     float: left; font-size: 34pt; line-height: 0.82; padding: 2pt 5pt 0 0;
@@ -121,6 +123,7 @@
   .cta .t { font-size: 15pt; font-weight: 800; color: var(--ink); margin-bottom: 4pt; }
   .cta .u { font-size: 12pt; font-weight: 700; color: var(--accent); }
   .cta p { font-size: 9.6pt; }
+  .cta .fine { font-size: 9pt; color: var(--muted); }
 
   .page-break { break-before: page; }
   .avoid { break-inside: avoid; }
@@ -138,12 +141,12 @@
   <h1>The 91%<br>Question</h1>
   <p class="deck">A stock just fell 91% in a single day. Every textbook indicator
   says it is now "oversold" — the classic signal to buy. Should you?</p>
-  <p class="deck" style="font-size:11pt;color:var(--body);max-width:130mm">
+  <p class="deck sub">
   Getting that answer right, automatically, every night, turned out to be a
   problem about <em>refusing</em> rather than predicting. This is what I built,
   what the data actually said, and what I would not let it claim.</p>
   <div class="byline">
-    <strong>Svetoslav Rankov (sved)</strong> · sved.net · Engineering &amp; automated systems
+    <strong>Svetoslav Rankov (sved)</strong> · <a href="https://sved.net">sved.net</a> · Engineering &amp; automated systems
   </div>
 </div>
 
@@ -359,14 +362,14 @@ manual review process that has quietly become too big to do by hand.</p>
   <p style="margin-top:5pt">If you have a process that runs on someone reading
   the same sources every day, or a system whose output nobody quite trusts, that
   is the kind of thing I build.</p>
-  <div class="u">sved.net</div>
-  <p style="margin-top:4pt;color:var(--muted);font-size:9pt">
+  <div class="u"><a href="https://sved.net">sved.net</a></div>
+  <p class="fine" style="margin-top:4pt">
   The complete source, including the unflattering results:<br>
-  github.com/svedbg/pharma — MIT licensed</p>
+  <a href="https://github.com/svedbg/pharma">github.com/svedbg/pharma</a> — MIT licensed</p>
 </div>
 
 <footer>
-  Written by Svetoslav Rankov (sved) · sved.net · The system described here is a personal
+  Written by Svetoslav Rankov (sved) · <a href="https://sved.net">sved.net</a> · The system described here is a personal
   research tool. Nothing in this document is financial advice or a recommendation
   to buy or sell any security. Figures are drawn from the project's own measured
   results and are historical; they carry known biases, including a rising market

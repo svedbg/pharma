@@ -99,6 +99,13 @@ def test_the_brief_is_given_a_screen_layout_without_touching_the_print_one(tmp_p
         "the brief no longer gets a centred column on screen"
     )
     assert "padding" in screen, "the brief no longer gets a gutter on screen"
+    assert 'url("fonts/inter-var.woff2")' in screen, (
+        "the brief no longer gets the site's own screen face"
+    )
+    assert "https://" not in screen.split("@font-face")[1].split("}")[0], (
+        "the brief's screen font is being fetched from somewhere else: the site "
+        "loads nothing from a third party, and a blocked font is a silent one"
+    )
 
     printed = doc.split('<style media="print">')[1].split("</style>")[0]
     assert "body" not in printed, (
@@ -131,4 +138,24 @@ def test_the_brief_counts_its_tests_rather_than_quoting_a_number(tmp_path):
     brief_target = makefile.split("\nbrief:")[1].split("\n\n")[0]
     assert "brief-build/brief.html" in brief_target, (
         "make brief prints from the raw source again: the PDF cover would read {{tests}}"
+    )
+
+
+def test_the_brief_links_its_own_site_and_keeps_its_sizes_reachable():
+    """Two things the screen typography depends on.
+
+    The author's site was printed as plain text in three places — a byline, a
+    call to action and a footer — on a page whose whole purpose is to be read by
+    someone deciding whether to get in touch. And every font size has to live in
+    the stylesheet: the screen rules scale the document by ~1.19, and a size set
+    inline beats them, so an inline one comes out smaller than the body text
+    around it while looking perfectly correct in the PDF.
+    """
+    src = (ROOT / "docs" / "capability-brief.html").read_text(encoding="utf-8")
+    assert src.count('href="https://sved.net"') == 3, "a sved.net mention is back to plain text"
+    assert 'href="https://github.com/svedbg/pharma"' in src
+
+    body = src.split("<body>")[1]
+    assert "font-size" not in body, (
+        "an inline font size is out of reach of the screen-only scale"
     )
