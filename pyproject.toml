@@ -1,6 +1,6 @@
 [project]
 name = "pharma-desk"
-version = "1.0.0"
+version = "2.0.0"
 description = "Unattended daily research desk for small-cap pharma: SEC filings, signals and a veto layer"
 readme = "README.md"
 requires-python = ">=3.11"
