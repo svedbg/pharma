@@ -76,3 +76,31 @@ def test_the_landing_page_links_its_own_llms_txt():
     assert page.split("</head>")[1].count('href="llms.txt"') >= 1, (
         "index.html no longer links llms.txt where a reader can see it"
     )
+
+
+def test_the_brief_is_given_a_screen_layout_without_touching_the_print_one(tmp_path):
+    """The brief is one file rendered two ways, and only one of them may move.
+
+    docs/capability-brief.html is typeset for A4: every size is in pt and the
+    body has no margin, so on screen it ran the full width of the viewport with
+    no gutter. The wrapper adds a centred column for screens only — `make brief`
+    renders the committed PDF from the same source, and a layout rule that
+    reached print media would change a document that is already published.
+    """
+    build_site = _build_site()
+
+    out = tmp_path / "site"
+    out.mkdir()
+    assert build_site.wrap_brief(out, "https://desk.example.net/") is True
+    doc = (out / "brief.html").read_text(encoding="utf-8")
+
+    screen = doc.split('<style media="screen">')[1].split("</style>")[0]
+    assert "max-width" in screen and "margin: 0 auto" in screen, (
+        "the brief no longer gets a centred column on screen"
+    )
+    assert "padding" in screen, "the brief no longer gets a gutter on screen"
+
+    printed = doc.split('<style media="print">')[1].split("</style>")[0]
+    assert "body" not in printed, (
+        "print media restyles the body: the committed PDF would move"
+    )

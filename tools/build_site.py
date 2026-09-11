@@ -187,6 +187,25 @@ def wrap_brief(out: Path, base: str) -> bool:
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="{base}og.png">
 <style media="screen">
+  /* The brief is an A4 print document: every size is in pt and the body has no
+     margin, so on screen it ran edge to edge across the whole viewport with no
+     gutter at all. This gives it the same text column the page is typeset for
+     (A4 less its 15mm margins) and centres it. Screen only -- `make brief`
+     renders the committed PDF from the same file, and that must not move. */
+  body {{
+    max-width: 190mm; margin: 0 auto; padding: 10px 20px 64px;
+  }}
+  @media (max-width: 600px) {{
+    body {{ padding: 8px 16px 40px; }}
+    /* Data tables are sized in pt for A4; on a phone they are read by scrolling
+       rather than by squeezing every column to nothing. */
+    table {{ display: block; overflow-x: auto; }}
+    /* The two four-up bands are layout, not data -- a card clipped at the edge
+       of a sideways scroll reads as broken, so they stack two-up instead. */
+    .stats, .pipeline {{ display: block; overflow: visible; }}
+    .stats tr, .pipeline tr {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }}
+    .stats td, .pipeline td {{ display: block; }}
+  }}
   .site-nav {{
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 13px;
     display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap;
