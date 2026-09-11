@@ -99,6 +99,7 @@ def fill_templates(out: Path, cfg: dict) -> dict:
             continue
         t = p.read_text(encoding="utf-8")
         t = t.replace("{{tests}}", str(tests))
+        t = t.replace("{{build:date}}", dt.date.today().isoformat())
         for k, v in a.items():
             t = t.replace(f"{{{{author:{k}}}}}", html.escape(v, quote=True) if k != "url" and k != "linkedin" else v)
         t = unwrap_block(t, "linkedin") if a["linkedin"] else strip_block(t, "linkedin")
